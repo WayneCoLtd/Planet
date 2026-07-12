@@ -1,0 +1,47 @@
+# dependencies
+node_modules/
+
+# build outputs
+dist/
+deploy/
+.wrangler/
+
+# local env / secrets
+.env
+.env.*
+!.env.example
+
+# OS/editor
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# private media and generated personal assets
+public/private/
+public/uploads/
+public/videos/*.mov
+public/videos/*.m4v
+public/videos/*.avi
+# Keep the tiny placeholder mp4; replace intentionally if you want a public demo.
+# For private deployments, put real videos locally but do not commit them.
+# public/videos/*.mp4
+
+# raw personal photo/video workspaces
+*.HEIC
+*.heic
+*.MOV
+*.mov
+
+# private photo/video manifests
+photo_order_by_time.csv
+photo_rename_*manifest*.csv
+
+# local temporary files
+*.log
+.miyou-review-preview.pid
+.miyou-review-preview.log
+.cache/
+
+# local release archives
+releases/

@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 900" role="img" aria-label="一束可爱的卡通鲜花">
+  <defs>
+    <radialGradient id="paperBg" cx="50%" cy="42%" r="72%">
+      <stop offset="0" stop-color="#fffdf4"/>
+      <stop offset="0.55" stop-color="#ffeef7"/>
+      <stop offset="1" stop-color="#fff3bf"/>
+    </radialGradient>
+    <linearGradient id="wrapA" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fff9ef"/>
+      <stop offset="0.52" stop-color="#ffe9d2"/>
+      <stop offset="1" stop-color="#e8bd84"/>
+    </linearGradient>
+    <linearGradient id="wrapB" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.78"/>
+      <stop offset="1" stop-color="#ffe0ed" stop-opacity="0.74"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-25%" width="160%" height="165%">
+      <feDropShadow dx="0" dy="20" stdDeviation="18" flood-color="#8e4c35" flood-opacity="0.18"/>
+    </filter>
+    <style>
+      .ink{stroke:#70452f;stroke-width:8;stroke-linecap:round;stroke-linejoin:round}
+      .thin{stroke:#70452f;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;fill:none;opacity:.55}
+      .stem{stroke:#629b5d;stroke-width:11;stroke-linecap:round}
+      .leaf{fill:#85d990;stroke:#548b54;stroke-width:7;stroke-linejoin:round}
+      .petal{stroke:#70452f;stroke-width:6;stroke-linejoin:round}
+      .bouquet{filter:url(#shadow);animation:bob 3.6s ease-in-out infinite;transform-origin:450px 560px}
+      .flower{opacity:0;animation:flowerGrow .72s cubic-bezier(.2,.82,.16,1) forwards}.d2{animation-delay:.28s}.d3{animation-delay:.56s}.d4{animation-delay:.84s}.d5{animation-delay:1.12s}.d6{animation-delay:1.4s}.d7{animation-delay:1.68s}
+      .spark{fill:#fff0a1;stroke:#f39ab4;stroke-width:4;animation:twinkle 2s ease-in-out infinite;transform-origin:center}.sp2{animation-delay:.55s}.sp3{animation-delay:1.1s}.sp4{animation-delay:1.55s}
+      @keyframes bob{0%,100%{transform:translateY(0) rotate(-.5deg)}50%{transform:translateY(-8px) rotate(.5deg)}}
+      @keyframes flowerGrow{0%{opacity:0;filter:blur(5px) saturate(.75)}55%{opacity:1;filter:blur(0) saturate(1.18)}100%{opacity:1;filter:blur(0) saturate(1)}}
+      @keyframes twinkle{0%,100%{opacity:.38;transform:scale(.75) rotate(0)}50%{opacity:1;transform:scale(1.16) rotate(18deg)}}
+    </style>
+  </defs>
+
+  <rect width="900" height="900" rx="72" fill="url(#paperBg)"/>
+  <circle cx="180" cy="150" r="82" fill="#fff" opacity=".35"/>
+  <circle cx="736" cy="168" r="112" fill="#fff" opacity=".25"/>
+  <path class="spark sp1" d="M132 286l14 30 30 14-30 14-14 30-14-30-30-14 30-14z"/>
+  <path class="spark sp2" d="M746 324l14 30 30 14-30 14-14 30-14-30-30-14 30-14z"/>
+  <path class="spark sp3" d="M684 110l10 22 22 10-22 10-10 22-10-22-22-10 22-10z"/>
+  <path class="spark sp4" d="M236 690l9 19 19 9-19 9-9 19-9-19-19-9 19-9z"/>
+
+  <g class="bouquet">
+    <!-- stems clearly visible above wrapping -->
+    <g opacity=".95">
+      <path class="stem" d="M450 677C438 560 418 456 360 340"/>
+      <path class="stem" d="M450 676C458 556 470 445 454 290"/>
+      <path class="stem" d="M450 676C482 552 532 438 612 318"/>
+      <path class="stem" d="M450 676C414 558 346 464 262 414"/>
+      <path class="stem" d="M450 676C506 548 596 468 700 420"/>
+      <path class="stem" d="M450 676C446 565 500 486 560 410"/>
+      <path class="stem" d="M450 676C420 584 376 516 330 470"/>
+    </g>
+
+    <!-- leaves, large and recognizable -->
+    <path class="leaf" d="M322 466c-72-38-108-91-91-137 70 7 109 63 116 139z"/>
+    <path class="leaf" d="M554 454c56-66 117-86 164-48-45 66-101 92-169 72z"/>
+    <path class="leaf" d="M395 386c-44-72-45-134 2-168 50 54 48 116 13 174z"/>
+    <path class="leaf" d="M502 384c22-88 75-132 136-113-10 75-60 118-135 135z"/>
+    <path class="leaf" d="M350 578c-72 8-123-17-143-65 62-28 116-10 161 48z"/>
+    <path class="leaf" d="M586 574c70 2 116-24 132-72-63-23-113-1-149 56z"/>
+
+    <!-- central rose with obvious layered petals -->
+    <g class="flower d1" transform="translate(452 286)">
+      <circle r="104" fill="#ffd7e2" class="ink"/>
+      <path d="M-66-12c12-62 74-87 113-46 43 46 10 120-57 139-62-16-90-58-56-93z" fill="#ff9ebc" class="petal"/>
+      <path d="M30-66c54 22 67 86 23 127-43 41-99 22-118-34 12-60 49-87 95-93z" fill="#ffc1d2" class="petal"/>
+      <path d="M-10-28c38-26 82-12 97 30-20 44-66 57-105 28-23-22-21-42 8-58z" fill="#ffe4ec" class="petal"/>
+      <path d="M-22 16c23-33 66-36 91-5-6 43-43 67-83 53-28-15-31-31-8-48z" fill="#ff86aa" class="petal"/>
+      <circle r="20" fill="#ffe675" class="petal"/>
+    </g>
+
+    <!-- left daisy -->
+    <g class="flower d2" transform="translate(298 376)">
+      <g fill="#fffdf4" class="petal">
+        <ellipse cx="0" cy="-64" rx="28" ry="62"/><ellipse cx="55" cy="-32" rx="28" ry="62" transform="rotate(55 55 -32)"/><ellipse cx="60" cy="30" rx="28" ry="62" transform="rotate(112 60 30)"/><ellipse cx="0" cy="64" rx="28" ry="62"/><ellipse cx="-60" cy="30" rx="28" ry="62" transform="rotate(68 -60 30)"/><ellipse cx="-55" cy="-32" rx="28" ry="62" transform="rotate(125 -55 -32)"/>
+      </g>
+      <circle r="34" fill="#ffd84f" class="petal"/>
+      <circle r="11" fill="#fff08e"/>
+    </g>
+
+    <!-- blue hydrangea cluster but individual blossoms visible -->
+    <g class="flower d3" transform="translate(612 350)">
+      <g class="petal">
+        <circle cx="-56" cy="-28" r="36" fill="#bfe6ff"/><circle cx="0" cy="-58" r="39" fill="#aee0ff"/><circle cx="54" cy="-25" r="35" fill="#ccecff"/><circle cx="48" cy="35" r="38" fill="#b8dcff"/><circle cx="-30" cy="42" r="42" fill="#d0efff"/>
+      </g>
+      <g fill="#fff9b8" stroke="#70452f" stroke-width="4">
+        <circle cx="-56" cy="-28" r="7"/><circle cx="0" cy="-58" r="7"/><circle cx="54" cy="-25" r="7"/><circle cx="48" cy="35" r="7"/><circle cx="-30" cy="42" r="7"/>
+      </g>
+    </g>
+
+    <!-- peach tulip -->
+    <g class="flower d4" transform="translate(236 496)">
+      <path d="M-62 20c0-72 36-112 78-112 46 0 80 42 80 112 0 58-38 96-82 96-44 0-76-39-76-96z" fill="#ffb291" class="petal"/>
+      <path d="M-56 4c28 9 54 35 66 82C-27 78-56 42-56 4z" fill="#ffcfb8" class="petal"/>
+      <path d="M86 2c-29 12-52 38-63 84C58 78 86 40 86 2z" fill="#ff9a7b" class="petal"/>
+      <path d="M4-88c28 32 29 89 4 142-32-45-33-95-4-142z" fill="#ffd7c9" class="petal"/>
+    </g>
+
+    <!-- right white/yellow flower -->
+    <g class="flower d5" transform="translate(690 486)">
+      <g fill="#fff5cf" class="petal">
+        <ellipse cx="0" cy="-54" rx="26" ry="54"/><ellipse cx="48" cy="-28" rx="26" ry="54" transform="rotate(56 48 -28)"/><ellipse cx="52" cy="27" rx="26" ry="54" transform="rotate(113 52 27)"/><ellipse cx="0" cy="56" rx="26" ry="54"/><ellipse cx="-52" cy="27" rx="26" ry="54" transform="rotate(67 -52 27)"/><ellipse cx="-48" cy="-28" rx="26" ry="54" transform="rotate(124 -48 -28)"/>
+      </g>
+      <circle r="30" fill="#ffc84f" class="petal"/>
+    </g>
+
+    <!-- small pink blossoms -->
+    <g class="flower d6" transform="translate(352 502)">
+      <g fill="#ffa8c8" class="petal">
+        <circle cx="0" cy="-38" r="29"/><circle cx="36" cy="-11" r="29"/><circle cx="22" cy="32" r="29"/><circle cx="-22" cy="32" r="29"/><circle cx="-36" cy="-11" r="29"/>
+      </g>
+      <circle r="19" fill="#ffe87a" class="petal"/>
+    </g>
+
+    <g class="flower d7" transform="translate(534 510)">
+      <g fill="#fff0a6" class="petal">
+        <circle cx="0" cy="-32" r="24"/><circle cx="30" cy="-9" r="24"/><circle cx="18" cy="27" r="24"/><circle cx="-18" cy="27" r="24"/><circle cx="-30" cy="-9" r="24"/>
+      </g>
+      <circle r="16" fill="#ffb4d0" class="petal"/>
+    </g>
+
+    <!-- wrapping paper, behind/around stems -->
+    <path d="M235 570c106 60 322 62 430-5l-92 246c-74 42-194 50-274 2z" fill="url(#wrapA)" class="ink"/>
+    <path d="M276 546c68 46 118 70 174 126-68 0-140 19-198 60z" fill="url(#wrapB)" class="ink" opacity=".88"/>
+    <path d="M634 540c-70 48-121 73-177 132 72 0 144 17 199 58z" fill="url(#wrapB)" class="ink" opacity=".88"/>
+    <path d="M292 600c92 40 232 44 320 4" class="thin"/>
+
+    <!-- pink ribbon -->
+    <path d="M380 714c42-32 94-32 144 0" fill="none" stroke="#ff8caf" stroke-width="24" stroke-linecap="round"/>
+    <path d="M431 708c-70-45-119 10-132 62 62 16 110-8 132-62z" fill="#ffc1d5" class="ink"/>
+    <path d="M475 708c70-45 119 10 132 62-62 16-110-8-132-62z" fill="#ffc1d5" class="ink"/>
+    <circle cx="454" cy="708" r="25" fill="#ff80a8" class="ink"/>
+  </g>
+</svg>

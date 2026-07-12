@@ -1,0 +1,20 @@
+{
+  "name": "miyou-planet-template",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "demo": "vite --host 127.0.0.1",
+    "build": "vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "check": "npm run build && npm audit --audit-level=moderate"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.106.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vite": "6.4.3"
+  }
+}
