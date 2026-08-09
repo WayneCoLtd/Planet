@@ -1,4 +1,4 @@
-# Miyou Planet Template
+# Chenlin Planet Template
 
 > 一个可直接运行、可继续扩展的互动纪念日 / 小星球网站模板。
 >
@@ -10,7 +10,7 @@
 
 ## 这是什么？
 
-Miyou Planet Template 是一个 Vite + React 静态网站样品：把“每天打开一格”的仪式感做成可扩展的互动星球。
+Chenlin Planet Template 是一个 Vite + React 静态网站样品：把“每天打开一格”的仪式感做成可扩展的互动星球。
 
 本仓库保留 5 个可运行的互动日，而不是连续日历：
 
@@ -96,7 +96,7 @@ Day 05 已移除旧的“画面崩溃 / 拉绳”入口。打开当天即处于�
 ## 项目结构
 
 ```text
-Miyou_Planet_Template_v0.1/
+Chenlin_Planet_Template_v0.1/
 ├── 启动本地样品.command       # macOS 双击启动本地样品
 ├── scripts/
 │   ├── review-local.sh         # 检查者一键安装、构建、部署

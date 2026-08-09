@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PID_FILE="$ROOT_DIR/.miyou-review-preview.pid"
 
 if [ ! -f "$PID_FILE" ]; then
-  echo "没有找到正在运行的米柚星球检查服务。"
+  echo "没有找到正在运行的琛琳星球检查服务。"
   exit 0
 fi
 

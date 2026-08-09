@@ -1,4 +1,4 @@
--- 米柚星球 Supabase 云端版本 schema
+-- 琛琳星球 Supabase 云端版本 schema
 -- 使用方式：Supabase Dashboard -> SQL Editor -> New query -> 粘贴全部 -> Run
 -- 注意：不要把 service_role / secret key 放进前端。前端只用 publishable/anon key。
 

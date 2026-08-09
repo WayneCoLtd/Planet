@@ -9,7 +9,7 @@ cd "$ROOT"
 if [[ -n "${TERM:-}" ]]; then
   clear
 fi
-print "\n🍊 Miyou Planet Template · Local Demo\n"
+print "\n🍊 Chenlin Planet Template · Local Demo\n"
 print "Project: $ROOT\n"
 
 if ! command -v npm >/dev/null 2>&1; then

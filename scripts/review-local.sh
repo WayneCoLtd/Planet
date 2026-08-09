@@ -28,7 +28,7 @@ done
 LOG_FILE="$ROOT_DIR/.miyou-review-preview.log"
 PID_FILE="$ROOT_DIR/.miyou-review-preview.pid"
 
-printf '\n米柚星球 · 检查者一键本地部署\n'
+printf '\n琛琳星球 · 检查者一键本地部署\n'
 printf '%s\n' '--------------------------------'
 printf 'Node.js: %s\n' "$NODE_VERSION"
 printf '端口:    %s\n\n' "$PORT"

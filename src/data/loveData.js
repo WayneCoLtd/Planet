@@ -40,79 +40,27 @@ export const wishes = [
 ]
 
 // Public template reference calendar.
-// The five retained cases are intentionally non-contiguous: 01, 02, 03, 05, and 08.
-// Every other day is deliberately left empty for the next creator to develop.
+// 当前站点只保留第一个可执行签到，用作“第一天猜谜语签到”的入口。
 export const dailyAdventures = [
   {
-    day: 1,
-    date: '2026-05-20',
-    title: '00:00的谜题',
-    icon: '🍊',
+    day: 300,
+    date: '2026-08-09',
+    title: '300Days · 谜语签到',
+    icon: '🧭',
     type: 'memoryPuzzle',
-    theme: '午夜剧场',
-    reward: '答对后打开那一晚的聊天小窗',
-    prompt: '',
-    secret: '苦尽柑来遇见你',
-    answer: '苦尽柑来遇见你',
-    image: '/images/20250520.jpg',
-    memoryTitle: '2025.05.20 · 00:00 · 线上一起看剧',
-    memoryCaption: '那一秒刚好落在 520，像剧情偷偷替我们按下了甜甜的暂停键。',
+    theme: '从第一次一起散步开始',
+    reward: '打开属于你我的第 300 天纪念日签到',
+    prompt: '你还记得我们第一次走过这片会发光的地方吗？它是我们第一次约会的地方',
+    secret: '这是我们在日子里慢慢留下的第一个记号。',
+    answer: '郑州二砂文化创意园',
+    image: '/images/二砂.jpg',
+    memoryTitle: '第一次一起散步',
+    memoryCaption: '那天我们从记忆里走出来，开始把未来也一起记住。',
     chatMessages: [
-      { side: 'me', text: '好绝的打光!' },
-      { side: 'her', text: '甜死了' },
-      { side: 'her', text: '你居然在刚到 520 看到这里' },
-      { side: 'her', text: '羡慕' },
-      { side: 'me', text: '什么 注定的救赎感' },
-      { side: 'me', text: '!' },
-      { side: 'me', text: '哦莫' }
+      { side: 'me', text: '你还记得那天我们一起散步吗？' },
+      { side: 'her', text: '记得呀，那个地方像一段我们都还没有翻完的故事。' },
+      { side: 'me', text: '我想把它先写成今天的谜语。' },
+      { side: 'me', text: '今天开始，我们把日子慢慢记下来。' }
     ]
-  },
-  {
-    day: 2,
-    date: '2026-05-21',
-    title: '521 连续谜题',
-    icon: '🎆',
-    type: 'serialRiddleFirework',
-    theme: '卡通解谜 · 专属烟花',
-    reward: '通关后燃放“小翟521快乐”烟花',
-    prompt: '连续解开三张谜题卡，收集烟花、火柴盒和火柴，最后亲手点燃专属烟花。',
-    secret: '小翟521快乐',
-    image: '/images/day2-riddle-20250521.jpg'
-  },
-  {
-    day: 3,
-    date: '2026-05-22',
-    title: '522 奶泡心情馆',
-    icon: '☕',
-    type: 'foamDrawingReview',
-    theme: '卡布奇诺涂鸦',
-    reward: '通过后会留下新的小道具',
-    prompt: '那天它本来只是一杯卡布奇诺。',
-    secret: '奶泡小钥匙',
-    originalImage: '/images/day3-cappuccino-original-20250522.jpg',
-    smileReference: '/images/day3-cappuccino-smile-20250522.jpg',
-    heartReference: '/images/day3-cappuccino-heart-20250522.jpg'
-  },
-  {
-    day: 5,
-    date: '2026-05-24',
-    title: '524 小柚子的黑暗迷宫',
-    icon: '🕯️',
-    type: 'darkMazeTransition',
-    theme: '黑暗迷宫 · 星际转场',
-    reward: '打开通往星际旅行的新门',
-    prompt: '带上 521 的火柴与 522 的钥匙，点亮火把，走出迷宫。',
-    secret: '木门后的银河会把米柚星球切换到新的星际主题。'
-  },
-  {
-    day: 8,
-    date: '2026-05-27',
-    title: '527 来自 1 光年的信号',
-    icon: '✨',
-    type: 'oneLightYearSignal',
-    theme: '一束走了一年的微光',
-    reward: '获得 5.09 点星光',
-    prompt: '在星际主题下打开观测窗口，清开烦恼云，找回 5 颗星星和最后 0.09 点自己的光。',
-    secret: '去年今天发出的光，走了一整年，刚好抵达这里。'
   }
 ]

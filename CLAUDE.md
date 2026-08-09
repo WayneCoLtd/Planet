@@ -1,4 +1,4 @@
-# Miyou Planet Template — project memory
+# Chenlin Planet Template — project memory
 
 Read and follow [`AGENTS.md`](AGENTS.md) first. It contains the project's implementation phases, safety boundaries, calendar invariants, media rules, and required verification steps.
 

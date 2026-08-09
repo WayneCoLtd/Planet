@@ -6,8 +6,8 @@ import { getSupabase, getCloudIdentity, logCloudEvent, loadCloudCheckins, markCl
 import './styles.css'
 
 const PASSWORD = '520612'
-const ANNIVERSARY_VIDEO_SRC = '/videos/miyou-612-anniversary-v5.mp4'
-const ANNIVERSARY_GIFT_PHOTO_SRC = '/images/miyou-612-gift-photo.jpg'
+const ANNIVERSARY_VIDEO_SRC = '/videos/chenlin-612-anniversary-v5.mp4'
+const ANNIVERSARY_GIFT_PHOTO_SRC = '/images/chenlin-612-gift-photo.jpg'
 const TEMPLATE_REFERENCE_VERSION = 'miyou-template-selected-days-direct-maze-v2'
 const TEMPLATE_FIRST_DAY = dailyAdventures[0]?.day || 1
 const TEMPLATE_LAST_DAY = dailyAdventures[dailyAdventures.length - 1]?.day || 8
@@ -167,6 +167,19 @@ function setVoyageThemeLocal(enabled, source = 'theme-update', { cloud = true } 
   if (cloud) saveCloudGlobalPatch({ themeMode, voyageUnlocked: Boolean(enabled) }, `global_theme_${themeMode}_${source}`)
 }
 
+function returnToInvitationLayer() {
+  if (typeof window === 'undefined') return
+  const resetState = { ...GLOBAL_EMPTY_STATE, themeMode: 'classic', voyageUnlocked: false, observatoryNavUnlocked: false, observatoryEnteredAt: '', invitationOpened: false, planetUnlocked: false }
+  localStorage.removeItem('miyou-camouflage-opened')
+  localStorage.removeItem('miyou-planet-unlocked')
+  localStorage.removeItem(roleStorageKey(GLOBAL_STATE_KEY))
+  saveGlobalLocalState(resetState)
+  const remotePatch = { global: resetState }
+  saveCloudGlobalPatch({ themeMode: 'classic', voyageUnlocked: false, invitationOpened: false, planetUnlocked: false, observatoryNavUnlocked: false, observatoryEnteredAt: '', updatedAt: new Date().toISOString() }, 'global_reset_to_invitation')
+  window.history.replaceState(null, '', '/')
+  window.location.reload()
+}
+
 async function hydrateGlobalCloudState() {
   try {
     const remote = await loadCloudDayProgress(GLOBAL_PROGRESS_DAY)
@@ -195,14 +208,42 @@ function saveBackpack(next) {
   setRoleJson(BACKPACK_KEY, next || {})
 }
 
+const BACKPACK_STAMP_PENDING_KEY = 'miyou-backpack-stamp-pending-v1'
+
+function loadBackpackStampPending() {
+  try {
+    return new Set(JSON.parse(localStorage.getItem(roleStorageKey(BACKPACK_STAMP_PENDING_KEY)) || '[]'))
+  } catch {
+    return new Set()
+  }
+}
+
+function saveBackpackStampPending(ids) {
+  try {
+    localStorage.setItem(roleStorageKey(BACKPACK_STAMP_PENDING_KEY), JSON.stringify(Array.from(ids || [])))
+  } catch {
+    try {
+      localStorage.removeItem(roleStorageKey(BACKPACK_STAMP_PENDING_KEY))
+    } catch {}
+  }
+}
+
 function addBackpackItems(items = []) {
   const next = { ...loadBackpack() }
+  const stampedIds = []
+  const pendingStamps = loadBackpackStampPending()
   ;(items || []).forEach(({ id, count }) => {
+    const wasAbsent = Number(next[id] || 0) <= 0
     next[id] = Math.max(0, Number(next[id] || 0) + Number(count || 0))
     if (next[id] === 0) delete next[id]
+    if (wasAbsent && next[id] > 0) {
+      pendingStamps.add(id)
+      stampedIds.push(id)
+    }
   })
   saveBackpack(next)
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
+  saveBackpackStampPending(pendingStamps)
+  window.dispatchEvent(new CustomEvent('miyou-backpack-updated', { detail: { stamped: stampedIds } }))
   return next
 }
 
@@ -486,7 +527,7 @@ const GENERIC_DAY_RESET_CONFIG = {
   3: { label: '重置522', date: '2026-05-22', toast: '522 已重置，可以重新画奶泡啦。', keys: ['miyou-day3-foam-progress'], rewards: ['magic_wand', 'coffee_cup', 'coconut_cup', 'foam_key'] },
   4: { label: '重置523', date: '2026-05-23', toast: '523 已重置，可以重新点点点啦。', keys: ['miyou-day4-fake-key-checkin-state'] },
   5: { label: '重置524', date: '2026-05-24', toast: '524 已重置：火柴盒 × 1、火柴 × 2、钥匙 × 1 已恢复，可以立即重玩迷宫。', keys: ['miyou-day4-dark-maze-state'], restore: { matchbox: 1, match: 2, foam_key: 1 } },
-  6: { label: '重置525', date: '2026-05-25', toast: '525 已重置，可以重新探索米柚星球2号啦。', keys: ['miyou-day5-telescope-run-state', 'miyou-day6-planet2-observatory-state'], rewards: ['telescope_lens', 'telescope_tube', 'telescope_tripod', 'telescope_focuser', 'telescope_star_map', 'bare_telescope', 'focusable_telescope', 'observatory_building'] },
+  6: { label: '重置525', date: '2026-05-25', toast: '525 已重置，可以重新探索星球2号啦。', keys: ['miyou-day5-telescope-run-state', 'miyou-day6-planet2-observatory-state'], rewards: ['telescope_lens', 'telescope_tube', 'telescope_tripod', 'telescope_focuser', 'telescope_star_map', 'bare_telescope', 'focusable_telescope', 'observatory_building'] },
   7: { label: '重置526', date: '2026-05-26', toast: '526 已重置，可以重新进入星空观测站啦。', keys: ['miyou-day6-stargazing-state', 'miyou-day7-stargazing-state'], rewards: ['telescope_ready', 'observatory_unlocked', 'observatory_nav_unlocked'] },
   14: { label: '重置602', date: '2026-06-02', toast: '602 已重置，但这一天仍然是封存的儿童节延期页。' },
   16: { label: '重置604', date: '2026-06-04', toast: '604 已重置，可以重新给小柚子做花环啦。', keys: ['miyou-flower-crown-day16'], rewards: ['flower_crown'] },
@@ -642,21 +683,21 @@ function CuteIcon({ children, tone = 'sunny' }) {
   return <span className={`cute-icon ${tone}`}>{children}</span>
 }
 
-function CitrusSprite({ type = 'orange', label, className = '' }) {
+function DogSprite({ type = 'partner', label, className = '' }) {
+  const dogRole = type === 'pomelo' ? 'partner' : type === 'orange' ? 'me' : (type === 'me' || type === 'partner' ? type : 'partner')
+  const dogMap = {
+    me: '/images/柯基.png',
+    partner: '/images/金毛.png'
+  }
+  const dogSrc = dogMap[dogRole]
+
   return (
-    <span className={`citrus-sprite ${type} ${className}`} aria-label={label || type}>
-      <i className="citrus-leaf" />
-      <i className="citrus-eye left" />
-      <i className="citrus-eye right" />
-      <i className="citrus-nose" />
-      <i className="citrus-mouth" />
-      <i className="citrus-cheek left" />
-      <i className="citrus-cheek right" />
-      <i className="citrus-arm left" />
-      <i className="citrus-arm right" />
-      <i className="citrus-foot left" />
-      <i className="citrus-foot right" />
-    </span>
+    <img
+      className={`dog-sprite ${dogRole} ${className}`}
+      src={dogSrc}
+      alt={label || (dogRole === 'me' ? '我的小狗形象' : '小琳的小狗形象')}
+      aria-label={label || (dogRole === 'me' ? '我的小狗形象' : '小琳的小狗形象')}
+    />
   )
 }
 
@@ -699,21 +740,21 @@ function InvitationLayer({ onReveal }) {
     })
   }
 
-  function NameTrigger({ id, children = '小翟' }) {
+  function NameTrigger({ id, children = '小琳' }) {
     const active = clickedNames.includes(id)
     return (
       <button
         type="button"
         className={`name-trigger ${active ? 'is-lit' : ''}`}
         onClick={(event) => clickName(id, event)}
-        aria-label="小翟"
+        aria-label={String(children)}
       >
         {children}
       </button>
     )
   }
 
-  const words = ['05-20', '20:50', '12号厅', '8排8座', '8排9座', '小翟']
+  const words = ['8月13日', '16:00', '万广场CGV', '《奥德赛》', '300Days', '小琳']
 
   return (
     <main className={`invitation-shell page-shell ${transitioning ? 'is-transitioning' : ''}`}>
@@ -735,16 +776,16 @@ function InvitationLayer({ onReveal }) {
         ))}
       </div>
       <aside className="invitation-newbie-guide" aria-live="polite">
-        <strong>第一次打开？这样玩就好</strong>
-        <span>① 点“抽出票根”看电影票；② 点信里所有发光的“小翟”（{clickedNames.length}/5）；③ 五个名字都亮起后，等小火箭带你进入星球。</span>
+        <strong>今天的出发指令</strong>
+        <span>① 点“抽出票根”看电影预约；② 点信里所有发光的“小琳”（{clickedNames.length}/5）；③ 五个名字都亮起后，等小火箭带你进入我们的 300Days 星球。</span>
       </aside>
       {transitioning && (
         <div className="portal-transition" aria-hidden="true">
           <div className="star-road"><span /><span /><span /><span /><span /></div>
           <div className="portal-ring" />
           <div className="countdown-citrus-duo" aria-hidden="true">
-            <CitrusSprite type="pomelo" className="countdown-pomelo" />
-            <CitrusSprite type="orange" className="countdown-orange" />
+            <DogSprite type="pomelo" className="countdown-pomelo" />
+            <DogSprite type="orange" className="countdown-orange" />
           </div>
           <div className="launch-countdown">
             <div className="countdown-label">出发倒计时</div>
@@ -755,15 +796,15 @@ function InvitationLayer({ onReveal }) {
             </div>
           </div>
           <div className="space-ship">
-            <CitrusSprite type="pomelo" className="space-pomelo" />
-            <CitrusSprite type="orange" className="space-orange" />
+            <DogSprite type="pomelo" className="space-pomelo" />
+            <DogSprite type="orange" className="space-orange" />
             <span className="ship-window" />
           </div>
           <div className="cute-rocket">🚀</div>
-          <div className="destination-planet orange-destination"><CitrusSprite type="pomelo" className="planet-mascot" /></div>
-          <div className="destination-planet pomelo-destination"><CitrusSprite type="orange" className="planet-mascot" /></div>
-          <div className="portal-stars">✦ 𖤐 ♡ 🍊 ✧ 🍈 ♡ 𖤐 ✦</div>
-          <div className="portal-caption">倒计时结束后，橙柚小火箭发射去往米柚星球……</div>
+          <div className="destination-planet orange-destination"><DogSprite type="pomelo" className="planet-mascot" /></div>
+          <div className="destination-planet pomelo-destination"><DogSprite type="orange" className="planet-mascot" /></div>
+          <div className="portal-stars">✦ 𖤐 ♡ 🐾 ✧ ✨ ♡ 𖤐 ✦</div>
+          <div className="portal-caption">倒计时结束后，两只小狗坐上小火箭，出发去往我们的星球……</div>
         </div>
       )}
       <div className="invitation-stage">
@@ -776,16 +817,16 @@ function InvitationLayer({ onReveal }) {
           <div className="ticket-perf" />
           <span className="ticket-label">ADMIT TWO</span>
           <div className="ticket-poster">
-            <span>口碑佳作</span>
-            <strong>给阿嬷的情书</strong>
-            <small>潮汕方言 2D</small>
+            <span>信万广场 CGV</span>
+            <strong>《奥德赛》</strong>
+            <small>影城约会计划</small>
           </div>
           <div className="ticket-meta">
-            <b>明天 05-20</b>
-            <span>20:50 - 22:48 · 12号厅</span>
-            <span>尊贵区 · 8排8座 / 8排9座</span>
+            <b>2026年8月13日</b>
+            <span>16:00 开场 · 18:52 散场</span>
+            <span>信万广场 CGV 影城</span>
           </div>
-          <div className="ticket-code">DINNER / MOVIE / LETTER</div>
+          <div className="ticket-code">300DAYS / MOVIE / LUNCH</div>
           <div className="ticket-hint">点我展开 / 再点收回完整票根</div>
         </button>
         <button
@@ -798,53 +839,44 @@ function InvitationLayer({ onReveal }) {
         </button>
         <section className="invitation-letter">
           <div className="letter-glow" aria-hidden="true" />
-          <div className="letter-stamp">May 19</div>
-          <div className="wax-seal" aria-hidden="true">翟</div>
+          <div className="letter-stamp">Aug 09</div>
+          <div className="wax-seal" aria-hidden="true">琛</div>
           <div className="letter-ribbon" aria-hidden="true">
             {words.map((word) => <span key={word}>{word}</span>)}
           </div>
           <div className="citrus-duo letter-citrus-duo" aria-hidden="true">
-            <CitrusSprite type="pomelo" className={transitioning ? 'fly-to-corner' : ''} />
-            <CitrusSprite type="orange" className={transitioning ? 'fly-to-corner' : ''} />
+            <DogSprite type="pomelo" className={transitioning ? 'fly-to-corner' : ''} />
+            <DogSprite type="orange" className={transitioning ? 'fly-to-corner' : ''} />
             <div className="page-corner" />
           </div>
           <p className="letter-kicker">一封很普通但很认真送达的邀请信</p>
-          <h1><span>致</span><NameTrigger id="name-title" /></h1>
+          <h1><span>致</span><NameTrigger id="name-title">小琳</NameTrigger></h1>
           <div className="letter-body">
             <p style={{ '--line': 1 }}>展信佳。</p>
             <p style={{ '--line': 2 }}>
-              亲爱的<NameTrigger id="name-dear" />，你还记得2025年5月20日我们在干嘛吗? 好像在线上一起看剧，
-              好像在计划约羽毛球馆，好像某人私自跑出去打球累成个熊样......真像是昨天才发生的事情，
-              一切都历历在目。我们都会怀念过去，也同样期待未来，欢迎来到属于我们的第一个520~
+              亲爱的<NameTrigger id="name-dear">小琳</NameTrigger>，你还记得2025年10月13日我们在干什么嘛？好像是我们先去秘密西餐厅吃饭，然后一起去散步，当时还说先来一个月试用期，转眼间三百天就过去啦......真像是昨天才发生的事情，一切都历历在目。我们都会怀念过去，也同样期待未来。想此时你如同我一般，将目光投向远方，也同样期待未来，欢迎来到属于我们的第一个300Days~
             </p>
             <p style={{ '--line': 3 }}>
               让我们言归正传!
             </p>
             <p style={{ '--line': 4 }}>
-              这段时间我们围着工作团团转、跟着精灵一路追，已经很久没有过正式的约会啦~
-              冒昧占用你一点点时间，向你发出一份非常正式的邀请：
+              这段时间你在郑州准备考驾照，我在商丘，很想念你啦！想你发出一份非常正式的邀请：
             </p>
             <p style={{ '--line': 5 }}>
-              我诚挚地邀请<NameTrigger id="name-invite" />于2026年5月20日晚共进晚餐~
+              我诚挚地邀请<NameTrigger id="name-invite">小琳</NameTrigger>于2026年8月13日共进午餐~
             </p>
             <p style={{ '--line': 6 }}>
-              在这封信的背后，还有我准备好的电影票，听说你非常想看这部电影，
-              我也把它列入了约会计划的一部分~
-            </p>
-            <p style={{ '--line': 7 }}>
-              上次打完台球，听说有人没打爽，去电影院刚好会路过我们常去的台球厅，
-              看电影之前要不要去那儿消消食呢?
+              这封信的背后，还有我准备好的电影票，这是一部我非常喜欢的导演上新的佳作，我把它列入了约会计划的一部分，希望你也能喜欢~
             </p>
             <p style={{ '--line': 8 }}>
-              当然，还有最重要的，给<NameTrigger id="name-back" />按按背! 辛苦一天，这是必须的!
+              当然，还有最重要的，给<NameTrigger id="name-back">小琳</NameTrigger>按按肩膀，练车考驾照这些天辛苦啦！
             </p>
             <p style={{ '--line': 9 }}>
-              听说听女朋友的话会发达，礼物你说不买就不买，省钱小能手!
-              这个邀请函不花钱，不知道<NameTrigger id="name-satisfied" />满意不~
+              听说听女朋友的话会发达，这次我就先不邮寄礼物啦，省钱为我们多见面！这个邀请函不花钱，不知道<NameTrigger id="name-satisfied">小琳</NameTrigger>满意不~
             </p>
             <p className="letter-signoff" style={{ '--line': 10 }}>
-              爱你的小陈<br />
-              2026年5月19日
+              小琛<br />
+              2026年8月9日
             </p>
             <div className={`flower-gift flower-${flowerStage}`}>
               {flowerStage === 'hidden' && (
@@ -856,7 +888,7 @@ function InvitationLayer({ onReveal }) {
                     setFlowerStage('bloom')
                   }}
                 >
-                  请查收你的520花花
+                  请查收你的300天纪念日花花
                 </button>
               )}
               {flowerStage !== 'hidden' && (
@@ -868,10 +900,10 @@ function InvitationLayer({ onReveal }) {
                     if (nextStage === 'bloom') setFlowerBloomId(Date.now())
                     return nextStage
                   })}
-                  aria-label="520 花花"
+                  aria-label="300天纪念日花花"
                 >
-                  <img key={flowerBloomId} src={`/images/flower-cartoon.svg?bloom=${flowerBloomId}`} alt="卡通520花花" />
-                  <span>{flowerStage === 'bloom' ? '再点一下，把花花收进信里' : '520花花已查收'}</span>
+                  <img key={flowerBloomId} src={`/images/flower-cartoon.svg?bloom=${flowerBloomId}`} alt="卡通300天纪念日花花" />
+                  <span>{flowerStage === 'bloom' ? '再点一下，把花花收进信里' : '300天纪念日花花已查收'}</span>
                 </button>
               )}
             </div>
@@ -903,8 +935,8 @@ function PasswordGate({ onUnlock }) {
       <div className="soft-cloud cloud-b">520</div>
       <section className="gate-card sticker-card">
         <CuteIcon>🔐</CuteIcon>
-        <div className="tiny-label">Miyou Planet Boarding Pass</div>
-        <h1>摘米柚专属入口</h1>
+        <div className="tiny-label">Our Small Planet Boarding Pass</div>
+        <h1>我们的专属入口</h1>
         <p>请输入 520 到 612 的秘密暗号，登陆这颗每天都会长出一点点新东西的小星球。</p>
         <form onSubmit={submit} className="gate-form">
           <input
@@ -915,7 +947,7 @@ function PasswordGate({ onUnlock }) {
             onChange={(event) => { setPassword(event.target.value); setError('') }}
             aria-label="访问密码"
           />
-          <button type="submit">🍊 降落米柚星球</button>
+          <button type="submit">🍊 降落小星球</button>
         </form>
         {error && <p className="error-note">{error}</p>}
         <div className="hint-note">提示：520 + 纪念日。</div>
@@ -935,7 +967,6 @@ function Nav({ current, setCurrent }) {
   const observatoryNavOpen = Number(bag.observatory_nav_unlocked || 0) > 0
   const items = [
     ['home', '首页', '🏠'],
-    ['guide', '说明书', '📘'],
     ['checkin', '每日签到', '📮'],
     ['album', '相册', '📷'],
     ...(observatoryNavOpen ? [['telescope', '星空观测站', '🔭']] : []),
@@ -943,16 +974,11 @@ function Nav({ current, setCurrent }) {
     ['capsule', '彩蛋', '🎁']
   ]
   return (
-    <nav className="planet-nav" aria-label="米柚星球主导航">
+    <nav className="planet-nav" aria-label="300Days 纪念日导航">
       <button
         type="button"
-        title="回到可操作的 5.19 邀请信"
-        onClick={() => {
-          localStorage.removeItem('miyou-camouflage-opened')
-          localStorage.removeItem('miyou-planet-unlocked')
-          window.history.replaceState(null, '', '/')
-          window.location.reload()
-        }}
+        title="回到可操作的 8月9日邀请信"
+        onClick={returnToInvitationLayer}
       ><span>✉️</span>邀请信</button>
       {items.map(([id, label, icon]) => (
         <button key={id} className={current === id ? 'active' : ''} onClick={() => setCurrent(id)} aria-current={current === id ? 'page' : undefined}>
@@ -964,14 +990,11 @@ function Nav({ current, setCurrent }) {
 }
 
 function Hero({ setCurrent }) {
-  const todayKey = getTodayKey()
-  const todayItem = dailyAdventures.find(item => item.date === todayKey)
   const signedCount = (() => {
     try { return filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', [])).length } catch { return 0 }
   })()
-  const currentIndex = Math.min(Math.max(dateDiffDays(new Date(), new Date(START_DATE)) + 1, 0), dailyAdventures.length)
-  const progressPercent = Math.max(0, Math.min(100, (signedCount / dailyAdventures.length) * 100))
-  const orbitAngle = Math.max(0, Math.min(360, (currentIndex / dailyAdventures.length) * 360 - 90))
+  const progressPercent = Math.max(0, Math.min(100, (signedCount / 65) * 100))
+  const orbitAngle = Math.max(0, Math.min(360, (300 / 365) * 360 - 90))
 
   return (
     <section className="hero-section">
@@ -980,45 +1003,38 @@ function Hero({ setCurrent }) {
         <div className="orbit orbit-two"><i>⭐</i></div>
         <div className="miyou-planet">
           <span className="planet-shine" />
-          <CitrusSprite type="pomelo" className="hero-pomelo" />
+          <DogSprite type="me" className="hero-pomelo" />
           <span className="planet-leaf" />
         </div>
-        <CitrusSprite type="orange" className="orbit-orange" />
-        <span className="hero-orbit-progress" style={{ '--orbit-angle': `${orbitAngle}deg` }}><b>{currentIndex || 1}</b></span>
-        <span className="floating-note note-one">Day 01 / 02 / 03</span>
-        <span className="floating-note note-two">Day 05 主题切换</span>
-        <span className="floating-note note-three">Day 08 星光小游戏</span>
+        <DogSprite type="partner" className="orbit-orange" />
+        <span className="hero-orbit-progress" style={{ '--orbit-angle': `${orbitAngle}deg` }}><b>{300}</b></span>
+        <span className="floating-note note-one">300 天纪念日</span>
+        <span className="floating-note note-two">365 天星图</span>
       </div>
       <div className="hero-copy sticker-card doodle-border">
-        <CuteIcon>🍊</CuteIcon>
-        <div className="tiny-label">Miyou Planet · Open-source reference kit</div>
-        <h1>米柚星球模板</h1>
-        <h2>五个完整互动案例，剩余日期由你继续写</h2>
+        <CuteIcon>♡</CuteIcon>
+        <div className="tiny-label">300Days — Our Small Universe</div>
+        <h1>300Days</h1>
+        <h2>我们已经走过的每一个今天</h2>
         <p>
-          这是一个可直接运行的 Vite + React 样品站：Day 01、02、03 保留连续谜题与绘制案例，
-          Day 05 用直接进入的黑暗迷宫演示全站主题切换，Day 08 则展示切换后星际主题下的独立小游戏。
-          其余日期没有预置内容，等你放进自己的故事。
+          这是只属于你的小城堡，一段慢慢翻开的纪念日日记。我们一起走过 300 天，今天是纪念日，也是新的开始。
         </p>
         <div className="hero-stats">
-          <span>📚 {dailyAdventures.length} 个可运行案例</span>
-          <span>🧩 其余日期留作扩展</span>
-          <span>☁ 本地可运行 · 云端可选</span>
+          <span>✨ 300天纪念日：已达成</span>
+          <span>🌙 一周年：还有 {Math.max(0, 365 - 300)} 天</span>
         </div>
-        <div className="hero-progress-card" aria-label={`已经签到 ${signedCount} 天，共 ${dailyAdventures.length} 天`}>
+        <div className="hero-progress-card" aria-label={`已经签到 ${signedCount} 天，共 65 天`}>
           <div className="hero-progress-topline">
-            <strong>米柚星球航行进度</strong>
-            <span>{signedCount}/{dailyAdventures.length}</span>
+            <strong>纪念日星图进度</strong>
+            <span>{signedCount}/65</span>
           </div>
           <div className="hero-progress-track"><i style={{ width: `${progressPercent}%` }} /></div>
-          <small>小橙子今天停在 Day {currentIndex || 1} 附近，等新的惊喜慢慢长出来。</small>
+          <small>今天的旅程在 300 号星图上，明天也会继续往前走。</small>
         </div>
-        {todayItem && <div className="today-ribbon">今日任务：{todayItem.icon} {todayItem.title}</div>}
         <div className="hero-actions">
-          <button onClick={() => setCurrent('checkin')}>📮 打开五日样例</button>
-          <button className="ghost" onClick={() => setCurrent('guide')}>📘 阅读模板说明</button>
+          <button onClick={() => setCurrent('checkin')}>📮 打开签到星图</button>
         </div>
-        <div className="newbie-route" role="note"><strong>第一次怎么玩：</strong><span>① 点“打开五日样例” → ② 从 Day 01 开始完成上方任务 → ③ 任务完成后点底部签到；Day 05 会带你进入主题转场，Day 08 在新星空中继续玩。</span></div>
-        <StarVoyageDock setCurrent={setCurrent} />
+        <div className="newbie-route" role="note"><strong>今日提醒：</strong><span>今天是我们 300 天纪念日；从这里开始，接下来的每一天都值得被认真打开。</span></div>
       </div>
     </section>
   )
@@ -1049,7 +1065,7 @@ function getInitialCheckinDay() {
   try {
     const signedDays = filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', []))
     const completedDays = filterGateInvalidSignedDays(getRoleJson('miyou-completed-days', []))
-    if (!signedDays.length && !completedDays.length) return 1
+    if (!signedDays.length && !completedDays.length) return dailyAdventures[0]?.day || 300
 
     const nextUnsignedOpen = dailyAdventures.find(item => isUnlocked(item) && !signedDays.includes(item.day))
     if (nextUnsignedOpen) return nextUnsignedOpen.day
@@ -1057,13 +1073,13 @@ function getInitialCheckinDay() {
     const todayItem = dailyAdventures.find(item => item.date === getTodayKey() && isUnlocked(item))
     if (todayItem) return todayItem.day
   } catch {}
-  return [...dailyAdventures].reverse().find(item => item.date <= getTodayKey() && isUnlocked(item))?.day || 1
+  return dailyAdventures[0]?.day || 300
 }
 
 function CheckIn() {
   applyTemplateFiveDayStateOnce()
   const todayKey = getTodayKey()
-  const [selectedDay, setSelectedDay] = useState(getInitialCheckinDay)
+  const [selectedDay, setSelectedDay] = useState(() => getInitialCheckinDay())
   const [signed, setSigned] = useState(() => filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', [])))
   const [completedTasks, setCompletedTasks] = useState(() => filterGateInvalidSignedDays(getRoleJson('miyou-completed-days', [])))
   const selected = dailyAdventures.find(item => item.day === selectedDay) || dailyAdventures[0]
@@ -1076,9 +1092,26 @@ function CheckIn() {
     && (selected.type !== 'flowerCrown' || isFlowerCrownTaskActuallyComplete(selected.day))
     && (selected.type !== 'photoWallFinale' || isPhotoWallFinaleActuallyComplete(selected.day))
     && (selected.type !== 'anniversary' || getRoleJson(ANNIVERSARY_ANSWER_KEY, false) === true || signed.includes(selected.day))
-  const currentIndex = Math.min(Math.max(dateDiffDays(new Date(), new Date(START_DATE)) + 1, 0), dailyAdventures.length)
-  const percent = Math.round((Math.max(0, signed.length) / dailyAdventures.length) * 100)
-  const previewMode = isPreviewMode()
+  const currentIndex = 300
+  const futureDaySlots = Array.from({ length: 65 }, (_, index) => ({
+    day: 301 + index,
+    date: '2099-12-31',
+    title: `未来第 ${index + 1} 天`,
+    icon: '🔒',
+    type: 'futureLocked',
+    theme: '未来签到等待开启',
+    reward: '未来尚未到来',
+    prompt: '这一天还没有打开。',
+    secret: '尚未签到',
+    answer: '',
+    image: '',
+    memoryTitle: '',
+    memoryCaption: ''
+  }))
+  const visibleDailyItems = [...dailyAdventures, ...futureDaySlots]
+  const futureDayTotal = futureDaySlots.length
+  const totalTargetDayCount = 65
+  const percent = Math.round((Math.max(0, signed.length) / Math.max(1, totalTargetDayCount)) * 100)
 
   React.useEffect(() => {
     let alive = true
@@ -1120,6 +1153,7 @@ function CheckIn() {
   }, [])
 
   function completeTask(day) {
+    const alreadyCompleted = getRoleJson('miyou-completed-days', []).includes(day)
     setCompletedTasks(previous => {
       if (previous.includes(day)) return previous
       const next = Array.from(new Set([...previous, day])).sort((a, b) => a - b)
@@ -1130,6 +1164,11 @@ function CheckIn() {
       logCloudEvent('task_completed', { day }, day)
       return next
     })
+    if (!alreadyCompleted && day === 300) {
+      const nextBag = addBackpackItems([{ id: 'day300_badge', count: 1 }])
+      syncCloudBackpack(nextBag)
+      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '获得道具：300天纪念徽章，它带着盖章动画去小背包啦。' }))
+    }
   }
 
   function signToday() {
@@ -1144,14 +1183,8 @@ function CheckIn() {
     window.dispatchEvent(new Event('miyou-signed-updated'))
     markCloudSigned(selected.day, selected.date)
     logCloudEvent('signed_day', { day: selected.day, title: selected.title }, selected.day)
-    if (selected.day === 23) {
-      const anniversaryDay = dailyAdventures.find(entry => entry.day === 24)
-      if (anniversaryDay && isUnlocked(anniversaryDay)) {
-        setSelectedDay(24)
-        window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '611 照片墙已盖章，612 一周年电影入口已经亮起。' }))
-      } else {
-        window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '611 已完成。明天 00:00，来打开 612 一周年电影放映厅。' }))
-      }
+    if (selected.day === 300) {
+      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '300 天纪念日已签到，未来的日子继续温柔铺开。' }))
     }
   }
 
@@ -1168,44 +1201,44 @@ function CheckIn() {
   return (
     <section className="content-section checkin-section">
       <header className="section-heading playful-heading">
-        <span>Five featured reference days</span>
-        <h2>五个互动签到案例</h2>
-        <p>Day 01、02、03 展示连续互动；Day 05 直接进入黑暗迷宫并切换主题；Day 08 在新主题下展示 1 光年信号小游戏。其余日期全部留白。</p>
-        <p className="daily-refresh-note">开发预览：地址后加 <code>?preview=1</code> 可临时解锁全部五个案例。</p>
-        <div className="checkin-reset-sample"><button type="button" onClick={resetWholeSampleAndReload}>↺ 重置整个样品</button><small>清空签到、任务、火柴、钥匙、迷宫、Day8 信号和主题，立即回到 Day 01；源代码不会删除。</small></div>
+        <span>300 → 365</span>
+        <h2>300→365每日签到星图</h2>
+        <p>每天打开一格星图：已经抵达的日子，完成小任务就能点亮签到；还没到来的格子，先保持一点神秘。</p>
+        <p className="daily-refresh-note">每日更新次日签到任务</p>
       </header>
       <div className="checkin-layout">
         <aside className="calendar-card sticker-card">
           <div className="calendar-topline">
-            <strong>米柚进度</strong>
-            <span>{signed.length}/{dailyAdventures.length}</span>
+            <strong>签到进度</strong>
+            <span>{signed.length}/65</span>
           </div>
           <div className="progress-track"><span style={{ width: `${percent}%` }} /></div>
           <div className="day-grid">
-            {dailyAdventures.map(item => {
+            {visibleDailyItems.map(item => {
               const unlockedDay = isUnlocked(item)
               const done = signed.includes(item.day)
               const completed = completedTasks.includes(item.day)
               const today = item.date === todayKey
               const selected = selectedDay === item.day
               const postponed = isChildrenSpecialPostponed(item)
-              const statusText = postponed ? '延期' : done ? '已签' : today ? '今日' : !unlockedDay ? '未解锁' : completed ? '待签' : '可做'
+              const isFutureSlot = item.type === 'futureLocked'
+              const statusText = isFutureSlot ? '锁定' : postponed ? '延期' : done ? '已签' : today ? '今日' : !unlockedDay ? '未解锁' : completed ? '待签' : '可做'
               return (
                 <button
                   key={item.day}
                   className={`day-dot ${selected ? 'selected' : ''} ${unlockedDay && !postponed ? 'open' : 'locked'} ${postponed ? 'postponed' : ''} ${done ? 'done' : ''} ${completed && !done ? 'completed' : ''} ${today ? 'today' : ''}`}
-                  onClick={() => selectDay(item)}
+                  onClick={() => { if (unlockedDay && !isFutureSlot) selectDay(item) }}
                   title={`${item.date} ${item.title} · ${statusText}`}
                   aria-label={`Day ${item.day}，${item.title}，${statusText}`}
+                  disabled={isFutureSlot || !unlockedDay}
                 >
-                  <span className="day-dot-icon">{postponed ? '🔒' : done ? '💖' : unlockedDay ? item.icon : '🔒'}</span>
+                  <span className="day-dot-icon">{isFutureSlot ? '🔒' : postponed ? '🔒' : done ? '💖' : unlockedDay ? item.icon : '🔒'}</span>
                   <small>Day {item.day}</small>
                   <em className="day-status-badge">{statusText}</em>
                 </button>
               )
             })}
           </div>
-          <p className="calendar-note">今天是 {todayKey}；样品最后一格是 Day {TEMPLATE_LAST_DAY}。{previewMode ? '当前为开发预览模式，全部五天样例临时解锁。' : '要体验所有案例，可在地址后加 ?preview=1。'}</p>
         </aside>
         <DailyPanel item={selected} unlocked={unlocked} resetAvailable={resetAvailable} signed={signed.includes(selected.day)} taskCompleted={taskCompleted} onTaskComplete={completeTask} onSign={signToday} />
       </div>
@@ -1533,7 +1566,7 @@ function SerialRiddleFirework({ item, taskCompleted, onTaskComplete }) {
   function launchFirework() {
     if (!state.hasFirework || !state.litMatch || state.fireworksStarted) return
     const nextMatches = Math.max(0, state.matches)
-    update({ litMatch: false, fireworksStarted: true, backpackSaved: true }, '烟花燃放成功！小翟521快乐。剩余火柴和火柴盒已经收入小背包。', 'day2_firework_launched')
+    update({ litMatch: false, fireworksStarted: true, backpackSaved: true }, '烟花燃放成功！小琳521快乐。剩余火柴和火柴盒已经收入小背包。', 'day2_firework_launched')
     setShowFireworks(true)
     window.setTimeout(() => setShowFireworks(false), 26000)
     if (!state.backpackSaved) {
@@ -1619,7 +1652,7 @@ function SerialRiddleFirework({ item, taskCompleted, onTaskComplete }) {
           {state.fireworksStarted && (
             <div className="firework-success-card">
               <div className="tiny-label">烟花燃放成功</div>
-              <h4>小翟521快乐</h4>
+              <h4>小琳521快乐</h4>
               <p>今天的谜题已经通关，签到按钮已经开放啦。</p>
             </div>
           )}
@@ -1692,7 +1725,7 @@ function SerialRiddleFirework({ item, taskCompleted, onTaskComplete }) {
           {Array.from({ length: 78 }, (_, index) => <b className="miyou-particle" key={`particle-${index}`} style={{ '--i': index }} />)}
           {Array.from({ length: 32 }, (_, index) => <em className="miyou-heart-spark" key={`heart-${index}`} style={{ '--i': index }}>♡</em>)}
           <div className="miyou-final-title">
-            <span>小翟</span>
+            <span>小琳</span>
             <span>521</span>
             <span>快乐</span>
           </div>
@@ -1814,7 +1847,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
   const referenceImage = activeStage === 'heart' ? item.heartReference : item.smileReference
   const stageTitle = activeStage === 'heart' ? '第二杯 · 另一个版本' : '第一杯 · 奶泡表情'
   const stageHint = activeStage === 'heart'
-    ? '再试着画出小陈后来补上的另一个版本。'
+    ? '再试着画出小琛后来补上的另一个版本。'
     : '照着奶泡里那团白白的形状，画出你看到的表情。'
 
   React.useEffect(() => {
@@ -2173,7 +2206,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
         setCloudProgressUserId(identity?.id || null)
       }
       syncProgress(next, `day3_${activeStage}_submitted_for_check`)
-      setNote('已经提交啦，等小陈检查盖章~')
+      setNote('已经提交啦，等小琛检查盖章~')
       resetCanvas()
     } catch (error) {
       console.warn('[miyou day3] drawing submit failed', error)
@@ -2215,7 +2248,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
       }
     }
     syncProgress(next, `day3_${activeStage}_retry_requested_owner_device`)
-    setNote('已经请小翟再试试看啦。')
+    setNote('已经请小琳再试试看啦。')
   }
 
   return (
@@ -2256,9 +2289,9 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
           <div className="foam-tools">
             <label>画笔粗细 <input type="range" min="4" max="14" value={brushSize} onChange={event => setBrushSize(Number(event.target.value))} /></label>
             <button type="button" onClick={resetCanvas} disabled={busy || stageLocked}>清空重画</button>
-            <button type="button" className="foam-submit" onClick={submitDrawing} disabled={busy || stageLocked}>{busy ? '提交中…' : '提交给小陈检查'}</button>
+            <button type="button" className="foam-submit" onClick={submitDrawing} disabled={busy || stageLocked}>{busy ? '提交中…' : '提交给小琛检查'}</button>
             {ownerDevice && stageSubmitted && !stageApproved && <button type="button" className="foam-owner-approve" onClick={approveCurrentStage}>检查盖章通过</button>}
-            {ownerDevice && stageSubmitted && !stageApproved && <button type="button" className="foam-owner-retry" onClick={askRetryCurrentStage}>请小翟再试试看</button>}
+            {ownerDevice && stageSubmitted && !stageApproved && <button type="button" className="foam-owner-retry" onClick={askRetryCurrentStage}>请小琳再试试看</button>}
             {stageApproved && !stageReplaying && <button type="button" className="foam-redraw" onClick={() => startRedrawStage(activeStage)}>我想重画</button>}
           </div>
 
@@ -2607,7 +2640,7 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
               >
                 {isDoor && <i className="maze-door-symbol">⌑</i>}
                 {isStart && !isHero && <i className="maze-start-symbol">入口</i>}
-                {isHero && <span className="maze-hero bubble-yuzu-hero"><CitrusSprite type="pomelo" className="bubble-yuzu" /></span>}
+                {isHero && <span className="maze-hero bubble-yuzu-hero"><DogSprite type="pomelo" className="bubble-yuzu" /></span>}
               </span>
             )
           }))}
@@ -2652,8 +2685,8 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
           <span className="d4t-key">🗝️</span>
           <span className="d4t-orbit-ring d4t-orbit-ring-a" aria-hidden="true" />
           <span className="d4t-orbit-ring d4t-orbit-ring-b" aria-hidden="true" />
-          <span className="d4t-mascot-track d4t-pomelo-track d4t-orbiting-mascot"><CitrusSprite type="pomelo" className="d4t-original-mascot" /></span>
-          <span className="d4t-mascot-track d4t-orange-track d4t-orbiting-mascot"><CitrusSprite type="orange" className="d4t-original-mascot" /></span>
+          <span className="d4t-mascot-track d4t-pomelo-track d4t-orbiting-mascot"><DogSprite type="pomelo" className="d4t-original-mascot" /></span>
+          <span className="d4t-mascot-track d4t-orange-track d4t-orbiting-mascot"><DogSprite type="orange" className="d4t-original-mascot" /></span>
           {Array.from({ length: 54 }, (_, index) => <i className="d4t-star" key={`d4t-star-${index}`} style={{ '--angle': `${index * 137.5}deg`, '--distance': `${180 + (index % 14) * 42}px`, '--mid-distance': `${58 + (index % 8) * 12}px`, '--size': `${8 + (index % 6) * 2}px`, '--delay': `${(index % 32) * -0.06}s` }}>✦</i>)}
           {Array.from({ length: 30 }, (_, index) => <i className="d4t-dust" key={`d4t-dust-${index}`} style={{ '--angle': `${index * 89}deg`, '--distance': `${145 + (index % 12) * 48}px`, '--size': `${3 + (index % 4)}px`, '--delay': `${(index % 21) * -0.08}s` }} />)}
           {Array.from({ length: 14 }, (_, index) => <i className="d4t-heart" key={`d4t-heart-${index}`} style={{ '--angle': `${index * 73}deg`, '--distance': `${130 + (index % 8) * 50}px`, '--size': `${13 + (index % 4) * 3}px`, '--delay': `${(index % 15) * -0.12}s` }}>♡</i>)}
@@ -2667,7 +2700,7 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
               <span className="big-star-door">🚪</span>
               <span className="door-orbit one" />
               <span className="door-orbit two" />
-              <CitrusSprite type="pomelo" className="door-waiting-yuzu" />
+              <DogSprite type="pomelo" className="door-waiting-yuzu" />
             </div>
             <strong>你已到达迷宫出口</strong>
             <p>{hasKey ? '眼前出现了一扇木门，门缝里正在漏出薄荷色的银河光。' : '眼前出现了一扇木门，但它需要一把奇怪的钥匙。先拿到钥匙，再来打开这道门。'}</p>
@@ -2704,7 +2737,7 @@ const DAY8_DECODE_STEPS = [
   {
     eyebrow: 'Signal fragment 02',
     title: '那一天，有一束很清楚的信号。',
-    body: '2025 年 5 月 27 日，小翟在复杂的数据里，完成了一次超过 5σ 的探测。'
+    body: '2025 年 5 月 27 日，小琳在复杂的数据里，完成了一次超过 5σ 的探测。'
   },
   {
     eyebrow: 'Signal fragment 03',
@@ -2917,9 +2950,9 @@ function OneLightYearSignalGame({ item, taskCompleted = false, onTaskComplete = 
       <div className="day8-eyepiece" aria-label="望远镜镜筒里的星球和烦恼云">
         <div className="day8-scope-stars" aria-hidden="true"><i /><i /><i /></div>
         <div className="day8-observed-planet">
-          <CitrusSprite type="pomelo" className={`day8-yuzu-planet ${shouldGlowYuzu ? 'self-glowing' : ''}`} />
+          <DogSprite type="pomelo" className={`day8-yuzu-planet ${shouldGlowYuzu ? 'self-glowing' : ''}`} />
           {shouldGlowYuzu && <button type="button" className="day8-self-light" onClick={collectSelfLight} aria-label="收集小柚子自己身上的 0.09 点光">✦</button>}
-          <CitrusSprite type="orange" className="day8-orange-moon" />
+          <DogSprite type="orange" className="day8-orange-moon" />
         </div>
         {DAY8_SIGNAL_CLOUDS.map(cloud => {
           const cleared = state.clearedClouds.includes(cloud.id)
@@ -2959,7 +2992,7 @@ function OneLightYearSignalGame({ item, taskCompleted = false, onTaskComplete = 
             <div className="tiny-label">One light-year letter · 2025.05.27 → 2026.05.27</div>
             <h4>5.09 点星光，已装瓶</h4>
             <p>这不是一个突然冒出来的数字，而是一年前那束光走到今天之后，终于被观测站完整接住。</p>
-            <p>2025 年 5 月 27 日，小翟完成了超过 5σ 的探测。那天的数据、坚持和判断，隔着一整年，又轻轻照到了现在。</p>
+            <p>2025 年 5 月 27 日，小琳完成了超过 5σ 的探测。那天的数据、坚持和判断，隔着一整年，又轻轻照到了现在。</p>
             <p>5 颗星星来自云后，最后 0.09 点光来自小柚子自己。以后如果课题暂时被云挡住，也请记得：你不是没有光，你只是有时候离自己太近，忘了看见。</p>
           </div>
         </div>
@@ -3183,8 +3216,8 @@ function VacationBreakQuest({ item, taskCompleted = false, onTaskComplete = () =
         <div className="day9-double-bed">
           <i className="bed-headboard" aria-hidden="true" />
           <div className="day9-couple-rest">
-            <CitrusSprite type="pomelo" className="day9-resting-yuzu" />
-            <CitrusSprite type="orange" className="day9-resting-orange" />
+            <DogSprite type="pomelo" className="day9-resting-yuzu" />
+            <DogSprite type="orange" className="day9-resting-orange" />
             <span className="day9-sleep-bubble">{isComplete ? '一起充电中…' : '放假准备中'}</span>
             {has('blanket') && <i className="day9-blanket-layer" aria-hidden="true" />}
             {has('pillows') && <><i className="day9-pillow-layer pillow-yuzu" aria-hidden="true" /><i className="day9-pillow-layer pillow-orange" aria-hidden="true" /></>}
@@ -3299,7 +3332,7 @@ const CHILDREN_SPECIAL_CONFIG = {
     title: '做一颗全世界最好看的羽毛球',
     subtitle: '先把好感度补到 100%，再把三天收集的装饰装上去。',
     initialMessage: '小柚子抱着手：哼，那我要看看你做得好不好看。',
-    completeMessage: '小翟儿童节快乐。今天不用长大，今天只要做一个被好好喜欢的小孩。',
+    completeMessage: '小琳儿童节快乐。今天不用长大，今天只要做一个被好好喜欢的小孩。',
     actions: [
       { id: 'opening', icon: '🎈', title: '说：今天可以当小朋友', done: '开场白通过', message: '小柚子：这句话听起来还不错。好感度悄悄上涨。' },
       { id: 'balloons', icon: '🎈', title: '慢慢吹起三颗气球', done: '气球升起来', message: '气球没有被吓到，小朋友也没有。' },
@@ -3431,10 +3464,10 @@ function ChildrenComfortQuest({ item, taskCompleted = false, onTaskComplete = ()
         <div className="children-scene" aria-label={config.title}>
           <div className="children-sky" aria-hidden="true"><i /><i /><i /></div>
           <div className={`children-yuzu ${state.completed ? 'happy' : completedCount > 2 ? 'softened' : 'upset'}`} aria-hidden="true">
-            <CitrusSprite type="pomelo" />
+            <DogSprite type="pomelo" />
             <span>{state.completed ? '被哄好啦' : completedCount > 2 ? '可以靠近一点' : '哼'}</span>
           </div>
-          <div className="children-orange" aria-hidden="true"><CitrusSprite type="orange" /><span>认真哄哄中</span></div>
+          <div className="children-orange" aria-hidden="true"><DogSprite type="orange" /><span>认真哄哄中</span></div>
           <div className="children-prop-stage" aria-hidden="true">
             {item.day === 10 && <><b className="mood-cloud cloud-a">气鼓鼓云</b><b className="warm-water">温水</b><b className="soft-note">我先认真听你说</b></>}
             {item.day === 11 && <><b className="mood-basket">好心情篮子</b><b className="rainbow-arc">彩虹</b><b className="paper-plane">纸飞机</b></>}
@@ -3461,7 +3494,7 @@ function ChildrenComfortQuest({ item, taskCompleted = false, onTaskComplete = ()
           </div>
           {item.day === 13 && state.completed && (
             <div className="children-final-note">
-              <strong>小翟儿童节快乐。</strong>
+              <strong>小琳儿童节快乐。</strong>
               <span>希望你心里那个会认真开心、也会认真委屈的小朋友，永远都可以被好好接住。今天不用长大。今天只要收下这颗全世界最好看的羽毛球。</span>
             </div>
           )}
@@ -3795,7 +3828,7 @@ function SleepAtmosphereLab({ item, taskCompleted = false, onTaskComplete = () =
           <span className="sleep-entry-house">🏠</span>
           <span className="sleep-entry-cat">🐈</span>
           <span className="sleep-entry-dog">🐶</span>
-          <span className="sleep-entry-yuzu"><CitrusSprite type="pomelo" /></span>
+          <span className="sleep-entry-yuzu"><DogSprite type="pomelo" /></span>
         </div>
         <div>
           <span className="tiny-label">603 Sleep Atmosphere Lab</span>
@@ -3860,7 +3893,7 @@ function SleepAtmosphereLab({ item, taskCompleted = false, onTaskComplete = () =
               tabIndex={0}
               aria-label="拖动小柚子找睡觉的位置"
             >
-              <CitrusSprite type="pomelo" className="sleep-yuzu-sprite" />
+              <DogSprite type="pomelo" className="sleep-yuzu-sprite" />
               <small>小柚子{state.yuzu.placedAt ? ` · ${SLEEP_PLACES.find(p => p.id === state.yuzu.placedAt)?.label || ''}` : ''}</small>
               {(state.yuzu.bubble || '哪里比较好睡呢?') && <em>{state.yuzu.bubble || '哪里比较好睡呢?'}</em>}
             </div>
@@ -3869,7 +3902,7 @@ function SleepAtmosphereLab({ item, taskCompleted = false, onTaskComplete = () =
         <aside className="sleep-animal-list">
           {visibleAnimals.map(animal => {
             const asleep = animal.id === 'yuzu' ? state.yuzu.asleep : state.asleep[animal.id]
-            return <button type="button" key={animal.id} className={`sleep-animal-card ${animal.id === 'yuzu' ? 'yuzu-card' : ''} ${state.selectedAnimal === animal.id ? 'selected' : ''} ${asleep ? 'asleep' : ''}`} onClick={() => selectAnimal(animal.id)}><span>{animal.id === 'yuzu' ? <CitrusSprite type="pomelo" /> : animal.icon}</span><strong>{animal.name}</strong><small>{asleep ? '已睡着' : state.selectedAnimal === animal.id ? '当前照顾' : '等待'}</small></button>
+            return <button type="button" key={animal.id} className={`sleep-animal-card ${animal.id === 'yuzu' ? 'yuzu-card' : ''} ${state.selectedAnimal === animal.id ? 'selected' : ''} ${asleep ? 'asleep' : ''}`} onClick={() => selectAnimal(animal.id)}><span>{animal.id === 'yuzu' ? <DogSprite type="pomelo" /> : animal.icon}</span><strong>{animal.name}</strong><small>{asleep ? '已睡着' : state.selectedAnimal === animal.id ? '当前照顾' : '等待'}</small></button>
           })}
           {allRegularAsleep && (
             <div className="sleep-yuzu-anywhere-tip">
@@ -3881,10 +3914,10 @@ function SleepAtmosphereLab({ item, taskCompleted = false, onTaskComplete = () =
         </aside>
       </div>
       {finalOpen && createPortal(
-        <div className="sleep-final-modal" role="dialog" aria-modal="true" aria-label="小翟夜夜都好眠">
+        <div className="sleep-final-modal" role="dialog" aria-modal="true" aria-label="小琳夜夜都好眠">
           <div className="sleep-final-card">
-            <div className="sleep-cartoon"><CitrusSprite type="pomelo" /><span className="sleep-blanket" /><i>💤</i></div>
-            <h4>小翟夜夜都好眠~</h4>
+            <div className="sleep-cartoon"><DogSprite type="pomelo" /><span className="sleep-blanket" /><i>💤</i></div>
+            <h4>小琳夜夜都好眠~</h4>
             <p>小动物们都睡着啦。小柚子试过树枝、树洞、门口、狗窝、月亮、云朵和房顶后发现：原来哪里都好好睡，真舒服~</p>
             <p><b>获得道具：好眠小夜灯</b></p>
             <button type="button" onClick={() => setFinalOpen(false)}>收好小夜灯</button>
@@ -4090,7 +4123,7 @@ function FlowerCrownQuest({ item, taskCompleted = false, onTaskComplete = () => 
             <div className={`flower-yuzu-crown-on-head ${state.worn ? 'show' : ''}`} aria-hidden="true">
               {crownPieces.map((piece, index) => renderCrownPiece(piece, index, 'wear'))}
             </div>
-            <CitrusSprite type="pomelo" />
+            <DogSprite type="pomelo" />
           </div>
           <p>{state.worn ? '戴好啦，好像春天在头上开花。' : '小柚子乖乖坐好，等一顶花花小王冠。'}</p>
           <button type="button" className="flower-wear-button" onClick={wearCrown} disabled={!readyToWear || state.worn}>
@@ -4128,7 +4161,7 @@ function FlowerCrownQuest({ item, taskCompleted = false, onTaskComplete = () => 
                 <div className="flower-yuzu-crown-on-head show" aria-hidden="true">
                   {crownPieces.map((piece, index) => renderCrownPiece(piece, index, 'wear'))}
                 </div>
-                <CitrusSprite type="pomelo" />
+                <DogSprite type="pomelo" />
               </div>
             </div>
             <h4>获得道具：花花小王冠</h4>
@@ -4160,7 +4193,7 @@ function OrigamiCompanionQuest({ item, taskCompleted = false, onTaskComplete = (
         <span className="tiny-label">Reality Craft · 605</span>
         <h4>今天的小伴读：折纸小狗</h4>
         <p>{item.memoryCaption}</p>
-        <p>去年的这天，它陪小翟坐在键盘旁边；今年请小翟在现实中找到小陈，和他一起再折一只。</p>
+        <p>去年的这天，它陪小琳坐在键盘旁边；今年请小琳在现实中找到小琛，和他一起再折一只。</p>
         <div className="origami-direct-sign-note">
           <strong>🐶 现实中一起完成就好</strong>
           <span>网页里不用闯关，小伴读已经开好门啦，可以直接点下面的签到按钮。</span>
@@ -4388,7 +4421,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
   const [chatStarted, setChatStarted] = useState(false)
   const target = item.day === 18 ? 6 : 12
   const normalizedAnswer = answer.replace(/[\s·。！？!?,，、]/g, '')
-  const expectedAnswer = (item.answer || (item.day === 8 ? '520612' : '摘米柚')).replace(/[\s·。！？!?,，、]/g, '')
+  const expectedAnswer = (item.answer || (item.day === 8 ? '520612' : '小星球')).replace(/[\s·。！？!?,，、]/g, '')
   const puzzleOk = normalizedAnswer === expectedAnswer
 
   if (item.type === 'serialRiddleFirework') {
@@ -4452,12 +4485,12 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
       <div className="memory-puzzle">
         <div className="memory-card">
           <div className="memory-photo-wrap">
-            <img src={item.image} alt="520 凌晨一起看剧时截下的谜面" />
+            <img src={item.image} alt="谜面图" />
           </div>
           <div className="memory-copy minimal-memory-copy">
             <div className="riddle-minimal-hint">
-              <span>2025.05.20 · 00:00</span>
-              <strong>谜底是七个字</strong>
+              <span>2026.08.09 · 猜谜语签到</span>
+              <strong>谜底是我们一起走过的地方</strong>
             </div>
             <label className="riddle-answer">
               <input
@@ -4468,8 +4501,8 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
                   setAnswerError('')
                   setChatStarted(false)
                 }}
-                placeholder="输入七字谜底"
-                aria-label="输入 520 谜题答案"
+                placeholder="输入谜底答案"
+                aria-label="输入第一天谜底答案"
               />
             </label>
             <button
@@ -4482,7 +4515,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
                   onTaskComplete(item.day)
                 } else {
                   setAnswerConfirmed(false)
-                  setAnswerError('好像不是这个答案哦，再想想 00:00 那一刻。')
+                  setAnswerError('好像不是这个答案哦，再想想那天我们一起走过的地方。')
                 }
               }}
             >
@@ -4494,7 +4527,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
         {puzzleOk && answerConfirmed && (
           <div
             className={`chat-replay ${chatStarted ? 'is-playing' : 'is-ready'}`}
-            aria-label="2025 年 5 月 20 日聊天复刻"
+            aria-label="散步记忆回放"
             role="button"
             tabIndex={0}
             onClick={() => setChatStarted(true)}
@@ -4503,19 +4536,19 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
             }}
           >
             <div className="chat-phone-top">
-              <span>2025年5月20日 00:00</span>
-              <strong>苦尽柑来遇见你</strong>
+              <span>2026年8月9日 · 第一天</span>
+              <strong>第一次散步记忆</strong>
             </div>
             <div className={`chat-screen ${chatStarted ? 'animated-chat' : 'chat-waiting'}`}>
               {!chatStarted ? (
                 <div className="chat-play-prompt">
                   <span>💬</span>
-                  <strong>点击聊天框，播放那晚的聊天</strong>
+                  <strong>点击聊天框，播放那次散步的回忆</strong>
                 </div>
               ) : (
                 <>
                   <div className="chat-image-message me" style={{ '--chat-delay': '.45s' }}>
-                    <img src={item.image} alt="聊天里发送的剧截图" />
+                    <img src={item.image} alt="回忆图" />
                   </div>
                   {item.chatMessages.map((message, index) => {
                     const delay = `${1.55 + index * 1.85}s`
@@ -4526,7 +4559,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
                           <span /><span /><span />
                         </div>
                         <div className={`chat-row ${message.side}`} style={{ '--chat-delay': delay }}>
-                          <span className="chat-avatar">{message.side === 'me' ? '🍊' : '🍈'}</span>
+                          <img className="chat-avatar-img" src={message.side === 'me' ? '/images/柯基.png' : '/images/金毛.png'} alt={message.side === 'me' ? '小琛' : '小琳'} />
                           <p>{message.text}</p>
                         </div>
                       </React.Fragment>
@@ -4654,26 +4687,45 @@ function LoveBox() {
 
 
 const PHOTO_WALL_KEY = 'miyou-photo-wall-v1'
+// 柯基/金毛等只用作头像和吉祥物，历史测试期若被当成照片传上墙，一律清理，不允许出现在照片墙。
+const PHOTO_WALL_TEST_IMAGE_NAMES = new Set(['柯基.png', '金毛.png', 'corgi.png', 'golden.png', 'bichon.png', 'dog-one.png', 'dog-two.png'])
+function isPhotoWallTestImage(photo) {
+  if (!photo) return false
+  const name = String(photo.name || '')
+  if (PHOTO_WALL_TEST_IMAGE_NAMES.has(name)) return true
+  return /柯基|金毛|比熊|corgi|golden|bichon|dog[-_ ]?(one|two)/i.test(name)
+}
 const PHOTO_OWNERS = [
-  { id: 'orange', label: '小陈这一栏', icon: '🍊', hint: '上传一张去年的今天：照片、聊天截图、饭饭、路上的云都可以。' },
-  { id: 'pomelo', label: '小翟这一栏', icon: '🍈', hint: '摘米柚同学也可以每天挑一张，裱好以后一起挂上墙。' }
+  { id: 'orange', label: '小琛这一栏', icon: '/images/柯基.png', hint: '上传这一天的照片：照片、聊天截图、饭饭、路上的云都可以。' },
+  { id: 'pomelo', label: '小琳这一栏', icon: '/images/金毛.png', hint: '你也可以每天挑一张，裱好以后一起挂上墙。' }
 ]
 const PHOTO_FRAMES = [
   { id: 'cream', label: '奶油拍立得' },
   { id: 'film', label: '复古电影胶片' },
   { id: 'lace', label: '蕾丝珍珠手账' },
   { id: 'star', label: '星月鎏金相框' },
-  { id: 'citrus', label: '橙柚果冻相框' },
+  { id: 'citrus', label: '狗狗果冻相框' },
   { id: 'voyage', label: '星空漫游相框' }
 ]
-const STATIC_PHOTOS = {
-  '1-orange': { src: '/images/day1-orange-20250520.jpg', name: '照片20250520.jpg', caption: '2026-05-20 · 去年的今天', frame: 'citrus', source: 'static' },
-  '2-orange': { src: '/images/day2-orange-20250521.jpg', name: '20250521照片.jpg', caption: '2026-05-21 · 去年的今天', frame: 'star', source: 'static' }
-}
+// 照片墙只展示真正上传的照片，不再预置任何参考照片。
+const STATIC_PHOTOS = {}
 
 function loadPhotoWallLocal() {
   try {
-    return JSON.parse(localStorage.getItem(PHOTO_WALL_KEY) || '{}')
+    const stored = JSON.parse(localStorage.getItem(PHOTO_WALL_KEY) || '{}')
+    const next = {}
+    let changed = false
+    for (const [key, photo] of Object.entries(stored || {})) {
+      if (isPhotoWallTestImage(photo)) {
+        changed = true
+        continue
+      }
+      next[key] = photo
+    }
+    if (changed) {
+      try { localStorage.setItem(PHOTO_WALL_KEY, JSON.stringify(next)) } catch {}
+    }
+    return next
   } catch {
     return {}
   }
@@ -4711,7 +4763,7 @@ function normalizeCloudPhoto(row) {
     src: row.image_url,
     imagePath: row.image_path || '',
     name: row.caption || `${row.day}-${row.owner}.jpg`,
-    caption: row.caption || `Day ${row.day} · 去年的今天`,
+    caption: row.caption || `Day ${row.day} · 这一天`,
     frame: row.frame || 'cream',
     source: row.source || 'cloud',
     cloudId: row.id || null,
@@ -4732,7 +4784,7 @@ async function loadCloudPhotoWallRows() {
     .order('updated_at', { ascending: true })
   if (error) throw error
   const next = {}
-  ;(data || []).forEach(row => {
+  ;(data || []).filter(row => row.source !== 'static').forEach(row => {
     const key = `${row.day}-${row.owner}`
     const existing = next[key]
     const preferCurrentIdentity = identity && row.user_id === identity.id && existing?.userId !== identity.id
@@ -4794,7 +4846,7 @@ async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame) {
     owner: owner.id,
     image_url: publicData.publicUrl,
     image_path: path,
-    caption: `${day.date} · 去年的今天`,
+    caption: `${day.date} · 这一天`,
     frame,
     source: 'upload',
     updated_at: now
@@ -4820,7 +4872,7 @@ async function updateCloudPhotoFrame(photo, key, frame) {
     owner,
     image_url: photo.src,
     image_path: photo.imagePath || '',
-    caption: photo.caption || `Day ${day} · 去年的今天`,
+    caption: photo.caption || `Day ${day} · 这一天`,
     frame,
     source: photo.source || 'upload',
     updated_at: new Date().toISOString()
@@ -4911,7 +4963,7 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
         <div className="photo-wall-finale-copy">
           <span className="tiny-label">611 · 612 Countdown Bulletin</span>
           <h4>{complete ? '照片墙装饰完成！' : '照片墙紧急征集令'}</h4>
-          <p>叮咚叮咚，612 快到啦！米柚星球现在征集 520–612 的照片和聊天截图：小陈一栏、小翟一栏都挂满，才算把一周年背景墙布置好。</p>
+          <p>叮咚叮咚，612 快到啦！小星球现在征集 520–612 的照片和聊天截图：小琛一栏、小琳一栏都挂满，才算把一周年背景墙布置好。</p>
           <strong>{filledCount}/{requiredSlots.length} 已挂上墙</strong>
         </div>
         <div className="photo-wall-finale-meter" aria-label={`照片墙完成度 ${percent}%`}>
@@ -4936,7 +4988,7 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
           <div className="tiny-label">优先补这几格</div>
           <div className="missing-summary-grid">
             {missingPreview.map(slot => (
-              <span key={slot.key}>{slot.owner.icon} {slot.day.date.slice(5)} · {slot.owner.id === 'orange' ? '小陈' : '小翟'}</span>
+              <span key={slot.key}><img className="owner-avatar owner-avatar-sm" src={slot.owner.icon} alt="" /> {slot.day.date.slice(5)} · {slot.owner.id === 'orange' ? '小琛' : '小琳'}</span>
             ))}
           </div>
           {missingSlots.length > missingPreview.length && <small>上面先列 6 个最急缺口；完整还差 {missingSlots.length} 格，请去相册页慢慢贴满。</small>}
@@ -4995,12 +5047,21 @@ function PhotoWall() {
       const localPhoto = {
         src: dataUrl,
         name: file.name,
-        caption: `${day.date} · 去年的今天`,
+        caption: `${day.date} · 这一天`,
         frame,
         source: 'local',
         updatedAt: new Date().toISOString()
       }
       persistLocal({ ...localPhotos, [key]: localPhoto })
+      // 无论云端是否可用，当天上传照片都记一次抽能量机会（本机计数、云端可同步）
+      let grantResult = null
+      try {
+        grantResult = await grantEnergyChanceForPhotoDay(day.day)
+        window.dispatchEvent(new CustomEvent('miyou-photo-uploaded', { detail: { day: day.day, owner: owner.id, granted: Boolean(grantResult?.granted) } }))
+      } catch (energyError) {
+        console.warn('[miyou energy] photo chance grant failed', energyError.message)
+      }
+      const chanceNote = grantResult?.granted ? '新增 1 次抽能量机会。' : '今天的照片抽能量机会已领取过。'
       try {
         const cloudPhoto = await uploadPhotoToCloud(day, owner, dataUrl, file.name, frame)
         if (cloudPhoto) {
@@ -5008,20 +5069,13 @@ function PhotoWall() {
           const nextLocal = { ...loadPhotoWallLocal() }
           delete nextLocal[key]
           persistLocal(nextLocal)
-          try {
-            const grant = await grantEnergyChanceForPhotoDay(day.day)
-            window.dispatchEvent(new CustomEvent('miyou-photo-uploaded', { detail: { day: day.day, owner: owner.id, granted: Boolean(grant?.granted) } }))
-            setStatus(grant?.granted ? '照片已挂上墙，也同步到云端。新增 1 次抽能量机会。' : '照片已挂上墙，也同步到云端。今天的照片抽能量机会已领取过。')
-          } catch (energyError) {
-            console.warn('[miyou energy] photo chance grant failed', energyError.message)
-            setStatus('照片已挂上墙，也同步到云端；抽能量机会稍后打开彩蛋页会自动补发。')
-          }
+          setStatus(grantResult ? `照片已挂上墙，也同步到云端。${chanceNote}` : '照片已挂上墙，也同步到云端；抽能量机会稍后打开彩蛋页会自动补发。')
         } else {
-          setStatus('照片已先保存在本机相册。')
+          setStatus(grantResult ? `照片已先保存在本机相册。${chanceNote}` : '照片已先保存在本机相册；抽能量机会稍后打开彩蛋页会自动补发。')
         }
       } catch (cloudError) {
         console.warn('[miyou cloud] photo upload failed', cloudError.message)
-        setStatus('照片已先保存在本机；云端同步失败，稍后可再换传。')
+        setStatus(grantResult ? `照片已先保存在本机；云端同步失败，${chanceNote}` : '照片已先保存在本机；云端同步失败，稍后可再换传。')
       }
     } catch (error) {
       console.warn('[miyou album] upload failed', error)
@@ -5067,8 +5121,8 @@ function PhotoWall() {
     <section className="content-section gallery-theater">
       <header className="section-heading playful-heading">
         <span>Memory Wall</span>
-        <h2>去年的今天 · 双栏相册</h2>
-        <p>每天解锁两栏上传位：小陈一张，小翟一张。选好照片或聊天记录，再挑相框裱起来，拉开帷幕后就会挂到照片墙上。</p>
+        <h2>我们的每一天 · 双栏相册</h2>
+        <p>每天解锁两栏上传位：小琛一张，小琳一张。选好照片或聊天记录，再挑相框裱起来，拉开帷幕后就会挂到照片墙上。</p>
       </header>
       <div className={`curtain-upload-stage ${curtainOpen ? 'curtain-open' : ''}`}>
         <div className="curtain-panel curtain-left" aria-hidden="true" />
@@ -5098,7 +5152,7 @@ function PhotoWall() {
                       const photo = photos[key]
                       return (
                         <div key={owner.id} className={`upload-slot owner-${owner.id}`}>
-                          <div className="slot-heading"><span>{owner.icon}</span><strong>{owner.label}</strong></div>
+                          <div className="slot-heading"><img className="owner-avatar owner-avatar-lg" src={owner.icon} alt={owner.label} /><strong>{owner.label}</strong></div>
                           {photo?.src ? (
                             <button type="button" className={`mini-framed-photo frame-${photo.frame || 'cream'}`} onClick={() => setLightbox({ photo, owner, day })}>
                               <img src={photo.src} alt={`${owner.label} Day ${day.day}`} />
@@ -5124,12 +5178,12 @@ function PhotoWall() {
           </div>
         </div>
         <div className="photo-wall-layer" aria-hidden={!curtainOpen}>
-          <div className="photo-wall-header"><span>🖼️</span><strong>米柚照片墙</strong><small>每次新增照片都会自动补到这里，最终 24 天 × 2 栏 = 48 张。</small></div>
+          <div className="photo-wall-header"><span>🖼️</span><strong>我们的照片墙</strong><small>每次新增照片都会自动补到这里，最终 24 天 × 2 栏 = 48 张。</small></div>
           <div className="photo-wall-grid" style={{ '--wall-cols': wallColumns, '--wall-rows': wallRows, '--wall-gap': `${wallGap}px`, '--wall-count': wallCount }}>
             {filledPhotos.length === 0 ? <div className="empty-wall-note">还没有照片被裱起来。先合上帷幕，在上面上传第一张吧。</div> : filledPhotos.map((slot, index) => (
               <button key={slot.key} type="button" className={`wall-photo-card frame-${slot.photo.frame || 'cream'} owner-${slot.owner.id}`} style={{ '--tilt': `${index % 2 === 0 ? -2 : 2}deg` }} onClick={() => setLightbox(slot)} aria-label={`放大查看 ${slot.owner.label} Day ${slot.day.day} 的照片`}>
                 <img src={slot.photo.src} alt={`${slot.owner.label} Day ${slot.day.day}`} />
-                <span>{slot.owner.icon} Day {slot.day.day}</span>
+                <span><img className="owner-avatar owner-avatar-sm" src={slot.owner.icon} alt="" /> Day {slot.day.day}</span>
               </button>
             ))}
           </div>
@@ -5139,8 +5193,8 @@ function PhotoWall() {
         <button type="button" className="photo-lightbox" onClick={() => setLightbox(null)} aria-label="关闭照片预览">
           <span className={`lightbox-frame frame-${lightbox.photo.frame || 'cream'}`}>
             <img src={lightbox.photo.src} alt={`${lightbox.owner.label} Day ${lightbox.day.day}`} />
-            <strong>{lightbox.owner.icon} Day {lightbox.day.day} · {lightbox.owner.label}</strong>
-            <small>{lightbox.photo.caption || lightbox.photo.name || '米柚照片墙'}</small>
+            <strong><img className="owner-avatar owner-avatar-sm" src={lightbox.owner.icon} alt="" /> Day {lightbox.day.day} · {lightbox.owner.label}</strong>
+            <small>{lightbox.photo.caption || lightbox.photo.name || '我们的照片墙'}</small>
           </span>
         </button>
       )}
@@ -5156,7 +5210,8 @@ const BACKPACK_ITEMS = {
   coffee_cup: { icon: '☕', name: '咖啡', desc: '一杯被画过记忆的咖啡。' },
   coconut_cup: { icon: '🥥', name: '椰奶', desc: '藏着清甜后劲的小椰奶。' },
   foam_key: { icon: '🗝️', name: '奇怪的钥匙', desc: '打开 523 木门的关键道具。' },
-  bare_telescope: { icon: '🔭', name: '没有调焦旋钮的望远镜', desc: '在米柚星球2号遇到的望远镜，能看到星光，但画面糊成一团。' },
+  day300_badge: { icon: '🏅', name: '300天纪念徽章', desc: '从第一次散步那天开始计时，第 300 天收到的小小勋章。' },
+  bare_telescope: { icon: '🔭', name: '没有调焦旋钮的望远镜', desc: '在星球2号遇到的望远镜，能看到星光，但画面糊成一团。' },
   telescope_focuser: { icon: '⚙️', name: '调焦旋钮', desc: '把模糊的星光慢慢拧清楚的小旋钮。' },
   focusable_telescope: { icon: '🔭', name: '能调焦的望远镜', desc: '调焦旋钮已经安装好，终于可以认真看星星了。' },
   observatory_building: { icon: '🌌', name: '星空观测站建造中', desc: '望远镜和调焦旋钮已经找齐，观测站正在星光里慢慢搭好。' },
@@ -5169,9 +5224,9 @@ const BACKPACK_ITEMS = {
   rainbow_feather_patch: { icon: '🌈', name: '彩虹羽毛贴片', desc: '530 把好心情碎片收集回来以后做成的羽毛贴片，颜色很乖。' },
   reconciliation_star_bell: { icon: '🔔', name: '星星和好铃铛', desc: '531 认真修好别扭小结以后留下的小铃铛，响起来像一句“我听见啦”。' },
   decoratable_shuttlecock: { icon: '🏸', name: '待装饰羽毛球本体', desc: '601 儿童节工坊里的羽毛球本体，正在等云朵、彩虹和铃铛。' },
-  best_shuttlecock: { icon: '🏸', name: '全世界最好看的羽毛球', desc: '给小翟小朋友的儿童节礼物：轻盈、漂亮、被认真装饰过。' },
-  children_day_note: { icon: '💌', name: '六一小纸条', desc: '小翟儿童节快乐。希望心里的小朋友，永远都可以被好好接住。' },
-  good_sleep_night_lamp: { icon: '🌙', name: '好眠小夜灯', desc: '603 睡眠氛围研究所发放的小夜灯。它会记住每只小动物喜欢的睡觉方式，也祝小翟夜夜都好眠。' }
+  best_shuttlecock: { icon: '🏸', name: '全世界最好看的羽毛球', desc: '给小琳小朋友的儿童节礼物：轻盈、漂亮、被认真装饰过。' },
+  children_day_note: { icon: '💌', name: '六一小纸条', desc: '小琳儿童节快乐。希望心里的小朋友，永远都可以被好好接住。' },
+  good_sleep_night_lamp: { icon: '🌙', name: '好眠小夜灯', desc: '603 睡眠氛围研究所发放的小夜灯。它会记住每只小动物喜欢的睡觉方式，也祝小琳夜夜都好眠。' }
 }
 
 const BACKPACK_HIDDEN_ITEM_IDS = new Set([
@@ -5224,7 +5279,7 @@ function saveTelescopeRunState(next, { cloud = true } = {}) {
 function TelescopeRunnerQuest({ item, taskCompleted = false, onTaskComplete = () => {} }) {
   const [state, setState] = useState(loadTelescopeRunState)
   const [bag, setBag] = useState(loadBackpack)
-  const [message, setMessage] = useState('欢迎来到米柚星球2号，找找看你的周围有什么吧~')
+  const [message, setMessage] = useState('欢迎来到星球2号，找找看你的周围有什么吧~')
   const [focusAttemptNote, setFocusAttemptNote] = useState('')
   const stateRef = React.useRef(state)
   React.useEffect(() => { stateRef.current = state }, [state])
@@ -5301,7 +5356,7 @@ function TelescopeRunnerQuest({ item, taskCompleted = false, onTaskComplete = ()
     } else if (nextPos >= 64 && nextPos < 78 && current.gotFocuser) {
       setMessage('调焦旋钮在背包里轻轻发亮。再沿着星球弧面多走一会儿。')
     } else if (eventType === 'day5_planet2_move') {
-      setMessage('小柚子绕着米柚星球2号慢慢走，脚下的巨大星球也跟着旋转。')
+      setMessage('小柚子绕着星球2号慢慢走，脚下的巨大星球也跟着旋转。')
     }
   }
 
@@ -5367,11 +5422,11 @@ function TelescopeRunnerQuest({ item, taskCompleted = false, onTaskComplete = ()
   return (
     <div className={`planet2-quest ${state.mode === 'observe' ? 'is-observing' : ''} ${taskCompleted || state.stationUnlocked ? 'is-complete' : ''}`}>
       <div className="planet2-hud">
-        <strong>米柚星球2号</strong>
+        <strong>星球2号</strong>
         <span>探索进度 {progress}%</span>
         <span>{state.stationUnlocked ? '观测站已解锁' : '左右绕行探索'}</span>
       </div>
-      <div className="planet2-stage" aria-label="米柚星球2号探索游戏">
+      <div className="planet2-stage" aria-label="星球2号探索游戏">
         <div className="planet2-space" aria-hidden="true"><i /><i /><i /><b /></div>
         <div className="planet2-world" style={{ '--planet-rotation': `${rotation}deg` }}>
           <span className="planet2-orb" />
@@ -5382,7 +5437,7 @@ function TelescopeRunnerQuest({ item, taskCompleted = false, onTaskComplete = ()
           {state.gotBareScope && !state.gotFocuser && <span className={`planet2-object planet2-knob ${nearFocuser ? 'near' : ''}`} style={landmarkStyle(55)}>⚙️<small>调焦旋钮</small></span>}
           {state.gotFocuser && !state.stationUnlocked && <span className={`planet2-object planet2-station ${nearStation ? 'near' : ''}`} style={landmarkStyle(86)}><span className="station-dome" /><span className="station-tower" /><span className="station-scope" /><span className="station-lights" /><small>观测站</small></span>}
         </div>
-        <div className="planet2-yuzu-anchor"><CitrusSprite type="pomelo" className="planet2-yuzu" /></div>
+        <div className="planet2-yuzu-anchor"><DogSprite type="pomelo" className="planet2-yuzu" /></div>
         <div className="planet2-compass"><i style={{ width: `${progress}%` }} /></div>
         {state.mode === 'askScope' && (
           <div className="planet2-dialog">
@@ -5460,7 +5515,7 @@ function TelescopeWorkshop() {
     )
   }
   function installFocuser() {
-    if (!hasStation) { setNote('525 还没有解锁星空观测站，先去米柚星球2号找到平台。'); return }
+    if (!hasStation) { setNote('525 还没有解锁星空观测站，先去星球2号找到平台。'); return }
     if (!hasBareScope) { setNote('平台还空着：先在 524 找到那架没有调焦旋钮的望远镜。'); return }
     if (!hasFocuser) { setNote('还没有调焦旋钮，先回 524 星球表面把它捡回来。'); return }
     const nextBag = { ...loadBackpack(), [TELESCOPE_READY_ID]: 1, telescope_ready: 1 }
@@ -5474,7 +5529,7 @@ function TelescopeWorkshop() {
       <header className="section-heading playful-heading premium-heading">
         <span>Starlight Observatory</span>
         <h2>星空观测站</h2>
-        <p>525 找到的平台现在安静停在米柚星球2号表面。把望远镜放上去，装好调焦旋钮，就能看见编号 20260520 的第一颗星球。</p>
+        <p>525 找到的平台现在安静停在星球2号表面。把望远镜放上去，装好调焦旋钮，就能看见编号 20260520 的第一颗星球。</p>
       </header>
       <div className={`observatory-workshop ${installed ? 'installed' : ''}`}>
         <aside className="observatory-inventory-panel">
@@ -5511,12 +5566,12 @@ function TelescopeWorkshop() {
               <span className="scope-tripod-leg leg-right" />
               <span className="scope-tripod-leg leg-back" />
             </button>
-            <span className="observatory-platform-label">橙柚联合观测平台</span>
-            <div className="observatory-crew orange-crew" aria-label="小橙子记录员">
-              <span className="space-helmet" /><CitrusSprite type="orange" className="observatory-orange crew-citrus" /><small>小橙子 · 记录</small>
+            <span className="observatory-platform-label">两只小狗联合观测平台</span>
+            <div className="observatory-crew orange-crew" aria-label="你记录员">
+              <span className="space-helmet" /><DogSprite type="partner" className="observatory-orange crew-citrus" /><small>你 · 记录</small>
             </div>
-            <div className="observatory-crew pomelo-crew" aria-label="小柚子调焦员">
-              <span className="space-helmet" /><CitrusSprite type="pomelo" className="observatory-pomelo crew-citrus" /><small>小柚子 · 调焦</small>
+            <div className="observatory-crew pomelo-crew" aria-label="我调焦员">
+              <span className="space-helmet" /><DogSprite type="me" className="observatory-pomelo crew-citrus" /><small>我 · 调焦</small>
             </div>
             <div className="observatory-start-callout">今日观测开始！</div>
           </div>
@@ -5690,15 +5745,15 @@ function OrangePlanetEyepiece({ onClose }) {
             <span className="scope-vignette" aria-hidden="true" />
             <div className="scope-focus-layer">
               <span className="orange-orbit orbit-pink" /><span className="orange-orbit orbit-mint" />
-              <span className="observed-orange-planet"><CitrusSprite type="orange" className="observed-main-orange" /><i /><b /><em /></span>
-              <CitrusSprite type="pomelo" className="observed-pomelo" />
-              <CitrusSprite type="orange" className="observed-orange" />
+              <span className="observed-orange-planet"><DogSprite type="orange" className="observed-main-orange" /><i /><b /><em /></span>
+              <DogSprite type="pomelo" className="observed-pomelo" />
+              <DogSprite type="orange" className="observed-orange" />
               <span className="planet-label label-a">520 开始签到</span>
               <span className="planet-label label-b">612 一周年</span>
               <span className="planet-label label-c">每日惊喜连载中</span>
               <strong className="planet-code">编号 20260520</strong>
             </div>
-            <div className="scope-yuzu-guide" aria-hidden="true"><CitrusSprite type="pomelo" className="scope-mini-yuzu" /><span>小柚子在看</span></div>
+            <div className="scope-yuzu-guide" aria-hidden="true"><DogSprite type="pomelo" className="scope-mini-yuzu" /><span>小柚子在看</span></div>
           </div>
           <aside className="observatory-control-panel">
             <strong>望远镜控制台</strong>
@@ -5708,7 +5763,7 @@ function OrangePlanetEyepiece({ onClose }) {
                 <span>🪐</span>
                 <div>
                   <strong>发现星球：编号 {OBSERVATION_PLANET_ID}</strong>
-                  <p>小柚子已经把这颗最初的米柚星球写进观测日志。</p>
+                  <p>小柚子已经把这颗最初的小星球写进观测日志。</p>
                   {scope.firstObservedAt && <small>首次观测：{new Date(scope.firstObservedAt).toLocaleString('zh-CN')}</small>}
                 </div>
               </div>
@@ -5771,7 +5826,7 @@ function StargazingQuest({ item, taskCompleted = false, onTaskComplete = () => {
     <div className={`stargazing-quest observatory-day6 ${ready ? 'ready' : 'locked'} ${focusable ? 'focused' : ''}`}>
       {!entered ? (
         <div className="enter-observatory-card">
-          <CitrusSprite type="pomelo" className="enter-observatory-yuzu" />
+          <DogSprite type="pomelo" className="enter-observatory-yuzu" />
           <h4>{ready ? '星空观测站建造完成' : '星空观测站建造中'}</h4>
           <p>{ready ? '星空观测站建造完成，点击前往。进入后，星空观测站会正式放入顶栏。' : '先完成 525：找齐旧望远镜和调焦旋钮，让观测站开始建造。'}</p>
           <button type="button" onClick={enter} disabled={!ready}>{navUnlocked ? '前往星空观测站' : '点击前往'}</button>
@@ -5855,8 +5910,20 @@ function syncEnergyState(next, eventType = 'energy_state_saved') {
   return normalized
 }
 
+function getLocalUploadedPhotoDays() {
+  try {
+    const wall = loadPhotoWallLocal()
+    return Array.from(new Set(Object.keys(wall || {})
+      .map(key => Number(String(key).split('-')[0]))
+      .filter(Boolean)))
+      .sort((a, b) => a - b)
+  } catch {
+    return []
+  }
+}
+
 async function loadLatestEnergyStateWithSignins() {
-  const [remoteProgress, remoteCheckins, uploadedPhotoDays] = await Promise.all([
+  const [remoteProgress, remoteCheckins, cloudPhotoDays] = await Promise.all([
     loadCloudDayProgress(ENERGY_PROGRESS_DAY),
     loadCloudCheckins(),
     loadCloudUploadedPhotoDays()
@@ -5865,8 +5932,9 @@ async function loadLatestEnergyStateWithSignins() {
   const signedDays = Array.from(new Set([...(remoteCheckins?.signed || []), ...getRoleJson('miyou-signed-days', [])].map(Number).filter(Boolean))).sort((a, b) => a - b)
   const claimed = new Set(remoteState.claimedSignedDays)
   const newSignedDays = signedDays.filter(day => !claimed.has(day))
+  const uploadedPhotoDays = Array.from(new Set([...(cloudPhotoDays || []), ...getLocalUploadedPhotoDays()])).sort((a, b) => a - b)
   const claimedPhotoDays = new Set(remoteState.claimedPhotoDays)
-  const newPhotoDays = (uploadedPhotoDays || []).filter(day => !claimedPhotoDays.has(day))
+  const newPhotoDays = uploadedPhotoDays.filter(day => !claimedPhotoDays.has(day))
   const next = normalizeEnergyState({
     ...remoteState,
     drawChances: Number(remoteState.drawChances || 0) + newSignedDays.length + newPhotoDays.length,
@@ -5880,9 +5948,56 @@ function BackpackView() {
   const [bag, setBag] = useState(loadBackpack)
   const [casting, setCasting] = useState(false)
   const [matchboxOpen, setMatchboxOpen] = useState(false)
+  const stampTimersRef = React.useRef({})
+  const [stampingIds, setStampingIds] = useState(() => {
+    const pending = loadBackpackStampPending()
+    if (!pending.size) return new Set()
+    const currentBag = loadBackpack()
+    const present = Array.from(pending).filter(id => Number(currentBag[id] || 0) > 0)
+    saveBackpackStampPending(new Set())
+    return new Set(present)
+  })
+  const stampingIdsRef = React.useRef(stampingIds)
+  stampingIdsRef.current = stampingIds
 
   React.useEffect(() => {
-    const refresh = () => setBag(loadBackpack())
+    function scheduleStampRemoval(ids) {
+      ;(ids || []).forEach(id => {
+        if (stampTimersRef.current[id]) window.clearTimeout(stampTimersRef.current[id])
+        stampTimersRef.current[id] = window.setTimeout(() => {
+          setStampingIds(current => {
+            const next = new Set(current)
+            next.delete(id)
+            return next
+          })
+          delete stampTimersRef.current[id]
+        }, 1700)
+      })
+    }
+
+    function markStamped(ids) {
+      if (!ids || !ids.length) return
+      const currentBag = loadBackpack()
+      const present = Array.from(new Set(ids)).filter(id => Number(currentBag[id] || 0) > 0)
+      if (!present.length) return
+      const pending = loadBackpackStampPending()
+      present.forEach(id => pending.delete(id))
+      saveBackpackStampPending(pending)
+      setStampingIds(current => {
+        const next = new Set(current)
+        present.forEach(id => next.add(id))
+        return next
+      })
+      scheduleStampRemoval(present)
+    }
+
+    // 挂载时给“上次拿到但还没盖过章”的道具补上动画计时
+    scheduleStampRemoval(Array.from(stampingIdsRef.current))
+
+    const refresh = (event) => {
+      markStamped(event?.detail?.stamped)
+      setBag(loadBackpack())
+    }
     window.addEventListener('miyou-backpack-updated', refresh)
     loadCloudBackpack().then(cloudBag => {
       const next = { ...loadBackpack(), ...(cloudBag || {}) }
@@ -5891,6 +6006,8 @@ function BackpackView() {
     }).catch(() => {})
     return () => {
       window.removeEventListener('miyou-backpack-updated', refresh)
+      Object.values(stampTimersRef.current).forEach(handle => window.clearTimeout(handle))
+      stampTimersRef.current = {}
     }
   }, [])
 
@@ -5899,11 +6016,18 @@ function BackpackView() {
   }
 
   function persistBag(next, eventType, detail = {}) {
+    const previous = loadBackpack()
+    const stampedIds = Object.keys(next).filter(id => Number(next[id] || 0) > 0 && Number(previous[id] || 0) <= 0)
+    if (stampedIds.length) {
+      const pending = loadBackpackStampPending()
+      stampedIds.forEach(id => pending.add(id))
+      saveBackpackStampPending(pending)
+    }
     saveBackpack(next)
     setBag(next)
     syncCloudBackpack(next)
     logCloudEvent(eventType, { bag: next, ...detail }, 3)
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
+    window.dispatchEvent(new CustomEvent('miyou-backpack-updated', { detail: { stamped: stampedIds } }))
     return next
   }
 
@@ -5928,14 +6052,14 @@ function BackpackView() {
   }
 
   function drinkCoffee() {
-    showPopup('试喝咖啡失败, 小翟不爱喝咖啡哦!')
+    showPopup('试喝咖啡失败, 小琳不爱喝咖啡哦!')
     logCloudEvent('day3_coffee_taste_failed', { item: 'coffee_cup' }, 3)
   }
 
   function drinkCoconut() {
     const current = loadBackpack()
     if (Number(current.coconut_cup || 0) <= 0) return
-    showPopup('试喝成功!小翟爱喝椰奶!')
+    showPopup('试喝成功!小琳爱喝椰奶!')
     window.setTimeout(() => showPopup('杯子里有什么奇怪的东西?'), 1500)
     window.setTimeout(() => {
       const latest = loadBackpack()
@@ -5986,7 +6110,7 @@ function BackpackView() {
       </div>
       <div className={`backpack-grid premium-inventory-grid ${casting ? 'magic-casting-grid' : ''}`}>
         {entries.map(([id, count]) => {
-          const item = BACKPACK_ITEMS[id] || { icon: '🎁', name: id, desc: '一件来自米柚星球的小东西。' }
+          const item = BACKPACK_ITEMS[id] || { icon: '🎁', name: id, desc: '一件来自小星球的小东西。' }
           const isCoffee = id === 'coffee_cup'
           const isCoconut = id === 'coconut_cup'
           const isWand = id === 'magic_wand'
@@ -5994,7 +6118,7 @@ function BackpackView() {
           const matchboxGlowing = false
           return (
             <article
-              className={`sticker-card inventory-card is-owned item-${id} ${isCoffee ? 'coffee-drop-target' : ''} ${isWand ? 'wand-draggable' : ''} ${matchboxGlowing ? 'matchbox-glowing' : ''}`}
+              className={`sticker-card inventory-card is-owned item-${id} ${stampingIds.has(id) ? 'stamp-in-card' : ''} ${isCoffee ? 'coffee-drop-target' : ''} ${isWand ? 'wand-draggable' : ''} ${matchboxGlowing ? 'matchbox-glowing' : ''}`}
               key={id}
               draggable={isWand}
               onDragStart={event => onDragStart(event, id)}
@@ -6003,6 +6127,7 @@ function BackpackView() {
               onDoubleClick={() => handleItemDoubleClick(id, { isCoffee, isCoconut })}
               title={isMatchbox ? (matchboxGlowing ? '双击打开发光的火柴盒' : item.name) : isCoffee ? '双击试喝咖啡' : isCoconut ? '双击试喝椰奶' : item.name}
             >
+              {stampingIds.has(id) && <span className="backpack-stamp" aria-hidden="true">✦ 新到</span>}
               {casting && isCoffee && <div className="coffee-spell-overlay" aria-hidden="true">
                 <em className="spell-ring ring-one" />
                 <em className="spell-ring ring-two" />
@@ -6125,7 +6250,7 @@ function EnergyCapsule() {
       return
     }
     setRolling(true)
-    setStatus('米柚能量正在摇奖中…')
+    setStatus('小星球能量正在摇奖中…')
     window.setTimeout(async () => {
       try {
         const { next: latest } = await loadLatestEnergyStateWithSignins()
@@ -6145,7 +6270,7 @@ function EnergyCapsule() {
         })
         const saved = await persistEnergyState(next, 'energy_lottery_drawn')
         setEnergyState(saved)
-        setStatus(`抽取成功! 米柚能量 +${gain}，已同步云端。`)
+        setStatus(`抽取成功! 小星球能量 +${gain}，已同步云端。`)
       } catch (error) {
         console.warn('[miyou cloud] energy draw sync failed', error.message)
         setStatus('抽取时云端暂时没连上，请稍后再试，避免两台设备不同步。')
@@ -6158,9 +6283,9 @@ function EnergyCapsule() {
   return (
     <section className="content-section capsule-section premium-section">
       <header className="section-heading playful-heading premium-heading">
-        <span>Miyou Energy</span>
-        <h2>米柚能量胶囊</h2>
-        <p>每天完成签到、或当天至少上传一张相册照片，都会在云端各存下一次抽能量机会。来到这里就能真实抽取随机 5-15 点米柚能量。</p>
+        <span>Small Planet Energy</span>
+        <h2>小星球能量胶囊</h2>
+        <p>每天完成签到、或当天至少上传一张相册照片，都会在云端各存下一次抽能量机会。来到这里就能真实抽取随机 5-15 点小星球能量。</p>
       </header>
       <div className={`capsule-vault sticker-card premium-card ${rolling ? 'is-rolling' : ''}`}>
         <div className="capsule-orbit-scene" aria-hidden="true">
@@ -6172,11 +6297,10 @@ function EnergyCapsule() {
           <i className="vault-spark spark-c">✧</i>
         </div>
         <div className="capsule-copy">
-          <div className="tiny-label">Cloud Lottery · Sealed until 06.12</div>
-          <h3>彩蛋内容暂时封存中</h3>
+                    <h3>彩蛋内容暂时封存中</h3>
           <p>抽奖次数、抽到的能量和历史记录都会同步到云端。下次用同一个身份打开，进度不会丢。</p>
-          <div className="capsule-energy-meter" aria-label={`米柚能量 ${energy} / 520`}>
-            <div><strong>米柚能量</strong><span>{energy}/520</span></div>
+          <div className="capsule-energy-meter" aria-label={`小星球能量 ${energy} / 520`}>
+            <div><strong>小星球能量</strong><span>{energy}/520</span></div>
             <b><i style={{ width: `${percent}%` }} /></b>
             <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 天相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '完成每日签到或上传当天相册照片后，会先获得抽能量次数。'}</small>
           </div>
@@ -6210,7 +6334,7 @@ function TemplateGuide({ setCurrent }) {
     <section className="content-section template-guide-section">
       <header className="section-heading playful-heading">
         <span>Start here · README in the browser</span>
-        <h2>米柚星球模板说明书</h2>
+        <h2>小星球使用说明书</h2>
         <p>先玩完五天样例，再把它改成自己的小星球。这里的每一格都对应仓库中的一个可编辑入口。</p>
       </header>
 
@@ -6225,9 +6349,7 @@ function TemplateGuide({ setCurrent }) {
             <button type="button" onClick={() => setCurrent('checkin')}>先玩五天样例</button>
             <button type="button" className="ghost" onClick={startDay5ThemeDemo}>⚡ 快速进入 Day 05 演示</button>
             <button type="button" className="ghost" onClick={() => setCurrent('album')}>看看相册模块</button>
-            <button type="button" className="danger" onClick={resetWholeSampleAndReload}>↺ 重置整个样品</button>
           </div>
-          <small className="sample-reset-note">“重置整个样品”会清空五个案例的签到、任务、火柴/钥匙/背包、迷宫与深空主题；不会删除源代码，确认后立即刷新并回到 Day 01。</small>
         </div>
       </div>
 
@@ -6278,7 +6400,7 @@ function TemplateGuide({ setCurrent }) {
         </ol>
         <div className="vibe-prompt-card">
           <strong>Day 1 可直接复制给 AI 的提示词</strong>
-          <pre>{`我想在这个 Vite + React 米柚星球模板里实现 Day 01“00:00 午夜谜题”。\n故事背景：这是我和另一半之间发生过的真实片段：［在这里写发生了什么、当时的地点/时间、你想保留的原话和只有你们懂的暗号］。\n体验目标：对方打开后先看到一条午夜消息，点击聊天小窗里的线索，完成一个简单文字谜题；答对后显示一段真诚的祝福，并解锁当天签到或下一步。\n请先只读阅读 README.md、docs/、src/data/loveData.js、src/main.jsx、src/styles.css，暂不改文件。\n请用中文输出：1. 当前 Day 01 可复用的组件和状态；2. 2 个不同的交互方案及取舍；3. 需要我补充的故事/文案/素材；4. 最小实现涉及的文件；5. 桌面、手机、刷新、答错和答对的验收清单。\n先和我讨论方案，等我确认后再小步实现。`}</pre>
+          <pre>{`我想在这个 Vite + React 小星球模板里实现 Day 01“00:00 午夜谜题”。\n故事背景：这是我和另一半之间发生过的真实片段：［在这里写发生了什么、当时的地点/时间、你想保留的原话和只有你们懂的暗号］。\n体验目标：对方打开后先看到一条午夜消息，点击聊天小窗里的线索，完成一个简单文字谜题；答对后显示一段真诚的祝福，并解锁当天签到或下一步。\n请先只读阅读 README.md、docs/、src/data/loveData.js、src/main.jsx、src/styles.css，暂不改文件。\n请用中文输出：1. 当前 Day 01 可复用的组件和状态；2. 2 个不同的交互方案及取舍；3. 需要我补充的故事/文案/素材；4. 最小实现涉及的文件；5. 桌面、手机、刷新、答错和答对的验收清单。\n先和我讨论方案，等我确认后再小步实现。`}</pre>
         </div>
       </section>
 
@@ -6371,7 +6493,7 @@ function PlanetApp() {
   const [firstGuideOpen, setFirstGuideOpen] = useState(() => {
     if (typeof window === 'undefined') return false
     if (new URLSearchParams(window.location.search).get('showGuide') === '1') return true
-    return localStorage.getItem('miyou-template-first-guide-seen-v1') !== 'yes'
+    return false
   })
   function dismissFirstGuide() {
     localStorage.setItem('miyou-template-first-guide-seen-v1', 'yes')
@@ -6381,7 +6503,7 @@ function PlanetApp() {
     <main className={voyageTheme ? 'interstellar-voyage-theme' : ''}>
       <StarField />
       <header className="top-bar">
-        <button className="brand" onClick={() => setCurrent('home')}><span>🍊</span> 米柚星球</button>
+        <button className="brand" onClick={() => setCurrent('home')}><span>🍊</span> 小星球</button>
         <Nav current={current} setCurrent={setCurrent} />
       </header>
       {current === 'home' && <Hero setCurrent={setCurrent} />}
@@ -6394,19 +6516,14 @@ function PlanetApp() {
       {firstGuideOpen && <div className="first-run-guide-backdrop" role="presentation">
         <div className="first-run-guide-modal" role="dialog" aria-modal="true" aria-labelledby="first-run-guide-title">
           <button type="button" className="first-run-guide-close" onClick={dismissFirstGuide} aria-label="关闭首次运行说明书">×</button>
-          <div className="first-run-guide-welcome"><span>✦</span><div><strong id="first-run-guide-title">欢迎来到米柚星球模板</strong><p>第一次运行不用害怕：先看这份小说明，再点“先玩五天样例”；完全不会写代码，也可以把下面的 AI 提示交给它。</p></div></div>
+          <div className="first-run-guide-welcome"><span>✦</span><div><strong id="first-run-guide-title">欢迎来到小星球</strong><p>这里是我们的纪念日小星球：每天打开一格星图，完成今天的小任务并签到，把 300 天慢慢走到 365 天。</p></div></div>
           <TemplateGuide setCurrent={next => { dismissFirstGuide(); setCurrent(next) }} />
         </div>
       </div>}
       {toast && <div className="miyou-soft-toast" role="status">{toast}</div>}
       <footer className="site-footer">
         {themeSwitchAvailable && <button type="button" className="theme-toggle-button subtle" onClick={() => setThemeMode(!voyageTheme)}>{voyageTheme ? '🍊 切回旧皮肤' : '🚀 切到新皮肤'}</button>}
-        <button onClick={() => {
-        localStorage.removeItem('miyou-camouflage-opened')
-        localStorage.removeItem('miyou-planet-unlocked')
-        window.history.replaceState(null, '', '/')
-        window.location.reload()
-      }}>回到 5.19 邀请信</button></footer>
+        <button onClick={returnToInvitationLayer}>回到 8月9日邀请信</button></footer>
     </main>
   )
 }

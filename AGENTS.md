@@ -1,4 +1,4 @@
-# AI collaboration rules — Miyou Planet Template
+# AI collaboration rules — Chenlin Planet Template
 
 ## Work in phases
 
