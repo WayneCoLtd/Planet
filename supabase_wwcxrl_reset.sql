@@ -1,8 +1,10 @@
 -- ============ 琛琳星球 · 一键重置：恢复到 Day 300 全新状态 ============
--- 用途：上线新版本（wwcxrl_* 表）前，删掉旧版 miyou_* 测试表与存储桶（删表即删数据），
+-- 用途：上线新版本（wwcxrl_* 表）前，删掉旧版 miyou_* 测试表（删表即删数据），
 --       然后创建新版 wwcxrl_* 空表（含 RLS 策略与 wwcxrl-photos 存储桶）。
 -- 执行：Supabase Dashboard -> SQL Editor -> 粘贴全部 -> Run（幂等，可重复执行）。
 -- 警告：会删除旧版所有签到/照片/背包/进度/日志数据，不可恢复；请确认已不再需要。
+-- 注意：Supabase 禁止用 SQL 直接删 storage 表，因此旧桶 miyou-photos 不在此脚本删除。
+--       其照片已清空；如需删桶，请在 Dashboard -> Storage -> Buckets 手动删除（可选，不影响使用）。
 
 -- ① 删除旧 miyou_* 表（子表先删，最后删 profiles；表不存在时自动跳过）
 drop table if exists public.miyou_activity_logs;
@@ -13,11 +15,7 @@ drop table if exists public.miyou_day_progress;
 drop table if exists public.miyou_checkins;
 drop table if exists public.miyou_profiles;
 
--- ② 删除旧存储桶与其中的照片
-delete from storage.objects where bucket_id = 'miyou-photos';
-delete from storage.buckets where id = 'miyou-photos';
-
--- ③ 创建新版 wwcxrl_* 表与策略（与 supabase_wwcxrl_schema.sql 建表部分一致）
+-- ② 创建新版 wwcxrl_* 表与策略（与 supabase_wwcxrl_schema.sql 建表部分一致）
 
 -- 琛琳星球 Supabase 云端版本 schema
 -- 使用方式：Supabase Dashboard -> SQL Editor -> New query -> 粘贴全部 -> Run
