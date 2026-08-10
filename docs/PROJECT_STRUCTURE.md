@@ -25,13 +25,13 @@ other   <empty>                 由使用者自己添加
 
 默认不配置 Supabase 时，状态会保存在浏览器 localStorage：
 
-- 已完成任务：`miyou-completed-days:<role>`
-- 已签到日：`miyou-signed-days:<role>`
-- Day 02 道具/烟花：`miyou-day2-firework-state:<role>`
-- Day 03 绘制审核：`miyou-day3-foam-progress:<role>`
-- Day 05 迷宫：`miyou-day4-dark-maze-state:<role>`（历史 key 名保留，实际对应 Day 05）
-- Day 08 信号：`miyou-day8-one-lightyear-signal-state:<role>`
-- 背包：`miyou-backpack-v1:<role>`
+- 已完成任务：`wwcxrl-completed-days:<role>`
+- 已签到日：`wwcxrl-signed-days:<role>`
+- Day 02 道具/烟花：`wwcxrl-day2-firework-state:<role>`
+- Day 03 绘制审核：`wwcxrl-day3-foam-progress:<role>`
+- Day 05 迷宫：`wwcxrl-day4-dark-maze-state:<role>`（历史 key 名保留，实际对应 Day 05）
+- Day 08 信号：`wwcxrl-day8-one-lightyear-signal-state:<role>`
+- 背包：`wwcxrl-backpack-v1:<role>`
 
 公开样品启动时会过滤非 Day 01/02/03/05/08 的旧进度，避免旧版本地状态污染当前案例集。
 
@@ -43,7 +43,7 @@ Day 05 打开即进入迷宫，不再有“画面崩溃 / 拉绳”入口。完�
 setVoyageThemeLocal(true, 'day4-stargate', { cloud: true })
 ```
 
-它会保存全局主题状态并触发 `miyou-theme-updated` 事件。`PlanetApp` 监听该事件，为最外层 `<main>` 添加：
+它会保存全局主题状态并触发 `wwcxrl-theme-updated` 事件。`PlanetApp` 监听该事件，为最外层 `<main>` 添加：
 
 ```text
 interstellar-voyage-theme
@@ -77,7 +77,7 @@ const [current, setCurrent] = useState('home')
 `public/images/` 中保留了作者明确选择的 Day1/2/3/8 互动参考图片；它们不是照片墙批量素材。没有恢复：
 
 - 照片墙/相册页的私人照片
-- 612 礼物图、原始视频
+- 1013 礼物图、原始视频
 - 部署历史、带路径的 manifest
 
 fork 或公开部署前请复核所有图片、电影截图、聊天界面截图和第三方素材是否可被公开发布；不确定时替换为自己的素材。

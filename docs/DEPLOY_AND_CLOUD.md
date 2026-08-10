@@ -55,7 +55,7 @@ VITE_SUPABASE_PUBLISHABLE_KEY=your_publishable_or_anon_key
 在 Supabase Dashboard -> SQL Editor 执行：
 
 ```text
-supabase_miyou_schema.sql
+supabase_wwcxrl_schema.sql
 ```
 
 这会创建：
@@ -66,7 +66,7 @@ supabase_miyou_schema.sql
 - backpack items
 - photo wall
 - activity logs
-- `miyou-photos` Storage bucket
+- `wwcxrl-photos` Storage bucket
 
 ### 安全提醒
 
@@ -118,7 +118,7 @@ npm run check
 并确认：
 
 - `.env.local` 没有进入 Git；
-- 没有照片墙私密媒体、612 礼物图、原始视频或部署历史；
+- 没有照片墙私密媒体、1013 礼物图、原始视频或部署历史；
 - Day1/2/3/8 保留的互动参考图片已经获得公开发布授权；
 - 没有 `node_modules/`、`dist/`、`deploy/`；
 - 五个样品日和 Day05 主题切换都已实际测试；

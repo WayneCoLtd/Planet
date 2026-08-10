@@ -20,13 +20,13 @@ if [ "$NODE_MAJOR" -lt 18 ]; then
   exit 1
 fi
 
-PORT="${MIYOU_PORT:-4173}"
+PORT="${WWCXRL_PORT:-4173}"
 while command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; do
   PORT=$((PORT + 1))
 done
 
-LOG_FILE="$ROOT_DIR/.miyou-review-preview.log"
-PID_FILE="$ROOT_DIR/.miyou-review-preview.pid"
+LOG_FILE="$ROOT_DIR/.wwcxrl-review-preview.log"
+PID_FILE="$ROOT_DIR/.wwcxrl-review-preview.pid"
 
 printf '\n琛琳星球 · 检查者一键本地部署\n'
 printf '%s\n' '--------------------------------'
@@ -50,7 +50,7 @@ for _ in $(seq 1 30); do
     printf '\n部署完成，可以打开检查：\n\n  %s\n\n' "$URL"
     printf '服务 PID：%s\n日志文件：%s\n' "$PID" "$LOG_FILE"
     printf '\n停止服务：bash scripts/stop-review.sh\n'
-    if [ "${MIYOU_OPEN:-0}" = "1" ] && command -v open >/dev/null 2>&1; then
+    if [ "${WWCXRL_OPEN:-0}" = "1" ] && command -v open >/dev/null 2>&1; then
       open "$URL"
     fi
     exit 0

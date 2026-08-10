@@ -37,7 +37,7 @@ day3-cappuccino-heart-20250522.jpg
 day8-one-lightyear-signal-20250527.jpg
 ```
 
-它们只服务于 Day1/2/3/8 的谜题、绘制或游戏解锁；**不包含照片墙/相册页素材、612 礼物图、原始视频或部署历史。**
+它们只服务于 Day1/2/3/8 的谜题、绘制或游戏解锁；**不包含照片墙/相册页素材、1013 礼物图、原始视频或部署历史。**
 
 如果你 fork 或公开部署自己的版本，请先确认这些参考图片、电影截图、聊天界面截图和其他第三方/个人素材具有可公开发布的授权；不确定时请替换为自己的素材。
 
@@ -118,7 +118,7 @@ Chenlin_Planet_Template_v0.1/
 │   ├── BUILD_A_NEW_DAY.md
 │   ├── AI_VIBE_CODING.md
 │   └── DEPLOY_AND_CLOUD.md
-├── supabase_miyou_schema.sql  # 可选 Supabase 表 / Storage schema
+├── supabase_wwcxrl_schema.sql  # 可选 Supabase 表 / Storage schema
 ├── .env.example
 └── .github/workflows/ci.yml   # GitHub Actions build + audit
 ```
@@ -129,6 +129,7 @@ Chenlin_Planet_Template_v0.1/
 - [从空白日期开始添加自己的任务](docs/BUILD_A_NEW_DAY.md)
 - [用 Vibe Coding 与 AI 协作](docs/AI_VIBE_CODING.md)
 - [本地、Supabase 与 Cloudflare Pages 部署](docs/DEPLOY_AND_CLOUD.md)
+- [管理页布置未来签到任务（维护手册）](docs/ADMIN_TASKS.md)
 
 ## 检查者一键本地部署
 
@@ -154,7 +155,7 @@ bash scripts/review-local.sh
   http://127.0.0.1:4173/?planet=1&preview=1&showGuide=1
 ```
 
-复制这个链接到浏览器即可查看网站效果。`showGuide=1` 会让首次运行说明书和祝福弹窗重新出现，方便检查者从小白入口开始。也可以设置 `MIYOU_OPEN=1 bash scripts/review-local.sh`，在 macOS 上自动打开浏览器。
+复制这个链接到浏览器即可查看网站效果。`showGuide=1` 会让首次运行说明书和祝福弹窗重新出现，方便检查者从小白入口开始。也可以设置 `WWCXRL_OPEN=1 bash scripts/review-local.sh`，在 macOS 上自动打开浏览器。
 
 停止本地服务：
 
@@ -162,7 +163,7 @@ bash scripts/review-local.sh
 bash scripts/stop-review.sh
 ```
 
-服务日志保存在项目根目录的 `.miyou-review-preview.log`，运行中的 PID 保存在 `.miyou-review-preview.pid`；这两个临时文件不会加入源码包。
+服务日志保存在项目根目录的 `.wwcxrl-review-preview.log`，运行中的 PID 保存在 `.wwcxrl-review-preview.pid`；这两个临时文件不会加入源码包。
 
 ## 小白试玩与重置
 
@@ -215,7 +216,7 @@ VITE_SUPABASE_URL=
 VITE_SUPABASE_PUBLISHABLE_KEY=
 ```
 
-按 `supabase_miyou_schema.sql` 创建表和 Storage bucket。**不要**在前端、GitHub、聊天记录或 `.env.local` 中放入 `service_role` key。
+按 `supabase_wwcxrl_schema.sql` 创建表和 Storage bucket。**不要**在前端、GitHub、聊天记录或 `.env.local` 中放入 `service_role` key。
 
 > 当前 schema 的宽松 RLS 策略只适合可信的私密链接样品。若要公开多人使用或储存敏感内容，请先改为 Supabase Auth + `auth.uid()` 级别的 RLS。
 

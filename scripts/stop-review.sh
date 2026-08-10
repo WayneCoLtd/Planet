@@ -2,7 +2,7 @@
 set -Eeuo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PID_FILE="$ROOT_DIR/.miyou-review-preview.pid"
+PID_FILE="$ROOT_DIR/.wwcxrl-review-preview.pid"
 
 if [ ! -f "$PID_FILE" ]; then
   echo "没有找到正在运行的琛琳星球检查服务。"

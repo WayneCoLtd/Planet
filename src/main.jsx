@@ -2,18 +2,73 @@ import React, { useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
-import { getSupabase, getCloudIdentity, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish } from './cloud'
 import './styles.css'
 
-const PASSWORD = '520612'
-const ANNIVERSARY_VIDEO_SRC = '/videos/chenlin-612-anniversary-v5.mp4'
-const ANNIVERSARY_GIFT_PHOTO_SRC = '/images/chenlin-612-gift-photo.jpg'
-const TEMPLATE_REFERENCE_VERSION = 'miyou-template-selected-days-direct-maze-v2'
+const PASSWORD = '5201013'
+const ANNIVERSARY_VIDEO_SRC = '/videos/wwcxrl-1013-anniversary-v5.mp4'
+const ANNIVERSARY_GIFT_PHOTO_SRC = '/images/wwcxrl-1013-gift-photo.jpg'
+const TEMPLATE_REFERENCE_VERSION = 'wwcxrl-template-selected-days-direct-maze-v2'
 const TEMPLATE_FIRST_DAY = dailyAdventures[0]?.day || 1
 const TEMPLATE_LAST_DAY = dailyAdventures[dailyAdventures.length - 1]?.day || 8
 const TEMPLATE_THEME_SWITCH_DAY = 5
 const START_DATE = new Date(`${dailyAdventures[0]?.date || '2026-05-20'}T00:00:00`)
+
+// 1013 纪念日锚点：2025-10-13 是第 0 天，2026-10-13 是一周年（第 365 天）。
+const ANNIVERSARY_START_DATE = '2025-10-13'
+const ANNIVERSARY_YEAR_ONE_DATE = '2026-10-13'
+const DAY_MS = 24 * 60 * 60 * 1000
+
+function getAnniversaryCounts() {
+  const today = new Date(`${getTodayKey()}T00:00:00`)
+  const start = new Date(`${ANNIVERSARY_START_DATE}T00:00:00`)
+  const yearOne = new Date(`${ANNIVERSARY_YEAR_ONE_DATE}T00:00:00`)
+  const dayCount = Math.max(0, Math.round((today.getTime() - start.getTime()) / DAY_MS))
+  const daysToYearOne = Math.max(0, Math.ceil((yearOne.getTime() - today.getTime()) / DAY_MS))
+  const yearOneReached = today.getTime() >= yearOne.getTime()
+  return { dayCount, daysToYearOne, yearOneReached }
+}
 const END_DATE = new Date(`${dailyAdventures[dailyAdventures.length - 1]?.date || '2026-05-24'}T23:59:59`)
+
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wwcxrl-admin-2026'
+const ADMIN_TASK_TYPES = [
+  { id: 'memoryPuzzle', label: '谜语签到（推荐）', hint: '输入谜底答案，答对后自动亮起签到' },
+  { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
+  { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
+  { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
+  { id: 'game', label: '小游戏', hint: '选择一个内置小游戏（迷宫 / 接爱心 / 戳泡泡 / 翻牌记忆 / 滑块拼图），玩完即可签到' }
+]
+
+// 云端任务优先、代码 dailyAdventures 兜底的合并任务列表（按 day 去重排序）。
+let mergedDailyAdventures = null
+
+function getDailyAdventures() {
+  return mergedDailyAdventures || dailyAdventures
+}
+
+async function hydrateDailyAdventures() {
+  const cloudTasks = await loadCloudDailyTasks('published')
+  const merged = new Map()
+  dailyAdventures.forEach(item => merged.set(Number(item.day), item))
+  cloudTasks.forEach(item => merged.set(Number(item.day), item))
+  // 本地模式（未配置 Supabase 环境变量）：把管理页本地发布的任务也并入，
+  // 这样在本地验证「管理页发布 → 主签到页可见」的完整流程。
+  if (!cloudEnabled) {
+    loadLocalAdminTasks()
+      .filter(task => task.status === 'published')
+      .forEach(item => merged.set(Number(item.day), item))
+  }
+  const next = Array.from(merged.values()).sort((a, b) => Number(a.day) - Number(b.day))
+  mergedDailyAdventures = next
+  window.dispatchEvent(new CustomEvent('wwcxrl-tasks-updated'))
+  return next
+}
+
+function isAdminPageRequested() {
+  return typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('admin') === '1'
+}
+
+
 
 function getTodayKey() {
   const now = new Date()
@@ -37,12 +92,21 @@ function isUnlocked(item) {
 }
 
 function isAlbumUploadOpen(item) {
-  return isUnlocked(item)
+  // 相册照片位跟随已布置的天数开放：日历里出现这一天，双栏照片位即可上传
+  return Boolean(item)
 }
 
 function filterGateInvalidSignedDays(days = []) {
-  const validDays = new Set(dailyAdventures.map(item => Number(item.day)))
+  const validDays = new Set(getDailyAdventures().map(item => Number(item.day)))
   return Array.from(new Set(days.map(Number).filter(day => validDays.has(day)))).sort((a, b) => a - b)
+}
+
+// 合并本地/云端签到进度：已存本地的天数一律保留，避免任务表尚未合并完成时把管理员新建 Day 的进度误删。
+function mergeCheckinDayLists(localList = [], remoteList = []) {
+  const localDays = new Set(localList.map(Number))
+  const validDays = new Set(getDailyAdventures().map(item => Number(item.day)))
+  const union = new Set([...localList, ...remoteList].map(Number))
+  return Array.from(union).filter(day => validDays.has(day) || localDays.has(day)).sort((a, b) => a - b)
 }
 
 function roleStorageKey(key) {
@@ -70,15 +134,15 @@ function setRoleJson(key, value) {
 
 function applyTemplateFiveDayStateOnce() {
   if (typeof window === 'undefined') return
-  const versionKey = roleStorageKey('miyou-template-state-version')
+  const versionKey = roleStorageKey('wwcxrl-template-state-version')
   if (localStorage.getItem(versionKey) === TEMPLATE_REFERENCE_VERSION) return
 
-  const signed = filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', []))
-  const completed = filterGateInvalidSignedDays(getRoleJson('miyou-completed-days', []))
-  setRoleJson('miyou-signed-days', signed)
-  setRoleJson('miyou-completed-days', completed)
+  const signed = filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', []))
+  const completed = filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', []))
+  setRoleJson('wwcxrl-signed-days', signed)
+  setRoleJson('wwcxrl-completed-days', completed)
   localStorage.setItem(versionKey, TEMPLATE_REFERENCE_VERSION)
-  window.dispatchEvent(new Event('miyou-signed-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
 }
 
 function sameNumberArray(a = [], b = []) {
@@ -101,10 +165,10 @@ function loadJsonStorage(key, fallback) {
   return getRoleJson(key, fallback)
 }
 
-const DAY2_STATE_KEY = 'miyou-day2-firework-state'
-const BACKPACK_KEY = 'miyou-backpack-v1'
+const DAY2_STATE_KEY = 'wwcxrl-day2-firework-state'
+const BACKPACK_KEY = 'wwcxrl-backpack-v1'
 const GLOBAL_PROGRESS_DAY = 1
-const GLOBAL_STATE_KEY = 'miyou-global-cloud-state'
+const GLOBAL_STATE_KEY = 'wwcxrl-global-cloud-state'
 const GLOBAL_EMPTY_STATE = {
   themeMode: 'classic',
   voyageUnlocked: false,
@@ -145,7 +209,7 @@ async function saveCloudGlobalPatch(patch = {}, eventType = 'global_state_saved'
     const remote = await loadCloudDayProgress(GLOBAL_PROGRESS_DAY)
     remoteBase = remote?.progress || {}
   } catch (error) {
-    console.warn('[miyou cloud] global state load-before-save failed', error.message)
+    console.warn('[wwcxrl cloud] global state load-before-save failed', error.message)
   }
   const next = saveGlobalLocalState({
     ...localBase,
@@ -154,24 +218,24 @@ async function saveCloudGlobalPatch(patch = {}, eventType = 'global_state_saved'
     updatedAt: new Date().toISOString()
   })
   const nextRow = { ...remoteBase, global: next }
-  saveCloudDayProgress(GLOBAL_PROGRESS_DAY, nextRow).catch(error => console.warn('[miyou cloud] global state save failed', error.message))
+  saveCloudDayProgress(GLOBAL_PROGRESS_DAY, nextRow).catch(error => console.warn('[wwcxrl cloud] global state save failed', error.message))
   logCloudEvent(eventType, next, GLOBAL_PROGRESS_DAY)
   return next
 }
 
 function setVoyageThemeLocal(enabled, source = 'theme-update', { cloud = true } = {}) {
   const themeMode = enabled ? 'voyage' : 'classic'
-  localStorage.setItem('miyou-voyage-theme', enabled ? 'yes' : 'classic')
+  localStorage.setItem('wwcxrl-voyage-theme', enabled ? 'yes' : 'classic')
   saveGlobalLocalState({ ...loadGlobalLocalState(), themeMode, voyageUnlocked: Boolean(enabled) })
-  window.dispatchEvent(new CustomEvent('miyou-theme-updated', { detail: { theme: themeMode, source } }))
+  window.dispatchEvent(new CustomEvent('wwcxrl-theme-updated', { detail: { theme: themeMode, source } }))
   if (cloud) saveCloudGlobalPatch({ themeMode, voyageUnlocked: Boolean(enabled) }, `global_theme_${themeMode}_${source}`)
 }
 
 function returnToInvitationLayer() {
   if (typeof window === 'undefined') return
   const resetState = { ...GLOBAL_EMPTY_STATE, themeMode: 'classic', voyageUnlocked: false, observatoryNavUnlocked: false, observatoryEnteredAt: '', invitationOpened: false, planetUnlocked: false }
-  localStorage.removeItem('miyou-camouflage-opened')
-  localStorage.removeItem('miyou-planet-unlocked')
+  localStorage.removeItem('wwcxrl-camouflage-opened')
+  localStorage.removeItem('wwcxrl-planet-unlocked')
   localStorage.removeItem(roleStorageKey(GLOBAL_STATE_KEY))
   saveGlobalLocalState(resetState)
   const remotePatch = { global: resetState }
@@ -186,16 +250,16 @@ async function hydrateGlobalCloudState() {
     if (!remote?.progress) return loadGlobalLocalState()
     const next = saveGlobalLocalState({ ...loadGlobalLocalState(), ...(remote.progress.global || {}) })
     if (next.voyageUnlocked || next.themeMode === 'voyage') {
-      localStorage.setItem('miyou-voyage-theme', 'yes')
-      window.dispatchEvent(new CustomEvent('miyou-theme-updated', { detail: { theme: 'voyage', source: 'cloud-hydrate' } }))
+      localStorage.setItem('wwcxrl-voyage-theme', 'yes')
+      window.dispatchEvent(new CustomEvent('wwcxrl-theme-updated', { detail: { theme: 'voyage', source: 'cloud-hydrate' } }))
     }
     if (next.planetUnlocked || next.invitationOpened) {
-      localStorage.setItem('miyou-camouflage-opened', 'yes')
-      localStorage.setItem('miyou-planet-unlocked', 'yes')
+      localStorage.setItem('wwcxrl-camouflage-opened', 'yes')
+      localStorage.setItem('wwcxrl-planet-unlocked', 'yes')
     }
     return next
   } catch (error) {
-    console.warn('[miyou cloud] global state hydrate failed', error.message)
+    console.warn('[wwcxrl cloud] global state hydrate failed', error.message)
     return loadGlobalLocalState()
   }
 }
@@ -208,7 +272,7 @@ function saveBackpack(next) {
   setRoleJson(BACKPACK_KEY, next || {})
 }
 
-const BACKPACK_STAMP_PENDING_KEY = 'miyou-backpack-stamp-pending-v1'
+const BACKPACK_STAMP_PENDING_KEY = 'wwcxrl-backpack-stamp-pending-v1'
 
 function loadBackpackStampPending() {
   try {
@@ -243,7 +307,7 @@ function addBackpackItems(items = []) {
   })
   saveBackpack(next)
   saveBackpackStampPending(pendingStamps)
-  window.dispatchEvent(new CustomEvent('miyou-backpack-updated', { detail: { stamped: stampedIds } }))
+  window.dispatchEvent(new CustomEvent('wwcxrl-backpack-updated', { detail: { stamped: stampedIds } }))
   return next
 }
 
@@ -267,35 +331,35 @@ function removeDayFromLocalArray(key, day) {
 function resetSiteLocalStateToDay1Unsigned() {
   if (typeof window === 'undefined') return
   const roleScopedKeys = [
-    'miyou-signed-days',
-    'miyou-completed-days',
-    'miyou-backpack-v1',
-    'miyou-day2-firework-state',
-    'miyou-day3-foam-progress',
-    'miyou-day4-dark-maze-state',
-    'miyou-day4-fake-key-checkin-state',
-    'miyou-day5-telescope-run-state',
-    'miyou-day6-stargazing-state',
-    'miyou-day6-planet2-observatory-state',
-    'miyou-day7-stargazing-state',
-    'miyou-day8-one-lightyear-signal-state',
-    'miyou-capsule-energy-state',
-    'miyou-global-cloud-state'
+    'wwcxrl-signed-days',
+    'wwcxrl-completed-days',
+    'wwcxrl-backpack-v1',
+    'wwcxrl-day2-firework-state',
+    'wwcxrl-day3-foam-progress',
+    'wwcxrl-day4-dark-maze-state',
+    'wwcxrl-day4-fake-key-checkin-state',
+    'wwcxrl-day5-telescope-run-state',
+    'wwcxrl-day6-stargazing-state',
+    'wwcxrl-day6-planet2-observatory-state',
+    'wwcxrl-day7-stargazing-state',
+    'wwcxrl-day8-one-lightyear-signal-state',
+    'wwcxrl-capsule-energy-state',
+    'wwcxrl-global-cloud-state'
   ]
   roleScopedKeys.forEach(key => localStorage.removeItem(roleStorageKey(key)))
-  setRoleJson('miyou-signed-days', [])
-  setRoleJson('miyou-completed-days', [])
-  setRoleJson('miyou-backpack-v1', {})
+  setRoleJson('wwcxrl-signed-days', [])
+  setRoleJson('wwcxrl-completed-days', [])
+  setRoleJson('wwcxrl-backpack-v1', {})
   setVoyageThemeLocal(false, 'full-site-reset-v31', { cloud: false })
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
 }
 
 function resetSiteLocalStateOnceForCurrentBuild() {
   if (typeof window === 'undefined') return
   const params = new URLSearchParams(window.location.search)
   if (params.get('resetSite') === '1') resetSiteLocalStateToDay1Unsigned()
-  localStorage.setItem(roleStorageKey('miyou-site-full-reset-version'), SITE_FULL_RESET_VERSION)
+  localStorage.setItem(roleStorageKey('wwcxrl-site-full-reset-version'), SITE_FULL_RESET_VERSION)
 }
 
 function resetWholeSampleAndReload() {
@@ -303,23 +367,23 @@ function resetWholeSampleAndReload() {
   const accepted = window.confirm('要重置整个五日样品吗？\n\n这会清空 Day 01 / 02 / 03 / 05 / 08 的签到、任务、背包、火柴、钥匙、迷宫与信号进度，并切回经典皮肤；不会删除你的源代码。\n\n重置后会立刻刷新，从 Day 01 重新开始。')
   if (!accepted) return
   resetSiteLocalStateToDay1Unsigned()
-  window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '样品已重置，正在回到 Day 01…' }))
+  window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '样品已重置，正在回到 Day 01…' }))
   window.setTimeout(() => window.location.reload(), 80)
 }
 
 function resetDay2ToUnanswered() {
   if (typeof window === 'undefined') return
-  removeRoleValue('miyou-day2-firework-state')
-  removeDayFromLocalArray('miyou-completed-days', 2)
-  removeDayFromLocalArray('miyou-signed-days', 2)
+  removeRoleValue('wwcxrl-day2-firework-state')
+  removeDayFromLocalArray('wwcxrl-completed-days', 2)
+  removeDayFromLocalArray('wwcxrl-signed-days', 2)
   try {
-    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
     delete backpack.matchbox
     delete backpack.match
-    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
-    else localStorage.setItem(roleStorageKey('miyou-backpack-v1'), JSON.stringify(backpack))
+    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
+    else localStorage.setItem(roleStorageKey('wwcxrl-backpack-v1'), JSON.stringify(backpack))
   } catch {
-    localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+    localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
   }
 }
 
@@ -330,26 +394,26 @@ function resetDay2OnceForCurrentBuild() {
   if (manualReset) {
     resetDay2ToUnanswered()
   }
-  localStorage.setItem(roleStorageKey('miyou-day2-reset-version'), DAY2_FORCE_RESET_VERSION)
+  localStorage.setItem(roleStorageKey('wwcxrl-day2-reset-version'), DAY2_FORCE_RESET_VERSION)
 }
 
 function resetDay3ToFirstRun() {
   if (typeof window === 'undefined') return
-  removeRoleValue('miyou-day3-foam-progress')
-  removeDayFromLocalArray('miyou-completed-days', 3)
-  removeDayFromLocalArray('miyou-signed-days', 3)
+  removeRoleValue('wwcxrl-day3-foam-progress')
+  removeDayFromLocalArray('wwcxrl-completed-days', 3)
+  removeDayFromLocalArray('wwcxrl-signed-days', 3)
   try {
-    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
     ;['magic_wand', 'coffee_cup', 'coconut_cup', 'foam_key'].forEach(id => delete backpack[id])
-    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
-    else localStorage.setItem(roleStorageKey('miyou-backpack-v1'), JSON.stringify(backpack))
+    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
+    else localStorage.setItem(roleStorageKey('wwcxrl-backpack-v1'), JSON.stringify(backpack))
   } catch {
-    localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+    localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
   }
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
   try {
-    saveCloudDayProgress(3, DAY3_EMPTY_PROGRESS).catch(error => console.warn('[miyou cloud] day3 reset sync failed', error.message))
-    removeCloudBackpackItems(['magic_wand', 'coffee_cup', 'coconut_cup', 'foam_key']).catch(error => console.warn('[miyou cloud] day3 backpack reset failed', error.message))
+    saveCloudDayProgress(3, DAY3_EMPTY_PROGRESS).catch(error => console.warn('[wwcxrl cloud] day3 reset sync failed', error.message))
+    removeCloudBackpackItems(['magic_wand', 'coffee_cup', 'coconut_cup', 'foam_key']).catch(error => console.warn('[wwcxrl cloud] day3 backpack reset failed', error.message))
   } catch {}
 }
 
@@ -360,19 +424,19 @@ function resetDay3OnceForCurrentBuild() {
   if (manualReset) {
     resetDay3ToFirstRun()
   }
-  localStorage.setItem(roleStorageKey('miyou-day3-reset-version'), DAY3_FORCE_RESET_VERSION)
+  localStorage.setItem(roleStorageKey('wwcxrl-day3-reset-version'), DAY3_FORCE_RESET_VERSION)
 }
 
 function resetDay4ToPlayableMaze() {
   if (typeof window === 'undefined') return
-  removeRoleValue('miyou-day4-dark-maze-state')
-  removeRoleValue('miyou-day4-fake-key-checkin-state')
+  removeRoleValue('wwcxrl-day4-dark-maze-state')
+  removeRoleValue('wwcxrl-day4-fake-key-checkin-state')
   setVoyageThemeLocal(false, 'day4-reset', { cloud: true })
-  removeDayFromLocalArray('miyou-completed-days', 4)
-  removeDayFromLocalArray('miyou-signed-days', 4)
+  removeDayFromLocalArray('wwcxrl-completed-days', 4)
+  removeDayFromLocalArray('wwcxrl-signed-days', 4)
   try {
-    saveCloudDayProgress(4, DAY4_EMPTY_STATE).catch(error => console.warn('[miyou cloud] day4 reset sync failed', error.message))
-    clearCloudDayStatus(4, '2026-05-23').catch(error => console.warn('[miyou cloud] day4 checkin reset failed', error.message))
+    saveCloudDayProgress(4, DAY4_EMPTY_STATE).catch(error => console.warn('[wwcxrl cloud] day4 reset sync failed', error.message))
+    clearCloudDayStatus(4, '2026-05-23').catch(error => console.warn('[wwcxrl cloud] day4 checkin reset failed', error.message))
   } catch {}
 }
 
@@ -383,39 +447,39 @@ function resetDay4OnceForCurrentBuild() {
   if (manualReset) {
     resetDay4ToPlayableMaze()
   }
-  localStorage.setItem(roleStorageKey('miyou-day4-reset-version'), DAY4_FORCE_RESET_VERSION)
+  localStorage.setItem(roleStorageKey('wwcxrl-day4-reset-version'), DAY4_FORCE_RESET_VERSION)
 }
 
 function resetTelescopeChainToFirstRun() {
   if (typeof window === 'undefined') return
-  removeRoleValue('miyou-day5-telescope-run-state')
-  removeRoleValue('miyou-day4-dark-maze-state')
-  removeRoleValue('miyou-day6-stargazing-state')
-  removeRoleValue('miyou-day6-planet2-observatory-state')
-  removeRoleValue('miyou-day7-stargazing-state')
-  removeDayFromLocalArray('miyou-completed-days', 5)
-  removeDayFromLocalArray('miyou-signed-days', 5)
-  removeDayFromLocalArray('miyou-completed-days', 6)
-  removeDayFromLocalArray('miyou-signed-days', 6)
-  removeDayFromLocalArray('miyou-completed-days', 7)
-  removeDayFromLocalArray('miyou-signed-days', 7)
+  removeRoleValue('wwcxrl-day5-telescope-run-state')
+  removeRoleValue('wwcxrl-day4-dark-maze-state')
+  removeRoleValue('wwcxrl-day6-stargazing-state')
+  removeRoleValue('wwcxrl-day6-planet2-observatory-state')
+  removeRoleValue('wwcxrl-day7-stargazing-state')
+  removeDayFromLocalArray('wwcxrl-completed-days', 5)
+  removeDayFromLocalArray('wwcxrl-signed-days', 5)
+  removeDayFromLocalArray('wwcxrl-completed-days', 6)
+  removeDayFromLocalArray('wwcxrl-signed-days', 6)
+  removeDayFromLocalArray('wwcxrl-completed-days', 7)
+  removeDayFromLocalArray('wwcxrl-signed-days', 7)
   try {
-    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
     TELESCOPE_RESET_ITEM_IDS.forEach(id => delete backpack[id])
-    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
-    else localStorage.setItem(roleStorageKey('miyou-backpack-v1'), JSON.stringify(backpack))
+    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
+    else localStorage.setItem(roleStorageKey('wwcxrl-backpack-v1'), JSON.stringify(backpack))
   } catch {
-    localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+    localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
   }
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
   try {
-    clearCloudDayStatus(5, '2026-05-24').catch(error => console.warn('[miyou cloud] day5 checkin reset failed', error.message))
-    clearCloudDayStatus(6, '2026-05-25').catch(error => console.warn('[miyou cloud] day6 checkin reset failed', error.message))
-    clearCloudDayStatus(7, '2026-05-26').catch(error => console.warn('[miyou cloud] day7 checkin reset failed', error.message))
-    saveCloudDayProgress(5, DAY4_EMPTY_STATE).catch(error => console.warn('[miyou cloud] day5 maze progress reset failed', error.message))
-    saveCloudDayProgress(6, {}).catch(error => console.warn('[miyou cloud] day6 planet2 progress reset failed', error.message))
-    saveCloudDayProgress(7, { focus: 0 }).catch(error => console.warn('[miyou cloud] day7 progress reset failed', error.message))
-    removeCloudBackpackItems(TELESCOPE_RESET_ITEM_IDS).catch(error => console.warn('[miyou cloud] telescope backpack reset failed', error.message))
+    clearCloudDayStatus(5, '2026-05-24').catch(error => console.warn('[wwcxrl cloud] day5 checkin reset failed', error.message))
+    clearCloudDayStatus(6, '2026-05-25').catch(error => console.warn('[wwcxrl cloud] day6 checkin reset failed', error.message))
+    clearCloudDayStatus(7, '2026-05-26').catch(error => console.warn('[wwcxrl cloud] day7 checkin reset failed', error.message))
+    saveCloudDayProgress(5, DAY4_EMPTY_STATE).catch(error => console.warn('[wwcxrl cloud] day5 maze progress reset failed', error.message))
+    saveCloudDayProgress(6, {}).catch(error => console.warn('[wwcxrl cloud] day6 planet2 progress reset failed', error.message))
+    saveCloudDayProgress(7, { focus: 0 }).catch(error => console.warn('[wwcxrl cloud] day7 progress reset failed', error.message))
+    removeCloudBackpackItems(TELESCOPE_RESET_ITEM_IDS).catch(error => console.warn('[wwcxrl cloud] telescope backpack reset failed', error.message))
   } catch {}
 }
 
@@ -426,65 +490,65 @@ function resetTelescopeChainOnceForCurrentBuild() {
   if (manualReset) {
     resetTelescopeChainToFirstRun()
   }
-  localStorage.setItem(roleStorageKey('miyou-telescope-reset-version'), TELESCOPE_CHAIN_RESET_VERSION)
+  localStorage.setItem(roleStorageKey('wwcxrl-telescope-reset-version'), TELESCOPE_CHAIN_RESET_VERSION)
 }
 
 async function resetDay8OneLightYearSignal() {
   if (typeof window === 'undefined') return
-  removeRoleValue('miyou-day8-one-lightyear-signal-state')
-  removeDayFromLocalArray('miyou-completed-days', 8)
-  removeDayFromLocalArray('miyou-signed-days', 8)
+  removeRoleValue('wwcxrl-day8-one-lightyear-signal-state')
+  removeDayFromLocalArray('wwcxrl-completed-days', 8)
+  removeDayFromLocalArray('wwcxrl-signed-days', 8)
   try {
-    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
     delete backpack.one_lightyear_signal
-    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
-    else localStorage.setItem(roleStorageKey('miyou-backpack-v1'), JSON.stringify(backpack))
+    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
+    else localStorage.setItem(roleStorageKey('wwcxrl-backpack-v1'), JSON.stringify(backpack))
   } catch {
-    localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+    localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
   }
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new Event('miyou-day8-signal-updated'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new Event('wwcxrl-day8-signal-updated'))
   try {
     await Promise.all([
-      clearCloudDayStatus(8, '2026-05-27').catch(error => console.warn('[miyou cloud] day8 checkin reset failed', error.message)),
-      saveCloudDayProgress(8, {}).catch(error => console.warn('[miyou cloud] day8 progress reset failed', error.message)),
-      removeCloudBackpackItems(['one_lightyear_signal']).catch(error => console.warn('[miyou cloud] day8 backpack reset failed', error.message))
+      clearCloudDayStatus(8, '2026-05-27').catch(error => console.warn('[wwcxrl cloud] day8 checkin reset failed', error.message)),
+      saveCloudDayProgress(8, {}).catch(error => console.warn('[wwcxrl cloud] day8 progress reset failed', error.message)),
+      removeCloudBackpackItems(['one_lightyear_signal']).catch(error => console.warn('[wwcxrl cloud] day8 backpack reset failed', error.message))
     ])
     logCloudEvent('day8_manual_reset', { source: 'day8_corner_button' }, 8)
   } catch {}
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new Event('miyou-day8-signal-updated'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new Event('wwcxrl-day8-signal-updated'))
 }
 
 async function resetDay9VacationBreak() {
   if (typeof window === 'undefined') return
-  removeRoleValue('miyou-day9-yuzu-vacation-state')
-  removeDayFromLocalArray('miyou-completed-days', 9)
-  removeDayFromLocalArray('miyou-signed-days', 9)
+  removeRoleValue('wwcxrl-day9-yuzu-vacation-state')
+  removeDayFromLocalArray('wwcxrl-completed-days', 9)
+  removeDayFromLocalArray('wwcxrl-signed-days', 9)
   try {
-    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
     delete backpack.vacation_half_hour_ticket
-    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
-    else localStorage.setItem(roleStorageKey('miyou-backpack-v1'), JSON.stringify(backpack))
+    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
+    else localStorage.setItem(roleStorageKey('wwcxrl-backpack-v1'), JSON.stringify(backpack))
   } catch {
-    localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+    localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
   }
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new Event('miyou-day9-vacation-reset'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new Event('wwcxrl-day9-vacation-reset'))
   try {
     await Promise.all([
-      clearCloudDayStatus(9, '2026-05-28').catch(error => console.warn('[miyou cloud] day9 checkin reset failed', error.message)),
-      saveCloudDayProgress(9, {}).catch(error => console.warn('[miyou cloud] day9 progress reset failed', error.message)),
-      removeCloudBackpackItems(['vacation_half_hour_ticket']).catch(error => console.warn('[miyou cloud] day9 backpack reset failed', error.message))
+      clearCloudDayStatus(9, '2026-05-28').catch(error => console.warn('[wwcxrl cloud] day9 checkin reset failed', error.message)),
+      saveCloudDayProgress(9, {}).catch(error => console.warn('[wwcxrl cloud] day9 progress reset failed', error.message)),
+      removeCloudBackpackItems(['vacation_half_hour_ticket']).catch(error => console.warn('[wwcxrl cloud] day9 backpack reset failed', error.message))
     ])
     logCloudEvent('day9_manual_reset', { source: 'day9_corner_button' }, 9)
   } catch {}
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new Event('miyou-day9-vacation-reset'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new Event('wwcxrl-day9-vacation-reset'))
 }
 
 function resetDay8OnceForCurrentBuild() {
@@ -494,7 +558,7 @@ function resetDay8OnceForCurrentBuild() {
   if (manualReset) {
     resetDay8OneLightYearSignal()
   }
-  localStorage.setItem(roleStorageKey('miyou-day8-reset-version'), DAY8_FORCE_RESET_VERSION)
+  localStorage.setItem(roleStorageKey('wwcxrl-day8-reset-version'), DAY8_FORCE_RESET_VERSION)
 }
 
 function resetDay9OnceForCurrentBuild() {
@@ -523,122 +587,122 @@ const SLEEP_LAB_RESET_CONFIG = {
 
 const GENERIC_DAY_RESET_CONFIG = {
   1: { label: '重置520', date: '2026-05-20', toast: '520 已重置，可以重新回答午夜谜题啦。' },
-  2: { label: '重置521', date: '2026-05-21', toast: '521 已重置，可以重新解连续谜题和点烟花啦。', keys: ['miyou-day2-firework-state'], rewards: ['matchbox', 'match'] },
-  3: { label: '重置522', date: '2026-05-22', toast: '522 已重置，可以重新画奶泡啦。', keys: ['miyou-day3-foam-progress'], rewards: ['magic_wand', 'coffee_cup', 'coconut_cup', 'foam_key'] },
-  4: { label: '重置523', date: '2026-05-23', toast: '523 已重置，可以重新点点点啦。', keys: ['miyou-day4-fake-key-checkin-state'] },
-  5: { label: '重置524', date: '2026-05-24', toast: '524 已重置：火柴盒 × 1、火柴 × 2、钥匙 × 1 已恢复，可以立即重玩迷宫。', keys: ['miyou-day4-dark-maze-state'], restore: { matchbox: 1, match: 2, foam_key: 1 } },
-  6: { label: '重置525', date: '2026-05-25', toast: '525 已重置，可以重新探索星球2号啦。', keys: ['miyou-day5-telescope-run-state', 'miyou-day6-planet2-observatory-state'], rewards: ['telescope_lens', 'telescope_tube', 'telescope_tripod', 'telescope_focuser', 'telescope_star_map', 'bare_telescope', 'focusable_telescope', 'observatory_building'] },
-  7: { label: '重置526', date: '2026-05-26', toast: '526 已重置，可以重新进入星空观测站啦。', keys: ['miyou-day6-stargazing-state', 'miyou-day7-stargazing-state'], rewards: ['telescope_ready', 'observatory_unlocked', 'observatory_nav_unlocked'] },
+  2: { label: '重置521', date: '2026-05-21', toast: '521 已重置，可以重新解连续谜题和点烟花啦。', keys: ['wwcxrl-day2-firework-state'], rewards: ['matchbox', 'match'] },
+  3: { label: '重置522', date: '2026-05-22', toast: '522 已重置，可以重新画奶泡啦。', keys: ['wwcxrl-day3-foam-progress'], rewards: ['magic_wand', 'coffee_cup', 'coconut_cup', 'foam_key'] },
+  4: { label: '重置523', date: '2026-05-23', toast: '523 已重置，可以重新点点点啦。', keys: ['wwcxrl-day4-fake-key-checkin-state'] },
+  5: { label: '重置524', date: '2026-05-24', toast: '524 已重置：火柴盒 × 1、火柴 × 2、钥匙 × 1 已恢复，可以立即重玩迷宫。', keys: ['wwcxrl-day4-dark-maze-state'], restore: { matchbox: 1, match: 2, foam_key: 1 } },
+  6: { label: '重置525', date: '2026-05-25', toast: '525 已重置，可以重新探索星球2号啦。', keys: ['wwcxrl-day5-telescope-run-state', 'wwcxrl-day6-planet2-observatory-state'], rewards: ['telescope_lens', 'telescope_tube', 'telescope_tripod', 'telescope_focuser', 'telescope_star_map', 'bare_telescope', 'focusable_telescope', 'observatory_building'] },
+  7: { label: '重置526', date: '2026-05-26', toast: '526 已重置，可以重新进入星空观测站啦。', keys: ['wwcxrl-day6-stargazing-state', 'wwcxrl-day7-stargazing-state'], rewards: ['telescope_ready', 'observatory_unlocked', 'observatory_nav_unlocked'] },
   14: { label: '重置602', date: '2026-06-02', toast: '602 已重置，但这一天仍然是封存的儿童节延期页。' },
-  16: { label: '重置604', date: '2026-06-04', toast: '604 已重置，可以重新给小柚子做花环啦。', keys: ['miyou-flower-crown-day16'], rewards: ['flower_crown'] },
+  16: { label: '重置604', date: '2026-06-04', toast: '604 已重置，可以重新给小柚子做花环啦。', keys: ['wwcxrl-flower-crown-day16'], rewards: ['flower_crown'] },
   17: { label: '重置605', date: '2026-06-05', toast: '605 已重置，可以重新打开折纸小狗伴读页啦。' },
   18: { label: '重置606', date: '2026-06-06', toast: '606 已重置，可以重新攒 6 次幸运啦。' },
   19: { label: '重置607', date: '2026-06-07', toast: '607 已重置，可以重新体验彩虹照片任务啦。' },
   20: { label: '重置608', date: '2026-06-08', toast: '608 已重置，可以重新打开说明书啦。' },
   21: { label: '重置609', date: '2026-06-09', toast: '609 已重置，可以重新扫描心动雷达啦。' },
   22: { label: '重置610', date: '2026-06-10', toast: '610 已重置，可以重新收到倒数信啦。' },
-  23: { label: '重置611', date: '2026-06-11', toast: '611 已重置，可以重新获得预告星贴纸啦。' },
-  24: { label: '重置612', date: '2026-06-12', toast: '612 已重置，可以重新打开一周年纪念日啦。', keys: ['miyou-day24-anniversary-answer-146-ok'] }
+  23: { label: '重置1012', date: '2026-10-12', toast: '1012 已重置，可以重新获得预告星贴纸啦。' },
+  24: { label: '重置1013', date: '2026-10-13', toast: '1013 已重置，可以重新打开纪念日啦。', keys: ['wwcxrl-day24-anniversary-answer-146-ok'] }
 }
 
 async function resetGenericDay(item) {
   if (typeof window === 'undefined' || !item) return
   const config = GENERIC_DAY_RESET_CONFIG[item.day] || { label: `重置${item.date.slice(5).replace('-', '')}`, date: item.date, toast: `${item.date.slice(5).replace('-', '')} 已重置，可以重新体验这一天啦。` }
   ;(config.keys || []).forEach(key => removeRoleValue(key))
-  removeDayFromLocalArray('miyou-completed-days', item.day)
-  removeDayFromLocalArray('miyou-signed-days', item.day)
+  removeDayFromLocalArray('wwcxrl-completed-days', item.day)
+  removeDayFromLocalArray('wwcxrl-signed-days', item.day)
   let nextBag = null
   if ((config.rewards && config.rewards.length) || config.restore) {
     try {
-      const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+      const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
       ;(config.rewards || []).forEach(id => { delete backpack[id] })
       Object.entries(config.restore || {}).forEach(([id, count]) => { backpack[id] = Number(count) })
       nextBag = backpack
-      if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+      if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
       else saveBackpack(backpack)
     } catch {
       nextBag = config.restore ? { ...config.restore } : null
       if (nextBag) saveBackpack(nextBag)
-      else localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+      else localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
     }
   }
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new CustomEvent('miyou-generic-day-reset', { detail: { day: item.day } }))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new CustomEvent('wwcxrl-generic-day-reset', { detail: { day: item.day } }))
   try {
     await Promise.all([
-      clearCloudDayStatus(item.day, config.date || item.date).catch(error => console.warn(`[miyou cloud] day${item.day} checkin reset failed`, error.message)),
-      saveCloudDayProgress(item.day, {}).catch(error => console.warn(`[miyou cloud] day${item.day} progress reset failed`, error.message)),
-      config.rewards && config.rewards.length ? removeCloudBackpackItems(config.rewards).catch(error => console.warn(`[miyou cloud] day${item.day} backpack reset failed`, error.message)) : Promise.resolve(),
-      nextBag ? syncCloudBackpack(nextBag).catch(error => console.warn(`[miyou cloud] day${item.day} backpack restore sync failed`, error.message)) : Promise.resolve()
+      clearCloudDayStatus(item.day, config.date || item.date).catch(error => console.warn(`[wwcxrl cloud] day${item.day} checkin reset failed`, error.message)),
+      saveCloudDayProgress(item.day, {}).catch(error => console.warn(`[wwcxrl cloud] day${item.day} progress reset failed`, error.message)),
+      config.rewards && config.rewards.length ? removeCloudBackpackItems(config.rewards).catch(error => console.warn(`[wwcxrl cloud] day${item.day} backpack reset failed`, error.message)) : Promise.resolve(),
+      nextBag ? syncCloudBackpack(nextBag).catch(error => console.warn(`[wwcxrl cloud] day${item.day} backpack restore sync failed`, error.message)) : Promise.resolve()
     ])
     logCloudEvent('generic_day_manual_reset', { day: item.day, source: 'corner_button' }, item.day)
   } catch {}
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new CustomEvent('miyou-generic-day-reset', { detail: { day: item.day } }))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new CustomEvent('wwcxrl-generic-day-reset', { detail: { day: item.day } }))
 }
 
 async function resetSleepLabDay(day = 15) {
   if (typeof window === 'undefined') return
   const config = SLEEP_LAB_RESET_CONFIG[day]
   if (!config) return
-  removeRoleValue(`miyou-sleep-lab-day${day}`)
-  removeDayFromLocalArray('miyou-completed-days', day)
-  removeDayFromLocalArray('miyou-signed-days', day)
+  removeRoleValue(`wwcxrl-sleep-lab-day${day}`)
+  removeDayFromLocalArray('wwcxrl-completed-days', day)
+  removeDayFromLocalArray('wwcxrl-signed-days', day)
   try {
-    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
     ;(config.rewards || []).forEach(id => { delete backpack[id] })
-    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
-    else localStorage.setItem(roleStorageKey('miyou-backpack-v1'), JSON.stringify(backpack))
+    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
+    else localStorage.setItem(roleStorageKey('wwcxrl-backpack-v1'), JSON.stringify(backpack))
   } catch {
-    localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+    localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
   }
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new CustomEvent('miyou-sleep-lab-reset', { detail: { day } }))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new CustomEvent('wwcxrl-sleep-lab-reset', { detail: { day } }))
   try {
     await Promise.all([
-      clearCloudDayStatus(day, config.date).catch(error => console.warn(`[miyou cloud] sleep lab day${day} checkin reset failed`, error.message)),
-      saveCloudDayProgress(day, {}).catch(error => console.warn(`[miyou cloud] sleep lab day${day} progress reset failed`, error.message)),
-      removeCloudBackpackItems(config.rewards || []).catch(error => console.warn(`[miyou cloud] sleep lab day${day} backpack reset failed`, error.message))
+      clearCloudDayStatus(day, config.date).catch(error => console.warn(`[wwcxrl cloud] sleep lab day${day} checkin reset failed`, error.message)),
+      saveCloudDayProgress(day, {}).catch(error => console.warn(`[wwcxrl cloud] sleep lab day${day} progress reset failed`, error.message)),
+      removeCloudBackpackItems(config.rewards || []).catch(error => console.warn(`[wwcxrl cloud] sleep lab day${day} backpack reset failed`, error.message))
     ])
     logCloudEvent('sleep_lab_manual_reset', { day, source: 'corner_button' }, day)
   } catch {}
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new CustomEvent('miyou-sleep-lab-reset', { detail: { day } }))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new CustomEvent('wwcxrl-sleep-lab-reset', { detail: { day } }))
 }
 
 async function resetChildrenSpecialDay(day) {
   if (typeof window === 'undefined') return
   const config = CHILDREN_RESET_CONFIG[day]
   if (!config) return
-  removeRoleValue(`miyou-children-special-day${day}`)
-  removeDayFromLocalArray('miyou-completed-days', day)
-  removeDayFromLocalArray('miyou-signed-days', day)
+  removeRoleValue(`wwcxrl-children-special-day${day}`)
+  removeDayFromLocalArray('wwcxrl-completed-days', day)
+  removeDayFromLocalArray('wwcxrl-signed-days', day)
   try {
-    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('miyou-backpack-v1')) || '{}')
+    const backpack = JSON.parse(localStorage.getItem(roleStorageKey('wwcxrl-backpack-v1')) || '{}')
     ;(config.rewards || []).forEach(id => { delete backpack[id] })
-    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
-    else localStorage.setItem(roleStorageKey('miyou-backpack-v1'), JSON.stringify(backpack))
+    if (Object.keys(backpack).length === 0) localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
+    else localStorage.setItem(roleStorageKey('wwcxrl-backpack-v1'), JSON.stringify(backpack))
   } catch {
-    localStorage.removeItem(roleStorageKey('miyou-backpack-v1'))
+    localStorage.removeItem(roleStorageKey('wwcxrl-backpack-v1'))
   }
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new CustomEvent('miyou-children-special-reset', { detail: { day } }))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new CustomEvent('wwcxrl-children-special-reset', { detail: { day } }))
   try {
     await Promise.all([
-      clearCloudDayStatus(day, config.date).catch(error => console.warn(`[miyou cloud] children day${day} checkin reset failed`, error.message)),
-      saveCloudDayProgress(day, {}).catch(error => console.warn(`[miyou cloud] children day${day} progress reset failed`, error.message)),
-      removeCloudBackpackItems(config.rewards || []).catch(error => console.warn(`[miyou cloud] children day${day} backpack reset failed`, error.message))
+      clearCloudDayStatus(day, config.date).catch(error => console.warn(`[wwcxrl cloud] children day${day} checkin reset failed`, error.message)),
+      saveCloudDayProgress(day, {}).catch(error => console.warn(`[wwcxrl cloud] children day${day} progress reset failed`, error.message)),
+      removeCloudBackpackItems(config.rewards || []).catch(error => console.warn(`[wwcxrl cloud] children day${day} backpack reset failed`, error.message))
     ])
     logCloudEvent('children_special_manual_reset', { day, source: 'corner_button' }, day)
   } catch {}
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
-  window.dispatchEvent(new Event('miyou-signed-updated'))
-  window.dispatchEvent(new CustomEvent('miyou-children-special-reset', { detail: { day } }))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new CustomEvent('wwcxrl-children-special-reset', { detail: { day } }))
 }
 
 function resetChildrenSpecialOnceForCurrentBuild() {
@@ -657,14 +721,14 @@ function resetSleepLabOnceForCurrentBuild() {
   if (params.get('resetDay15') === '1' || params.get('reset603') === '1') resetSleepLabDay(15)
 }
 
-function isLocalMiyouDeveloperDevice() {
+function isLocalWwcxrlDeveloperDevice() {
   if (typeof window === 'undefined') return false
   const host = window.location.hostname
   return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host.endsWith('.local')
 }
 
 function isChildrenSpecialPostponed(item) {
-  return Boolean(item && CHILDREN_POSTPONED_DAYS.includes(Number(item.day)) && !isLocalMiyouDeveloperDevice())
+  return Boolean(item && CHILDREN_POSTPONED_DAYS.includes(Number(item.day)) && !isLocalWwcxrlDeveloperDevice())
 }
 
 function StarField() {
@@ -711,8 +775,8 @@ function InvitationLayer({ onReveal }) {
   const [flowerBloomId, setFlowerBloomId] = useState(() => Date.now())
 
   function revealPlanet() {
-    localStorage.setItem('miyou-camouflage-opened', 'yes')
-    localStorage.setItem('miyou-planet-unlocked', 'yes')
+    localStorage.setItem('wwcxrl-camouflage-opened', 'yes')
+    localStorage.setItem('wwcxrl-planet-unlocked', 'yes')
     saveCloudGlobalPatch({ invitationOpened: true, planetUnlocked: true }, 'global_planet_unlocked')
     onReveal()
   }
@@ -921,7 +985,7 @@ function PasswordGate({ onUnlock }) {
   function submit(event) {
     event.preventDefault()
     if (password.trim() === PASSWORD) {
-      localStorage.setItem('miyou-planet-unlocked', 'yes')
+      localStorage.setItem('wwcxrl-planet-unlocked', 'yes')
       onUnlock()
     } else {
       setError('暗号好像不对哦，小星球还没有开门～')
@@ -937,7 +1001,7 @@ function PasswordGate({ onUnlock }) {
         <CuteIcon>🔐</CuteIcon>
         <div className="tiny-label">Our Small Planet Boarding Pass</div>
         <h1>我们的专属入口</h1>
-        <p>请输入 520 到 612 的秘密暗号，登陆这颗每天都会长出一点点新东西的小星球。</p>
+        <p>请输入 520 到 1013 的秘密暗号，登陆这颗每天都会长出一点点新东西的小星球。</p>
         <form onSubmit={submit} className="gate-form">
           <input
             type="password"
@@ -960,9 +1024,10 @@ function Nav({ current, setCurrent }) {
   const [bagVersion, setBagVersion] = useState(0)
   React.useEffect(() => {
     const refresh = () => setBagVersion(value => value + 1)
-    window.addEventListener('miyou-backpack-updated', refresh)
-    return () => window.removeEventListener('miyou-backpack-updated', refresh)
+    window.addEventListener('wwcxrl-backpack-updated', refresh)
+    return () => window.removeEventListener('wwcxrl-backpack-updated', refresh)
   }, [])
+
   const bag = loadBackpack()
   const observatoryNavOpen = Number(bag.observatory_nav_unlocked || 0) > 0
   const items = [
@@ -991,37 +1056,38 @@ function Nav({ current, setCurrent }) {
 
 function Hero({ setCurrent }) {
   const signedCount = (() => {
-    try { return filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', [])).length } catch { return 0 }
+    try { return filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', [])).length } catch { return 0 }
   })()
   const progressPercent = Math.max(0, Math.min(100, (signedCount / 65) * 100))
-  const orbitAngle = Math.max(0, Math.min(360, (300 / 365) * 360 - 90))
+  const { dayCount, daysToYearOne, yearOneReached } = getAnniversaryCounts()
+  const orbitAngle = Math.max(0, Math.min(360, (dayCount / 365) * 360 - 90))
 
   return (
     <section className="hero-section">
       <div className="planet-wrap" aria-hidden="true">
         <div className="orbit orbit-one"><i>💌</i></div>
         <div className="orbit orbit-two"><i>⭐</i></div>
-        <div className="miyou-planet">
+        <div className="wwcxrl-planet">
           <span className="planet-shine" />
           <DogSprite type="me" className="hero-pomelo" />
           <span className="planet-leaf" />
         </div>
         <DogSprite type="partner" className="orbit-orange" />
-        <span className="hero-orbit-progress" style={{ '--orbit-angle': `${orbitAngle}deg` }}><b>{300}</b></span>
-        <span className="floating-note note-one">300 天纪念日</span>
-        <span className="floating-note note-two">365 天星图</span>
+        <span className="hero-orbit-progress" style={{ '--orbit-angle': `${orbitAngle}deg` }}><b>{dayCount}</b></span>
+        <span className="floating-note note-one">第 {dayCount} 天</span>
+        <span className="floating-note note-two">{yearOneReached ? '一周年已达成' : `一周年还有 ${daysToYearOne} 天`}</span>
       </div>
       <div className="hero-copy sticker-card doodle-border">
         <CuteIcon>♡</CuteIcon>
-        <div className="tiny-label">300Days — Our Small Universe</div>
+        <div className="tiny-label">{dayCount}Days — Our Small Universe</div>
         <h1>300Days</h1>
         <h2>我们已经走过的每一个今天</h2>
         <p>
-          这是只属于你的小城堡，一段慢慢翻开的纪念日日记。我们一起走过 300 天，今天是纪念日，也是新的开始。
+          这是只属于你的小城堡，一段慢慢翻开的纪念日日记。我们一起走过 {dayCount} 天，第 {dayCount} 天也在认真继续。
         </p>
         <div className="hero-stats">
-          <span>✨ 300天纪念日：已达成</span>
-          <span>🌙 一周年：还有 {Math.max(0, 365 - 300)} 天</span>
+          <span>✨ 已一起走过 {dayCount} 天</span>
+          <span>🌙 一周年：{yearOneReached ? '已达成' : `还有 ${daysToYearOne} 天`}</span>
         </div>
         <div className="hero-progress-card" aria-label={`已经签到 ${signedCount} 天，共 65 天`}>
           <div className="hero-progress-topline">
@@ -1029,12 +1095,12 @@ function Hero({ setCurrent }) {
             <span>{signedCount}/65</span>
           </div>
           <div className="hero-progress-track"><i style={{ width: `${progressPercent}%` }} /></div>
-          <small>今天的旅程在 300 号星图上，明天也会继续往前走。</small>
+          <small>今天的旅程在 {dayCount} 号星图上，明天也会继续往前走。</small>
         </div>
         <div className="hero-actions">
           <button onClick={() => setCurrent('checkin')}>📮 打开签到星图</button>
         </div>
-        <div className="newbie-route" role="note"><strong>今日提醒：</strong><span>今天是我们 300 天纪念日；从这里开始，接下来的每一天都值得被认真打开。</span></div>
+        <div className="newbie-route" role="note"><strong>今日提醒：</strong><span>{dayCount === 300 ? '今天是我们 300 天纪念日；从这里开始，接下来的每一天都值得被认真打开。' : `今天是第 ${dayCount} 天；从这里开始，接下来的每一天都值得被认真打开。`}</span></div>
       </div>
     </section>
   )
@@ -1042,7 +1108,7 @@ function Hero({ setCurrent }) {
 
 function StarVoyageDock({ setCurrent }) {
   const completed = (() => {
-    try { return getRoleJson('miyou-completed-days', []).includes(TEMPLATE_THEME_SWITCH_DAY) } catch { return false }
+    try { return getRoleJson('wwcxrl-completed-days', []).includes(TEMPLATE_THEME_SWITCH_DAY) } catch { return false }
   })()
   if (!completed) return null
   return (
@@ -1063,26 +1129,30 @@ function StarVoyageDock({ setCurrent }) {
 
 function getInitialCheckinDay() {
   try {
-    const signedDays = filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', []))
-    const completedDays = filterGateInvalidSignedDays(getRoleJson('miyou-completed-days', []))
-    if (!signedDays.length && !completedDays.length) return dailyAdventures[0]?.day || 300
-
-    const nextUnsignedOpen = dailyAdventures.find(item => isUnlocked(item) && !signedDays.includes(item.day))
+    const signedDays = filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', []))
+    const completedDays = filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', []))
+    if (!signedDays.length && !completedDays.length) return getDailyAdventures()[0]?.day || 300
+    const nextUnsignedOpen = getDailyAdventures().find(item => isUnlocked(item) && !signedDays.includes(item.day))
     if (nextUnsignedOpen) return nextUnsignedOpen.day
-
-    const todayItem = dailyAdventures.find(item => item.date === getTodayKey() && isUnlocked(item))
+    const todayItem = getDailyAdventures().find(item => item.date === getTodayKey() && isUnlocked(item))
     if (todayItem) return todayItem.day
   } catch {}
-  return dailyAdventures[0]?.day || 300
+  return getDailyAdventures()[0]?.day || 300
 }
 
 function CheckIn() {
   applyTemplateFiveDayStateOnce()
   const todayKey = getTodayKey()
+  const todayDay = (() => {
+    const anchorMs = START_DATE.getTime()
+    const todayMs = new Date(`${todayKey}T00:00:00`).getTime()
+    return TEMPLATE_FIRST_DAY + Math.round((todayMs - anchorMs) / 86400000)
+  })()
   const [selectedDay, setSelectedDay] = useState(() => getInitialCheckinDay())
-  const [signed, setSigned] = useState(() => filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', [])))
-  const [completedTasks, setCompletedTasks] = useState(() => filterGateInvalidSignedDays(getRoleJson('miyou-completed-days', [])))
-  const selected = dailyAdventures.find(item => item.day === selectedDay) || dailyAdventures[0]
+  const [signed, setSigned] = useState(() => filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', [])))
+  const [completedTasks, setCompletedTasks] = useState(() => filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', [])))
+  const [items, setItems] = useState(() => getDailyAdventures())
+  const selected = items.find(item => item.day === selectedDay) || items[0]
   const selectedPostponed = isChildrenSpecialPostponed(selected)
   const unlocked = isUnlocked(selected) && !selectedPostponed
   const resetAvailable = isUnlocked(selected)
@@ -1092,10 +1162,10 @@ function CheckIn() {
     && (selected.type !== 'flowerCrown' || isFlowerCrownTaskActuallyComplete(selected.day))
     && (selected.type !== 'photoWallFinale' || isPhotoWallFinaleActuallyComplete(selected.day))
     && (selected.type !== 'anniversary' || getRoleJson(ANNIVERSARY_ANSWER_KEY, false) === true || signed.includes(selected.day))
-  const currentIndex = 300
+  const lastRealDay = items.length ? Math.max(...items.map(item => Number(item.day))) : 300
   const futureDaySlots = Array.from({ length: 65 }, (_, index) => ({
-    day: 301 + index,
-    date: '2099-12-31',
+    day: lastRealDay + 1 + index,
+    date: adminDayToDate(lastRealDay + 1 + index),
     title: `未来第 ${index + 1} 天`,
     icon: '🔒',
     type: 'futureLocked',
@@ -1108,9 +1178,9 @@ function CheckIn() {
     memoryTitle: '',
     memoryCaption: ''
   }))
-  const visibleDailyItems = [...dailyAdventures, ...futureDaySlots]
+  const visibleDailyItems = [...items, ...futureDaySlots]
   const futureDayTotal = futureDaySlots.length
-  const totalTargetDayCount = 65
+  const totalTargetDayCount = Math.max(1, items.length)
   const percent = Math.round((Math.max(0, signed.length) / Math.max(1, totalTargetDayCount)) * 100)
 
   React.useEffect(() => {
@@ -1120,78 +1190,118 @@ function CheckIn() {
         if (!alive || !remote) return
         const remoteSigned = remote.signed || []
         const remoteCompleted = remote.completed || []
-        const localSigned = getRoleJson('miyou-signed-days', [])
-        const localCompleted = getRoleJson('miyou-completed-days', [])
-        const mergedSigned = filterGateInvalidSignedDays([...localSigned, ...remoteSigned])
-        const mergedCompleted = filterGateInvalidSignedDays([...localCompleted, ...remoteCompleted])
+        const localSigned = getRoleJson('wwcxrl-signed-days', [])
+        const localCompleted = getRoleJson('wwcxrl-completed-days', [])
+        const mergedSigned = mergeCheckinDayLists(localSigned, remoteSigned)
+        const mergedCompleted = mergeCheckinDayLists(localCompleted, remoteCompleted)
         setSigned(previous => sameNumberArray(previous, mergedSigned) ? previous : mergedSigned)
         setCompletedTasks(previous => sameNumberArray(previous, mergedCompleted) ? previous : mergedCompleted)
-        setRoleJson('miyou-signed-days', mergedSigned)
-        setRoleJson('miyou-completed-days', mergedCompleted)
-      }).catch(error => console.warn('[miyou cloud] checkins refresh failed', error.message))
+        setRoleJson('wwcxrl-signed-days', mergedSigned)
+        setRoleJson('wwcxrl-completed-days', mergedCompleted)
+      }).catch(error => console.warn('[wwcxrl cloud] checkins refresh failed', error.message))
     }
     refreshCloudCheckins()
     const intervalId = window.setInterval(refreshCloudCheckins, 6000)
     const handleFocus = () => refreshCloudCheckins()
     const handleVisibility = () => { if (!document.hidden) refreshCloudCheckins() }
     const handleSignedUpdate = () => {
-      const nextSigned = filterGateInvalidSignedDays(getRoleJson('miyou-signed-days', []))
+      const nextSigned = filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', []))
       setSigned(nextSigned)
-      setRoleJson('miyou-signed-days', nextSigned)
-      setCompletedTasks(filterGateInvalidSignedDays(getRoleJson('miyou-completed-days', [])))
+      setRoleJson('wwcxrl-signed-days', nextSigned)
+      setCompletedTasks(filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', [])))
     }
     window.addEventListener('focus', handleFocus)
-    window.addEventListener('miyou-signed-updated', handleSignedUpdate)
+    window.addEventListener('wwcxrl-signed-updated', handleSignedUpdate)
     document.addEventListener('visibilitychange', handleVisibility)
     return () => {
       alive = false
       window.clearInterval(intervalId)
       window.removeEventListener('focus', handleFocus)
-      window.removeEventListener('miyou-signed-updated', handleSignedUpdate)
+      window.removeEventListener('wwcxrl-signed-updated', handleSignedUpdate)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
+
+  React.useEffect(() => {
+    let alive = true
+    const refreshTasks = () => {
+      hydrateDailyAdventures().then(() => {
+        if (!alive) return
+        const next = getDailyAdventures()
+        setItems(next)
+        setSelectedDay(previous => {
+          if (next.some(item => item.day === previous)) return previous
+          return getInitialCheckinDay()
+        })
+        // 任务表合并完成后，重新按可见天数过滤本地进度，避免管理员新建的 Day 刷新后“已完成”状态被初始过滤丢掉
+        const localSigned = filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', []))
+        const localCompleted = filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', []))
+        setSigned(previous => sameNumberArray(previous, localSigned) ? previous : localSigned)
+        setCompletedTasks(previous => sameNumberArray(previous, localCompleted) ? previous : localCompleted)
+      }).catch(error => console.warn('[wwcxrl tasks] hydrate failed', error.message))
+    }
+    refreshTasks()
+    const handleTasksUpdated = () => { if (alive) setItems(getDailyAdventures()) }
+    window.addEventListener('wwcxrl-tasks-updated', handleTasksUpdated)
+    // 本地模式：管理页在另一个标签页发布/删除任务后，这里自动重新加载并刷新星图；
+    // 切回本标签页（focus / visibilitychange）时也会重读一次，避免看到旧数据。
+    const handleAdminLocalStorage = (event) => {
+      if (!alive || event.key !== ADMIN_LOCAL_TASKS_KEY) return
+      refreshTasks()
+    }
+    const handleFocus = () => refreshTasks()
+    const handleVisibility = () => { if (!document.hidden) refreshTasks() }
+    window.addEventListener('storage', handleAdminLocalStorage)
+    window.addEventListener('focus', handleFocus)
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      alive = false
+      window.removeEventListener('wwcxrl-tasks-updated', handleTasksUpdated)
+      window.removeEventListener('storage', handleAdminLocalStorage)
+      window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [])
 
   function completeTask(day) {
-    const alreadyCompleted = getRoleJson('miyou-completed-days', []).includes(day)
+    const alreadyCompleted = getRoleJson('wwcxrl-completed-days', []).includes(day)
     setCompletedTasks(previous => {
       if (previous.includes(day)) return previous
       const next = Array.from(new Set([...previous, day])).sort((a, b) => a - b)
-      setRoleJson('miyou-completed-days', next)
-      window.dispatchEvent(new CustomEvent('miyou-progress-updated', { detail: { completedDays: next, day } }))
-      const completedItem = dailyAdventures.find(item => item.day === day)
-      if (completedItem) markCloudTaskCompleted(day, completedItem.date)
+      setRoleJson('wwcxrl-completed-days', next)
+      window.dispatchEvent(new CustomEvent('wwcxrl-progress-updated', { detail: { completedDays: next, day } }))
+      const completedItem = items.find(item => item.day === day)
       logCloudEvent('task_completed', { day }, day)
       return next
     })
     if (!alreadyCompleted && day === 300) {
       const nextBag = addBackpackItems([{ id: 'day300_badge', count: 1 }])
       syncCloudBackpack(nextBag)
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '获得道具：300天纪念徽章，它带着盖章动画去小背包啦。' }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '获得道具：300天纪念徽章，它带着盖章动画去小背包啦。' }))
     }
   }
 
   function signToday() {
     if (isChildrenSpecialPostponed(selected)) {
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: CHILDREN_POSTPONED_MESSAGE }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: CHILDREN_POSTPONED_MESSAGE }))
       return
     }
     if (!unlocked || !taskCompleted) return
     const next = Array.from(new Set([...signed, selected.day])).sort((a, b) => a - b)
     setSigned(next)
-    setRoleJson('miyou-signed-days', next)
-    window.dispatchEvent(new Event('miyou-signed-updated'))
+    setRoleJson('wwcxrl-signed-days', next)
+    window.dispatchEvent(new Event('wwcxrl-signed-updated'))
     markCloudSigned(selected.day, selected.date)
     logCloudEvent('signed_day', { day: selected.day, title: selected.title }, selected.day)
     if (selected.day === 300) {
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '300 天纪念日已签到，未来的日子继续温柔铺开。' }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '300 天纪念日已签到，未来的日子继续温柔铺开。' }))
     }
   }
 
   function selectDay(item) {
     if (isChildrenSpecialPostponed(item)) {
       setSelectedDay(item.day)
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: CHILDREN_POSTPONED_MESSAGE }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: CHILDREN_POSTPONED_MESSAGE }))
       logCloudEvent('children_special_postponed_click', { day: item.day, title: item.title }, item.day)
       return
     }
@@ -1218,10 +1328,10 @@ function CheckIn() {
               const unlockedDay = isUnlocked(item)
               const done = signed.includes(item.day)
               const completed = completedTasks.includes(item.day)
-              const today = item.date === todayKey
+              const isFutureSlot = item.type === 'futureLocked'
+              const today = !isFutureSlot && item.day === todayDay && item.date === todayKey
               const selected = selectedDay === item.day
               const postponed = isChildrenSpecialPostponed(item)
-              const isFutureSlot = item.type === 'futureLocked'
               const statusText = isFutureSlot ? '锁定' : postponed ? '延期' : done ? '已签' : today ? '今日' : !unlockedDay ? '未解锁' : completed ? '待签' : '可做'
               return (
                 <button
@@ -1263,8 +1373,8 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
   const [genericResetting, setGenericResetting] = useState(false)
   React.useEffect(() => {
     const refresh = () => setBagVersion(value => value + 1)
-    window.addEventListener('miyou-backpack-updated', refresh)
-    return () => window.removeEventListener('miyou-backpack-updated', refresh)
+    window.addEventListener('wwcxrl-backpack-updated', refresh)
+    return () => window.removeEventListener('wwcxrl-backpack-updated', refresh)
   }, [])
   void bagVersion
   const signBlockedReason = !unlocked
@@ -1291,21 +1401,23 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
                 ? '🌸 给小柚子戴上花环后可签到'
                 : item.type === 'photoWallFinale'
                   ? '🖼️ 补满照片墙后可签到'
-                  : '🍊 完成任务后可签到'
+                  : item.type === 'fortune'
+                    ? '🥚 砸开金蛋后可签到'
+                    : '🍊 完成任务后可签到'
         : '🍊 点击签到'
   const showDay8Reset = item.day === 8 && resetAvailable
   const showDay9Reset = item.day === 9 && resetAvailable
   const childrenResetConfig = CHILDREN_RESET_CONFIG[item.day]
   const sleepResetConfig = SLEEP_LAB_RESET_CONFIG[item.day]
   const genericResetConfig = GENERIC_DAY_RESET_CONFIG[item.day] || { label: `重置${item.date.slice(5).replace('-', '')}`, toast: `${item.date.slice(5).replace('-', '')} 已重置，可以重新体验这一天啦。` }
-  const showGenericReset = resetAvailable && !showDay8Reset && !showDay9Reset && !childrenResetConfig && !sleepResetConfig
+  const showGenericReset = resetAvailable && item.type !== 'fortune' && !showDay8Reset && !showDay9Reset && !childrenResetConfig && !sleepResetConfig
 
   async function handleDay8ResetClick() {
     if (day8Resetting) return
     setDay8Resetting(true)
     try {
       await resetDay8OneLightYearSignal()
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '527 已重置，可以重新体验 1 光年信号啦。' }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '527 已重置，可以重新体验 1 光年信号啦。' }))
     } finally {
       setDay8Resetting(false)
     }
@@ -1316,7 +1428,7 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
     setDay9Resetting(true)
     try {
       await resetDay9VacationBreak()
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '528 已重置，可以重新布置小柚子的假期啦。' }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '528 已重置，可以重新布置小柚子的假期啦。' }))
     } finally {
       setDay9Resetting(false)
     }
@@ -1327,7 +1439,7 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
     setChildrenResetting(true)
     try {
       await resetChildrenSpecialDay(item.day)
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: childrenResetConfig.toast }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: childrenResetConfig.toast }))
     } finally {
       setChildrenResetting(false)
     }
@@ -1338,7 +1450,7 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
     setSleepResetting(true)
     try {
       await resetSleepLabDay(item.day)
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: sleepResetConfig.toast }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: sleepResetConfig.toast }))
     } finally {
       setSleepResetting(false)
     }
@@ -1349,7 +1461,7 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
     setGenericResetting(true)
     try {
       await resetGenericDay(item)
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: genericResetConfig.toast }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: genericResetConfig.toast }))
     } finally {
       setGenericResetting(false)
     }
@@ -1492,7 +1604,7 @@ function SerialRiddleFirework({ item, taskCompleted, onTaskComplete }) {
       saveDay2State(remote.progress)
       setState(remote.progress)
       if (remote.progress.fireworksStarted) setNote('烟花已经成功燃放，今天的签到按钮可以点击啦。')
-    }).catch(error => console.warn('[miyou cloud] day2 progress load failed', error.message))
+    }).catch(error => console.warn('[wwcxrl cloud] day2 progress load failed', error.message))
     return () => { alive = false }
   }, [item.day])
 
@@ -1713,18 +1825,18 @@ function SerialRiddleFirework({ item, taskCompleted, onTaskComplete }) {
       <p className="riddle-status-note">{note}</p>
 
       {showFireworks && (
-        <div className="miyou-celebration-overlay" aria-hidden="true">
-          <div className="miyou-night-sky" />
-          <div className="miyou-launch-scene">
-            <span className="miyou-launch-tube" />
-            <span className="miyou-launch-flame" />
-            <span className="miyou-launch-smoke" />
+        <div className="wwcxrl-celebration-overlay" aria-hidden="true">
+          <div className="wwcxrl-night-sky" />
+          <div className="wwcxrl-launch-scene">
+            <span className="wwcxrl-launch-tube" />
+            <span className="wwcxrl-launch-flame" />
+            <span className="wwcxrl-launch-smoke" />
           </div>
-          {Array.from({ length: 7 }, (_, index) => <i className="miyou-rocket-trail" key={`rocket-${index}`} style={{ '--i': index }} />)}
-          {Array.from({ length: 16 }, (_, index) => <span className="miyou-burst" key={`burst-${index}`} style={{ '--i': index }} />)}
-          {Array.from({ length: 78 }, (_, index) => <b className="miyou-particle" key={`particle-${index}`} style={{ '--i': index }} />)}
-          {Array.from({ length: 32 }, (_, index) => <em className="miyou-heart-spark" key={`heart-${index}`} style={{ '--i': index }}>♡</em>)}
-          <div className="miyou-final-title">
+          {Array.from({ length: 7 }, (_, index) => <i className="wwcxrl-rocket-trail" key={`rocket-${index}`} style={{ '--i': index }} />)}
+          {Array.from({ length: 16 }, (_, index) => <span className="wwcxrl-burst" key={`burst-${index}`} style={{ '--i': index }} />)}
+          {Array.from({ length: 78 }, (_, index) => <b className="wwcxrl-particle" key={`particle-${index}`} style={{ '--i': index }} />)}
+          {Array.from({ length: 32 }, (_, index) => <em className="wwcxrl-heart-spark" key={`heart-${index}`} style={{ '--i': index }}>♡</em>)}
+          <div className="wwcxrl-final-title">
             <span>小琳</span>
             <span>521</span>
             <span>快乐</span>
@@ -1746,7 +1858,7 @@ function dataUrlToBlob(dataUrl) {
   return new Blob([array], { type: mime })
 }
 
-const DAY3_PROGRESS_KEY = 'miyou-day3-foam-progress'
+const DAY3_PROGRESS_KEY = 'wwcxrl-day3-foam-progress'
 const DAY3_EMPTY_PROGRESS = {
   smile: { status: 'draft', imageUrl: '', imagePath: '', submittedAt: '' },
   heart: { status: 'locked', imageUrl: '', imagePath: '', submittedAt: '' }
@@ -1776,12 +1888,12 @@ async function loadCloudDayProgress(day, { reviewMode = false } = {}) {
   const identity = getCloudIdentity()
   if (!supabase || !identity) return null
   let query = supabase
-    .from('miyou_day_progress')
+    .from('wwcxrl_day_progress')
     .select('user_id, progress_json, updated_at')
     .eq('day', day)
 
   if (reviewMode) {
-    query = query.eq('user_id', 'miyou-pomelo-main').limit(1)
+    query = query.eq('user_id', 'wwcxrl-pomelo-main').limit(1)
   } else {
     query = query.eq('user_id', identity.id).limit(1)
   }
@@ -1799,12 +1911,12 @@ async function uploadDay3Drawing(stage, dataUrl) {
   if (!supabase || !identity) return null
   const blob = await dataUrlToBlob(dataUrl)
   const path = `${identity.role}/${identity.id}/day3-${stage}-${Date.now()}.png`
-  const { error: uploadError } = await supabase.storage.from('miyou-photos').upload(path, blob, {
+  const { error: uploadError } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
     contentType: 'image/png',
     upsert: true
   })
   if (uploadError) throw uploadError
-  const { data: publicData } = supabase.storage.from('miyou-photos').getPublicUrl(path)
+  const { data: publicData } = supabase.storage.from('wwcxrl-photos').getPublicUrl(path)
   return { imageUrl: publicData.publicUrl, imagePath: path }
 }
 
@@ -1840,7 +1952,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
   const stage = activeStage === 'heart' ? progress.heart : progress.smile
   const stageApproved = stage.status === 'approved'
   const stageReplaying = !!replayingStages[activeStage]
-  const ownerDevice = typeof window !== 'undefined' && localStorage.getItem('miyou-owner-device') === 'yes'
+  const ownerDevice = typeof window !== 'undefined' && localStorage.getItem('wwcxrl-owner-device') === 'yes'
   const stageSubmitted = stage.status === 'submitted'
   const stageLocked = (stageApproved && !stageReplaying) || (stageSubmitted && !ownerDevice)
   const bothApproved = progress.smile.status === 'approved' && progress.heart.status === 'approved'
@@ -1873,21 +1985,21 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
           else if (next.smile.status !== 'approved') setActiveStage('smile')
         }
       })
-      .catch(error => console.warn('[miyou cloud] day3 progress load failed', error.message))
+      .catch(error => console.warn('[wwcxrl cloud] day3 progress load failed', error.message))
     }
     refreshCloudProgress()
     const intervalId = window.setInterval(refreshCloudProgress, ownerDevice ? 3000 : 5000)
     const handleFocus = () => refreshCloudProgress()
     const handleVisibility = () => { if (!document.hidden) refreshCloudProgress() }
-    const handleSignedUpdate = () => setSigned(getRoleJson('miyou-signed-days', []))
+    const handleSignedUpdate = () => setSigned(getRoleJson('wwcxrl-signed-days', []))
     window.addEventListener('focus', handleFocus)
-    window.addEventListener('miyou-signed-updated', handleSignedUpdate)
+    window.addEventListener('wwcxrl-signed-updated', handleSignedUpdate)
     document.addEventListener('visibilitychange', handleVisibility)
     return () => {
       alive = false
       window.clearInterval(intervalId)
       window.removeEventListener('focus', handleFocus)
-      window.removeEventListener('miyou-signed-updated', handleSignedUpdate)
+      window.removeEventListener('wwcxrl-signed-updated', handleSignedUpdate)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [item.day, ownerDevice])
@@ -2185,7 +2297,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
       try {
         uploaded = await uploadDay3Drawing(activeStage, dataUrl)
       } catch (uploadError) {
-        console.warn('[miyou day3] drawing upload failed', uploadError.message)
+        console.warn('[wwcxrl day3] drawing upload failed', uploadError.message)
       }
       const localPreview = uploaded?.imageUrl || dataUrl
       const next = {
@@ -2209,7 +2321,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
       setNote('已经提交啦，等小琛检查盖章~')
       resetCanvas()
     } catch (error) {
-      console.warn('[miyou day3] drawing submit failed', error)
+      console.warn('[wwcxrl day3] drawing submit failed', error)
       setNote('提交时出了点小问题，可以先别刷新，再试一次。')
     } finally {
       setBusy(false)
@@ -2328,7 +2440,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
-const DAY4_MAZE_KEY = 'miyou-day4-dark-maze-state'
+const DAY4_MAZE_KEY = 'wwcxrl-day4-dark-maze-state'
 const DAY4_MAZE_MAP = [
   '#####################',
   '#S..#.......#.......#',
@@ -2461,13 +2573,13 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
         setMessage('木门已经打开啦，今天的签到按钮可以点击了。')
         onTaskComplete(item.day)
       }
-    }).catch(error => console.warn('[miyou cloud] day4 progress load failed', error.message))
+    }).catch(error => console.warn('[wwcxrl cloud] day4 progress load failed', error.message))
     loadCloudBackpack().then(cloudBag => {
       if (!alive || !cloudBag) return
       const nextBag = { ...loadBackpack(), ...cloudBag }
       saveBackpack(nextBag)
       setBag(nextBag)
-    }).catch(error => console.warn('[miyou cloud] day4 backpack load failed', error.message))
+    }).catch(error => console.warn('[wwcxrl cloud] day4 backpack load failed', error.message))
     return () => { alive = false }
   }, [item.day, onTaskComplete])
 
@@ -2482,8 +2594,8 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
       setTransitioning(false)
       setMessage('迷宫已重置到入口：火柴和钥匙已恢复，先重新点亮火把吧。')
     }
-    window.addEventListener('miyou-generic-day-reset', handleGenericReset)
-    return () => window.removeEventListener('miyou-generic-day-reset', handleGenericReset)
+    window.addEventListener('wwcxrl-generic-day-reset', handleGenericReset)
+    return () => window.removeEventListener('wwcxrl-generic-day-reset', handleGenericReset)
   }, [item.day])
 
   function runMazeControl(action) {
@@ -2518,7 +2630,7 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
     saveBackpack(nextBag)
     setBag(nextBag)
     syncCloudBackpack(nextBag)
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
+    window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
     syncMaze({ ...current, mazeStarted: true, glitchSeen: true, litTorch: true, matchUsed: Number(current.matchUsed || 0) + 1 }, 'day4_torch_lit')
     setMessage('嚓——火柴亮了。小柚子的透明气泡上映出一小圈暖光。')
   }
@@ -2654,7 +2766,7 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
             {mazeState.litTorch ? '🔥 火把已经亮啦' : '🔥 点这里划亮火柴'}
           </button>
           <button type="button" className="maze-theme-direct-button" onClick={() => runMazeControl(() => openStarDoor(mazeStateRef.current.position, { bypassKey: true }))}>🚀 直接观看主题切换</button>
-          <div className={`maze-dpad ${mazeState.litTorch ? 'active' : 'locked'}`} aria-label="移动小柚子">
+          <div className={`maze-dpad ${mazeState.litTorch ? 'active' : 'locked'}`} aria-label="移动小琳">
             <button type="button" onPointerDown={event => { event.preventDefault(); runMazeControl(() => movePomelo(0, -1)) }} onClick={() => runMazeControl(() => movePomelo(0, -1))} aria-label="向上移动">↑</button>
             <button type="button" onPointerDown={event => { event.preventDefault(); runMazeControl(() => movePomelo(-1, 0)) }} onClick={() => runMazeControl(() => movePomelo(-1, 0))} aria-label="向左移动">←</button>
             <button type="button" onPointerDown={event => { event.preventDefault(); runMazeControl(() => movePomelo(1, 0)) }} onClick={() => runMazeControl(() => movePomelo(1, 0))} aria-label="向右移动">→</button>
@@ -2714,7 +2826,7 @@ function DarkMazeTransition({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
-const DAY8_SIGNAL_KEY = 'miyou-day8-one-lightyear-signal-state'
+const DAY8_SIGNAL_KEY = 'wwcxrl-day8-one-lightyear-signal-state'
 const DAY8_SIGNAL_TOTAL = 5.09
 const DAY8_SIGNAL_CLOUDS = [
   { id: 'slow', label: '慢吞吞云', x: 16, y: 28, hasStar: true, starText: '你已经走了很远。' },
@@ -2782,8 +2894,8 @@ function loadDay8SignalState() {
 function saveDay8SignalState(next, { cloud = true } = {}) {
   const normalized = normalizeDay8SignalState(next)
   setRoleJson(DAY8_SIGNAL_KEY, normalized)
-  if (typeof window !== 'undefined') window.dispatchEvent(new Event('miyou-day8-signal-updated'))
-  if (cloud) saveCloudDayProgress(8, normalized).catch(error => console.warn('[miyou cloud] day8 signal save failed', error.message))
+  if (typeof window !== 'undefined') window.dispatchEvent(new Event('wwcxrl-day8-signal-updated'))
+  if (cloud) saveCloudDayProgress(8, normalized).catch(error => console.warn('[wwcxrl cloud] day8 signal save failed', error.message))
   return normalized
 }
 
@@ -2792,8 +2904,8 @@ function OneLightYearSignalQuest({ item, taskCompleted = false, onTaskComplete =
   const [previewState, setPreviewState] = useState(loadDay8SignalState)
   React.useEffect(() => {
     const refresh = () => setPreviewState(loadDay8SignalState())
-    window.addEventListener('miyou-day8-signal-updated', refresh)
-    return () => window.removeEventListener('miyou-day8-signal-updated', refresh)
+    window.addEventListener('wwcxrl-day8-signal-updated', refresh)
+    return () => window.removeEventListener('wwcxrl-day8-signal-updated', refresh)
   }, [])
   const foundStarCount = previewState.foundStars.length
   const collectedValue = Math.min(DAY8_SIGNAL_TOTAL, foundStarCount + (previewState.selfLightFound ? 0.09 : 0))
@@ -2886,9 +2998,9 @@ function OneLightYearSignalGame({ item, taskCompleted = false, onTaskComplete = 
     const nextBag = { ...bag, one_lightyear_signal: Math.max(1, Number(bag.one_lightyear_signal || 0) + 1) }
     saveBackpack(nextBag)
     syncCloudBackpack(nextBag)
-    addCloudBackpackItems([{ id: 'one_lightyear_signal', count: 1 }]).catch(error => console.warn('[miyou cloud] day8 reward failed', error.message))
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
-    window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '获得道具：5.09 星光瓶' }))
+    addCloudBackpackItems([{ id: 'one_lightyear_signal', count: 1 }]).catch(error => console.warn('[wwcxrl cloud] day8 reward failed', error.message))
+    window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+    window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '获得道具：5.09 星光瓶' }))
     setRewardPopupOpen(true)
   }
 
@@ -3013,7 +3125,7 @@ function OneLightYearSignalGame({ item, taskCompleted = false, onTaskComplete = 
 }
 
 
-const DAY9_VACATION_KEY = 'miyou-day9-yuzu-vacation-state'
+const DAY9_VACATION_KEY = 'wwcxrl-day9-yuzu-vacation-state'
 const DAY9_WEATHER_MODES = [
   { id: 'quiet', icon: '🌙', label: '安静', helper: '关掉天气音，只留一点软软的房间声。' },
   { id: 'rain', icon: '🌧️', label: '雨天', helper: '窗外下起小雨，适合窝在被子里。' },
@@ -3052,7 +3164,7 @@ function loadDay9VacationState() {
 function saveDay9VacationState(next, { cloud = true } = {}) {
   const normalized = normalizeDay9VacationState(next)
   setRoleJson(DAY9_VACATION_KEY, normalized)
-  if (cloud) saveCloudDayProgress(9, normalized).catch(error => console.warn('[miyou cloud] day9 vacation save failed', error.message))
+  if (cloud) saveCloudDayProgress(9, normalized).catch(error => console.warn('[wwcxrl cloud] day9 vacation save failed', error.message))
   return normalized
 }
 
@@ -3128,10 +3240,10 @@ function VacationBreakQuest({ item, taskCompleted = false, onTaskComplete = () =
       setState(fresh)
       setRewardPopupOpen(false)
     }
-    window.addEventListener('miyou-day9-vacation-reset', handleReset)
+    window.addEventListener('wwcxrl-day9-vacation-reset', handleReset)
     return () => {
       alive = false
-      window.removeEventListener('miyou-day9-vacation-reset', handleReset)
+      window.removeEventListener('wwcxrl-day9-vacation-reset', handleReset)
     }
   }, [])
 
@@ -3153,9 +3265,9 @@ function VacationBreakQuest({ item, taskCompleted = false, onTaskComplete = () =
     if (Number(bag.vacation_half_hour_ticket || 0) > 0) return
     const nextBag = { ...bag, vacation_half_hour_ticket: 1 }
     saveBackpack(nextBag)
-    addCloudBackpackItems([{ id: 'vacation_half_hour_ticket', count: 1 }]).catch(error => console.warn('[miyou cloud] day9 reward failed', error.message))
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
-    window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '获得道具：半小时放假券' }))
+    addCloudBackpackItems([{ id: 'vacation_half_hour_ticket', count: 1 }]).catch(error => console.warn('[wwcxrl cloud] day9 reward failed', error.message))
+    window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+    window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '获得道具：半小时放假券' }))
     setRewardPopupOpen(true)
   }
 
@@ -3374,13 +3486,13 @@ function normalizeChildrenSpecialState(day, value = {}) {
 }
 
 function loadChildrenSpecialState(day) {
-  return normalizeChildrenSpecialState(day, getRoleJson(`miyou-children-special-day${day}`, {}))
+  return normalizeChildrenSpecialState(day, getRoleJson(`wwcxrl-children-special-day${day}`, {}))
 }
 
 function saveChildrenSpecialState(day, next, { cloud = true } = {}) {
   const normalized = normalizeChildrenSpecialState(day, next)
-  setRoleJson(`miyou-children-special-day${day}`, normalized)
-  if (cloud) saveCloudDayProgress(day, normalized).catch(error => console.warn(`[miyou cloud] children day${day} save failed`, error.message))
+  setRoleJson(`wwcxrl-children-special-day${day}`, normalized)
+  if (cloud) saveCloudDayProgress(day, normalized).catch(error => console.warn(`[wwcxrl cloud] children day${day} save failed`, error.message))
   return normalized
 }
 
@@ -3389,8 +3501,8 @@ function grantChildrenReward(itemId, count = 1) {
   const bag = loadBackpack()
   const nextBag = { ...bag, [itemId]: Math.max(Number(bag[itemId] || 0), count) }
   saveBackpack(nextBag)
-  addCloudBackpackItems([{ id: itemId, count }]).catch(error => console.warn('[miyou cloud] children reward failed', error.message))
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
+  addCloudBackpackItems([{ id: itemId, count }]).catch(error => console.warn('[wwcxrl cloud] children reward failed', error.message))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
 }
 
 function ChildrenComfortQuest({ item, taskCompleted = false, onTaskComplete = () => {} }) {
@@ -3415,10 +3527,10 @@ function ChildrenComfortQuest({ item, taskCompleted = false, onTaskComplete = ()
       setState(fresh)
       setRewardPopup(null)
     }
-    window.addEventListener('miyou-children-special-reset', handleReset)
+    window.addEventListener('wwcxrl-children-special-reset', handleReset)
     return () => {
       alive = false
-      window.removeEventListener('miyou-children-special-reset', handleReset)
+      window.removeEventListener('wwcxrl-children-special-reset', handleReset)
     }
   }, [item.day])
 
@@ -3610,25 +3722,25 @@ function normalizeSleepLabState(value = {}) {
 }
 
 function isFlowerCrownTaskActuallyComplete(day) {
-  const state = getRoleJson(`miyou-flower-crown-day${day}`, {})
+  const state = getRoleJson(`wwcxrl-flower-crown-day${day}`, {})
   const backpack = loadBackpack()
   return Boolean(state.completed && state.worn && state.crafted && (state.craftedPieces?.length || 0) >= FLOWER_CROWN_TARGET && Number(backpack.flower_crown || 0) > 0)
 }
 
 function isSleepLabTaskActuallyComplete(day) {
-  const sleepState = normalizeSleepLabState(getRoleJson(`miyou-sleep-lab-day${day}`, {}))
+  const sleepState = normalizeSleepLabState(getRoleJson(`wwcxrl-sleep-lab-day${day}`, {}))
   const backpack = loadBackpack()
   return Boolean(sleepState.finalShown && sleepState.yuzu?.asleep && Number(backpack.good_sleep_night_lamp || 0) > 0)
 }
 
 function loadSleepLabState(day) {
-  return normalizeSleepLabState(getRoleJson(`miyou-sleep-lab-day${day}`, {}))
+  return normalizeSleepLabState(getRoleJson(`wwcxrl-sleep-lab-day${day}`, {}))
 }
 
 function saveSleepLabState(day, next, { cloud = true } = {}) {
   const normalized = normalizeSleepLabState(next)
-  setRoleJson(`miyou-sleep-lab-day${day}`, normalized)
-  if (cloud) saveCloudDayProgress(day, normalized).catch(error => console.warn(`[miyou cloud] sleep lab day${day} save failed`, error.message))
+  setRoleJson(`wwcxrl-sleep-lab-day${day}`, normalized)
+  if (cloud) saveCloudDayProgress(day, normalized).catch(error => console.warn(`[wwcxrl cloud] sleep lab day${day} save failed`, error.message))
   return normalized
 }
 
@@ -3661,8 +3773,8 @@ function SleepAtmosphereLab({ item, taskCompleted = false, onTaskComplete = () =
       setYuzuDrag(null)
       if (yuzuTimerRef.current) window.clearTimeout(yuzuTimerRef.current)
     }
-    window.addEventListener('miyou-sleep-lab-reset', reset)
-    return () => { alive = false; window.removeEventListener('miyou-sleep-lab-reset', reset) }
+    window.addEventListener('wwcxrl-sleep-lab-reset', reset)
+    return () => { alive = false; window.removeEventListener('wwcxrl-sleep-lab-reset', reset) }
   }, [item.day])
 
   const allRegularAsleep = SLEEP_ANIMALS.every(animal => state.asleep[animal.id])
@@ -3980,13 +4092,13 @@ function normalizeFlowerCrownState(value = {}) {
 }
 
 function loadFlowerCrownState(day) {
-  return normalizeFlowerCrownState(getRoleJson(`miyou-flower-crown-day${day}`, {}))
+  return normalizeFlowerCrownState(getRoleJson(`wwcxrl-flower-crown-day${day}`, {}))
 }
 
 function saveFlowerCrownState(day, next, { cloud = true } = {}) {
   const normalized = normalizeFlowerCrownState(next)
-  setRoleJson(`miyou-flower-crown-day${day}`, normalized)
-  if (cloud) saveCloudDayProgress(day, normalized).catch(error => console.warn(`[miyou cloud] flower crown day${day} save failed`, error.message))
+  setRoleJson(`wwcxrl-flower-crown-day${day}`, normalized)
+  if (cloud) saveCloudDayProgress(day, normalized).catch(error => console.warn(`[wwcxrl cloud] flower crown day${day} save failed`, error.message))
   return normalized
 }
 
@@ -4006,8 +4118,8 @@ function FlowerCrownQuest({ item, taskCompleted = false, onTaskComplete = () => 
       setDraggingId(null)
       setFinalOpen(false)
     }
-    window.addEventListener('miyou-signed-updated', handleReset)
-    return () => window.removeEventListener('miyou-signed-updated', handleReset)
+    window.addEventListener('wwcxrl-signed-updated', handleReset)
+    return () => window.removeEventListener('wwcxrl-signed-updated', handleReset)
   }, [item.day])
 
   const placedCount = state.placed.length
@@ -4079,7 +4191,7 @@ function FlowerCrownQuest({ item, taskCompleted = false, onTaskComplete = () => 
       message: '花环戴好啦。小柚子头上戴着的，就是刚刚亲手制作好的那一整圈花瓣。'
     }, 'flower_crown_completed')
     grantChildrenReward('flower_crown')
-    window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '获得道具：花花小王冠' }))
+    window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '获得道具：花花小王冠' }))
     setFinalOpen(true)
     onTaskComplete(item.day)
     return next
@@ -4203,8 +4315,8 @@ function OrigamiCompanionQuest({ item, taskCompleted = false, onTaskComplete = (
   )
 }
 
-const FINAL_MATCHBOX_FLAG = 'miyou-final-matchbox-note-unlocked'
-const ANNIVERSARY_ANSWER_KEY = 'miyou-day24-anniversary-answer-146-ok'
+const FINAL_MATCHBOX_FLAG = 'wwcxrl-final-matchbox-note-unlocked'
+const ANNIVERSARY_ANSWER_KEY = 'wwcxrl-day24-anniversary-answer-146-ok'
 const FINAL_PLACEHOLDER_PHOTO = '/images/final-sign-placeholder.svg'
 
 function isFinalMatchboxUnlocked() {
@@ -4213,7 +4325,7 @@ function isFinalMatchboxUnlocked() {
 
 function setFinalMatchboxUnlocked(value = true) {
   setRoleJson(FINAL_MATCHBOX_FLAG, Boolean(value))
-  window.dispatchEvent(new Event('miyou-backpack-updated'))
+  window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
 }
 
 function buildAnniversaryRewindFrames(photos = {}) {
@@ -4248,7 +4360,7 @@ function AnniversaryFinaleQuest({ item, signed = false, taskCompleted = false, o
   const [albumMaking, setAlbumMaking] = useState(false)
   const [giftOpen, setGiftOpen] = useState(false)
   const [status, setStatus] = useState('今天只需要回答一个小问题。')
-  const ready = isPhotoWallFinaleActuallyComplete(24) && getRoleJson('miyou-signed-days', []).includes(23)
+  const ready = isPhotoWallFinaleActuallyComplete(24) && getRoleJson('wwcxrl-signed-days', []).includes(23)
   const normalizedAnswer = answer.replace(/[\s·。！？!?,，、：“”"'‘’（）()]/g, '')
   const answerOk = normalizedAnswer === '146'
   const videoRef = React.useRef(null)
@@ -4271,7 +4383,7 @@ function AnniversaryFinaleQuest({ item, signed = false, taskCompleted = false, o
       const video = videoRef.current
       if (!video) return
       video.play?.().catch(error => {
-        console.warn('[miyou anniversary] autoplay failed', error.message)
+        console.warn('[wwcxrl anniversary] autoplay failed', error.message)
       })
     }, 260)
     return () => window.clearTimeout(timer)
@@ -4287,7 +4399,7 @@ function AnniversaryFinaleQuest({ item, signed = false, taskCompleted = false, o
         albumRequested: true,
         giftRevealed: true,
         finishedAt: new Date().toISOString()
-      }).catch(error => console.warn('[miyou cloud] anniversary gift save failed', error.message))
+      }).catch(error => console.warn('[wwcxrl cloud] anniversary gift save failed', error.message))
       logCloudEvent('anniversary_album_gift_revealed', { gift: 'self-pickup-photo' }, item.day)
     }, 5000)
     return () => window.clearTimeout(timer)
@@ -4326,9 +4438,9 @@ function AnniversaryFinaleQuest({ item, signed = false, taskCompleted = false, o
   return (
     <div className="anniversary-finale-entry anniversary-answer-entry">
       <div className="anniversary-finale-card anniversary-answer-card">
-        <span className="tiny-label">612 · Final Check-in</span>
-        <h4>{signed ? '612 签到已完成' : '612 一周年签到'}</h4>
-        <p>今天是最后一格签到。回答下面这个问题，答对以后就可以盖上 612 的章。</p>
+        <span className="tiny-label">1013 · Final Check-in</span>
+        <h4>{signed ? '1013 签到已完成' : '1013 纪念日签到'}</h4>
+        <p>今天是最后一格签到。回答下面这个问题，答对以后就可以盖上 1013 的章。</p>
         <div className="anniversary-riddle-box">
           <label>
             <span>从朋友到恋人要走多少步？</span>
@@ -4351,15 +4463,15 @@ function AnniversaryFinaleQuest({ item, signed = false, taskCompleted = false, o
         <small>{signed ? '最后一格已经盖章完成。' : status}</small>
         {signed && <button type="button" onClick={() => setShowMovie(true)}>重新播放</button>}
       </div>
-      {!ready && <p className="answer-error-note">612 已锁定：请先完成 611 的 48/48 照片墙并盖章签到。</p>}
+      {!ready && <p className="answer-error-note">1013 已锁定：请先完成 1012 的 48/48 照片墙并盖章签到。</p>}
 
       {showMovie && createPortal(
-        <div className="anniversary-rewind-modal" role="dialog" aria-modal="true" aria-label="612 电影放映">
+        <div className="anniversary-rewind-modal" role="dialog" aria-modal="true" aria-label="1013 电影放映">
           <div className="anniversary-rewind-stage anniversary-video-stage anniversary-final-movie-stage">
             <button type="button" className="rewind-close" onClick={() => setShowMovie(false)}>×</button>
             <div className="rewind-projector" aria-hidden="true"><span /> <i /> <b /></div>
             <div className="rewind-title anniversary-video-title anniversary-final-movie-title">
-              <span>612</span>
+              <span>1013</span>
               <h3>正在播放</h3>
             </div>
             <div className="anniversary-video-frame">
@@ -4399,7 +4511,7 @@ function AnniversaryFinaleQuest({ item, signed = false, taskCompleted = false, o
 
             {giftOpen && (
               <div className="anniversary-gift-reveal">
-                <img src={ANNIVERSARY_GIFT_PHOTO_SRC} alt="612 礼物照片" />
+                <img src={ANNIVERSARY_GIFT_PHOTO_SRC} alt="1013 礼物照片" />
                 <strong>礼物请自提!</strong>
                 <button type="button" onClick={() => setShowMovie(false)}>收到啦</button>
               </div>
@@ -4412,16 +4524,1009 @@ function AnniversaryFinaleQuest({ item, signed = false, taskCompleted = false, o
   )
 }
 
+// ===== 通用小游戏：迷宫（管理页 game 类型，gameId=mazeClassic） =====
+const MAZE_GAME_PRESETS = {
+  easy: {
+    label: '轻松迷宫 · 9×9',
+    hint: '路比较直，第一次玩也很快到出口',
+    map: [
+      '#########',
+      '#S......#',
+      '#.#####.#',
+      '#.#...#.#',
+      '#.#.#.#.#',
+      '#.#.#.#.#',
+      '#.#...#.#',
+      '#..###..#',
+      '#######D#'
+    ]
+  },
+  medium: {
+    label: '中等迷宫 · 13×13',
+    hint: '稍微有点绕，走一走就能到',
+    map: [
+      '#############',
+      '#S......#...#',
+      '#######.###.#',
+      '#.....#.....#',
+      '#.###.#####.#',
+      '#.#.#.......#',
+      '#.#.#########',
+      '#.#.........#',
+      '#.#######.#.#',
+      '#.........#.#',
+      '###########.#',
+      '#..........D#',
+      '#############'
+    ]
+  },
+  classic: {
+    label: '经典迷宫 · 21×19',
+    hint: '原版 524 迷宫的大小，全图可见',
+    map: DAY4_MAZE_MAP
+  }
+}
+
+function findMazeCell(map, target) {
+  for (let y = 0; y < map.length; y++) {
+    const x = map[y].indexOf(target)
+    if (x >= 0) return { x, y }
+  }
+  return { x: 1, y: 1 }
+}
+
+function normalizeMazeGameState(raw = {}, startPos, doorPos) {
+  const source = raw || {}
+  const position = source.position && Number.isFinite(Number(source.position.x)) && Number.isFinite(Number(source.position.y))
+    ? {
+        x: Math.max(1, Math.min(doorPos.x, Number(source.position.x))),
+        y: Math.max(1, Math.min(doorPos.y, Number(source.position.y)))
+      }
+    : startPos
+  return {
+    position,
+    doorReached: Boolean(source.doorReached),
+    opened: Boolean(source.opened)
+  }
+}
+
+function MazeGame({ item, taskCompleted, onTaskComplete }) {
+  const preset = MAZE_GAME_PRESETS[item.gameConfig?.preset] || MAZE_GAME_PRESETS.medium
+  const map = preset.map
+  const cols = map[0].length
+  const rows = map.length
+  const startPos = useMemo(() => findMazeCell(map, 'S'), [map])
+  const doorPos = useMemo(() => findMazeCell(map, 'D'), [map])
+  const stateKey = `wwcxrl-maze-${item.day}`
+  const loadState = () => normalizeMazeGameState(getRoleJson(stateKey, null), startPos, doorPos)
+  const [state, setState] = useState(loadState)
+  const stateRef = React.useRef(state)
+  const controlTapRef = React.useRef(0)
+  const localDirtyRef = React.useRef(false)
+  const [message, setMessage] = useState(taskCompleted ? '迷宫已经完成啦，今天的签到按钮可以点击了。' : '用方向键 / WASD / 下方按钮移动小琳，走到出口的星星门前。')
+
+  function saveLocalState(next) {
+    const normalized = normalizeMazeGameState(next, startPos, doorPos)
+    setRoleJson(stateKey, normalized)
+    stateRef.current = normalized
+    setState(normalized)
+    return normalized
+  }
+
+  function syncMaze(next) {
+    localDirtyRef.current = true
+    const normalized = saveLocalState(next)
+    saveCloudDayProgress(item.day, { maze: normalized })
+    return normalized
+  }
+
+  function resetGame() {
+    const start = { position: startPos, doorReached: false, opened: false }
+    localDirtyRef.current = true
+    saveLocalState(start)
+    saveCloudDayProgress(item.day, { maze: start })
+    setMessage('迷宫已重置，重新出发吧。')
+  }
+
+  function moveTo(dx, dy) {
+    const now = Date.now()
+    if (now - controlTapRef.current < 130) return
+    controlTapRef.current = now
+    const current = stateRef.current
+    if (current.opened) return
+    const nextPosition = { x: current.position.x + dx, y: current.position.y + dy }
+    const cell = map[nextPosition.y]?.[nextPosition.x]
+    if (cell === undefined || cell === '#') {
+      setMessage('撞到墙啦，换个方向试试。')
+      return
+    }
+    const atDoor = nextPosition.x === doorPos.x && nextPosition.y === doorPos.y
+    syncMaze({ ...current, position: nextPosition, doorReached: current.doorReached || atDoor })
+    setMessage(atDoor ? '到出口啦，门缝里透出一点点光，点“开门”吧。' : '小琳往前走了一步，继续找出口吧。')
+  }
+
+  function openDoor() {
+    const current = stateRef.current
+    syncMaze({ ...current, doorReached: true, opened: true })
+    setMessage('门打开了，迷宫任务完成，今天的签到按钮亮起来啦。')
+    if (!taskCompleted) onTaskComplete(item.day)
+  }
+
+  React.useEffect(() => {
+    let alive = true
+    loadCloudDayProgress(item.day).then(remote => {
+      if (!alive || !remote?.progress || localDirtyRef.current) return
+      const remoteState = normalizeMazeGameState(remote.progress.maze, startPos, doorPos)
+      const local = stateRef.current || loadState()
+      const score = s => (s.opened ? 10000 : 0) + (s.doorReached ? 5000 : 0) + Math.abs(s.position.x - startPos.x) + Math.abs(s.position.y - startPos.y)
+      if (score(remoteState) <= score(local)) return
+      saveLocalState(remoteState)
+      if (remoteState.opened && !taskCompleted) onTaskComplete(item.day)
+    })
+    return () => { alive = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.day, taskCompleted, onTaskComplete])
+
+  React.useEffect(() => {
+    const isTypingTarget = target => {
+      const tag = target?.tagName?.toLowerCase?.()
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable
+    }
+    const moveKeys = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0], w: [0, -1], s: [0, 1], a: [-1, 0], d: [1, 0] }
+    const handleKey = event => {
+      const key = event.key
+      const dir = moveKeys[key.length === 1 ? key.toLowerCase() : key]
+      if (!dir || isTypingTarget(event.target)) return
+      event.preventDefault()
+      moveTo(dir[0], dir[1])
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  React.useEffect(() => {
+    const handleReset = event => {
+      if (Number(event.detail?.day) !== Number(item.day)) return
+      resetGame()
+    }
+    window.addEventListener('wwcxrl-generic-day-reset', handleReset)
+    return () => window.removeEventListener('wwcxrl-generic-day-reset', handleReset)
+  }, [item.day])
+
+  return (
+    <div className={`mini-game maze-classic-game ${state.opened ? 'is-complete' : ''}`}>
+      <div className="maze-classic-board" style={{ '--maze-cols': cols, '--maze-rows': rows }}>
+        {map.flatMap((row, y) => row.split('').map((cell, x) => {
+          const isHero = state.position.x === x && state.position.y === y
+          const isDoor = x === doorPos.x && y === doorPos.y
+          const isStart = x === startPos.x && y === startPos.y
+          return (
+            <span
+              key={`${x}-${y}`}
+              className={`maze-classic-cell ${cell === '#' ? 'wall' : 'path'} ${isDoor ? 'door' : ''} ${isStart ? 'start' : ''}`}
+            >
+              {isDoor && <i className="maze-classic-door">✦</i>}
+              {isStart && !isHero && <i className="maze-classic-start">入口</i>}
+              {isHero && <span className="maze-classic-hero"><DogSprite type="pomelo" /></span>}
+            </span>
+          )
+        }))}
+      </div>
+      <p className="maze-classic-message">{message}</p>
+      <div className="maze-classic-dpad" aria-label="移动小琳">
+        <button type="button" onPointerDown={event => { event.preventDefault(); moveTo(0, -1) }} onClick={() => moveTo(0, -1)} aria-label="向上移动">↑</button>
+        <button type="button" onPointerDown={event => { event.preventDefault(); moveTo(-1, 0) }} onClick={() => moveTo(-1, 0)} aria-label="向左移动">←</button>
+        <button type="button" onPointerDown={event => { event.preventDefault(); moveTo(1, 0) }} onClick={() => moveTo(1, 0)} aria-label="向右移动">→</button>
+        <button type="button" onPointerDown={event => { event.preventDefault(); moveTo(0, 1) }} onClick={() => moveTo(0, 1)} aria-label="向下移动">↓</button>
+      </div>
+      {state.doorReached && !state.opened && (
+        <div className="maze-classic-door-panel">
+          <strong>你已到达出口</strong>
+          <p>门口透出一小圈暖光，轻轻推开门吧。</p>
+          <button type="button" className="maze-classic-open" onClick={openDoor}>✨ 开门</button>
+        </div>
+      )}
+      {state.opened && (
+        <div className="maze-classic-done">
+          <p>{item.secret || '迷宫完成啦！'}</p>
+        </div>
+      )}
+      <button type="button" className="maze-classic-restart" onClick={resetGame}>↺ 重新开始</button>
+      <small className="maze-classic-preset">{preset.label}</small>
+    </div>
+  )
+}
+
+// ===== 通用小游戏模板注册表（管理页 game 类型可选的参数） =====
+const MINI_GAMES = [
+  {
+    id: 'mazeClassic',
+    label: '迷宫',
+    icon: '🗺️',
+    hint: '她走迷宫到出口并点“开门”，即可完成签到',
+    defaults: { preset: 'medium' },
+    fields: [
+      { key: 'preset', label: '迷宫地图', type: 'select', options: [
+        { value: 'easy', label: '轻松迷宫 · 9×9' },
+        { value: 'medium', label: '中等迷宫 · 13×13' },
+        { value: 'classic', label: '经典迷宫 · 21×19' }
+      ] }
+    ]
+  },
+  {
+    id: 'catchHearts',
+    label: '接爱心',
+    icon: '🧡',
+    hint: '移动小篮子接住飘落的爱心，接满即可完成签到',
+    defaults: { target: 10, speed: 'normal' },
+    fields: [
+      { key: 'target', label: '需要接住的数量', type: 'number', min: 3, max: 30 },
+      { key: 'speed', label: '下落速度', type: 'select', options: [
+        { value: 'slow', label: '慢' },
+        { value: 'normal', label: '中' },
+        { value: 'fast', label: '快' }
+      ] }
+    ]
+  },
+  {
+    id: 'popBubbles',
+    label: '戳泡泡',
+    icon: '🫧',
+    hint: '点破飘起来的泡泡，戳够数量即可完成签到',
+    defaults: { target: 10 },
+    fields: [
+      { key: 'target', label: '需要戳破的数量', type: 'number', min: 3, max: 30 }
+    ]
+  },
+  {
+    id: 'memoryMatch',
+    label: '翻牌记忆',
+    icon: '🃏',
+    hint: '翻开两张相同的小图案配对，全部配完即可完成签到',
+    defaults: { pairs: 4 },
+    fields: [
+      { key: 'pairs', label: '卡片对数', type: 'select', options: [
+        { value: '4', label: '4 对（8 张）' },
+        { value: '6', label: '6 对（12 张）' },
+        { value: '8', label: '8 对（16 张）' }
+      ] }
+    ]
+  },
+  {
+    id: 'slidePuzzle',
+    label: '滑块拼图',
+    icon: '🧩',
+    hint: '点击相邻滑块把它滑进空格，按顺序拼好即可完成签到',
+    defaults: { size: 3 },
+    fields: [
+      { key: 'size', label: '拼图大小', type: 'select', options: [
+        { value: '3', label: '3×3' },
+        { value: '4', label: '4×4' }
+      ] }
+    ]
+  }
+]
+
+function getMiniGameDefaults(gameId) {
+  const game = MINI_GAMES.find(entry => entry.id === gameId)
+  return game ? { ...game.defaults } : {}
+}
+
+function clampNumber(value, min, max, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) ? Math.max(min, Math.min(max, Math.round(number))) : fallback
+}
+
+function shuffleArray(array) {
+  const next = [...array]
+  for (let index = next.length - 1; index > 0; index--) {
+    const pick = Math.floor(Math.random() * (index + 1))
+    ;[next[index], next[pick]] = [next[pick], next[index]]
+  }
+  return next
+}
+
+// ---- 小游戏 1：接爱心 ----
+const CATCH_HEART_POOL = ['❤️', '🧡', '💛', '💖', '💘', '💝']
+
+function CatchHeartsGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const target = clampNumber(config.target, 3, 30, 10)
+  const fallSpeed = config.speed === 'fast' ? 3.1 : config.speed === 'slow' ? 1.5 : 2.2
+  const stateKey = `wwcxrl-game-catch-${item.day}`
+  const loadCaught = () => {
+    const saved = getRoleJson(stateKey, 0)
+    return Number.isFinite(Number(saved)) ? Math.max(0, Math.min(target, Number(saved))) : 0
+  }
+  const [caught, setCaught] = useState(loadCaught)
+  const [hearts, setHearts] = useState([])
+  const [bursts, setBursts] = useState([])
+  const [missed, setMissed] = useState([])
+  const [basketX, setBasketX] = useState(50)
+  const areaRef = React.useRef(null)
+  const basketRef = React.useRef(basketX)
+  const caughtRef = React.useRef(caught)
+  const heartsRef = React.useRef([])
+  const burstsRef = React.useRef([])
+  const missedRef = React.useRef([])
+  const heartIdRef = React.useRef(0)
+  const burstIdRef = React.useRef(0)
+  const doneRef = React.useRef(taskCompleted || caught >= target)
+  const [running, setRunning] = useState(!doneRef.current)
+
+  React.useEffect(() => { basketRef.current = basketX }, [basketX])
+
+  React.useEffect(() => {
+    if (!running || doneRef.current) return
+    const tick = window.setInterval(() => {
+      const basket = basketRef.current
+      const now = Date.now()
+      const next = []
+      let extra = 0
+      for (const heart of heartsRef.current) {
+        const y = heart.y + heart.vy
+        if (y >= 86 && Math.abs(heart.x - basket) <= 13) {
+          extra += 1
+          burstsRef.current.push({
+            id: burstIdRef.current++,
+            x: heart.x,
+            y: 86,
+            born: now,
+            dx: (Math.random() - 0.5) * 36,
+            char: heart.char
+          })
+        } else if (y < 102) {
+          next.push({ ...heart, y })
+        } else {
+          missedRef.current.push({ id: heart.id, x: heart.x, y: 100, missedAt: now, char: heart.char })
+        }
+      }
+      if (extra > 0) {
+        caughtRef.current += extra
+        setCaught(caughtRef.current)
+        setRoleJson(stateKey, caughtRef.current)
+        if (caughtRef.current >= target && !doneRef.current) {
+          doneRef.current = true
+          setRunning(false)
+          onTaskComplete(item.day)
+        }
+      }
+      if (next.length < 5 && Math.random() < 0.3) {
+        next.push({
+          id: heartIdRef.current++,
+          x: 8 + Math.random() * 84,
+          y: -8,
+          vy: fallSpeed * (0.75 + Math.random() * 0.5),
+          size: 18 + Math.random() * 16,
+          sway: 3 + Math.random() * 7,
+          swaySpeed: 0.9 + Math.random() * 1.4,
+          tilt: (Math.random() - 0.5) * 36,
+          char: CATCH_HEART_POOL[Math.floor(Math.random() * CATCH_HEART_POOL.length)]
+        })
+      }
+      heartsRef.current = next
+      burstsRef.current = burstsRef.current.filter(burst => now - burst.born < 620)
+      missedRef.current = missedRef.current.filter(heart => now - heart.missedAt < 700)
+      setHearts(next)
+      setBursts(burstsRef.current)
+      setMissed(missedRef.current)
+    }, 42)
+    return () => window.clearInterval(tick)
+  }, [running, item.day, onTaskComplete, target, fallSpeed, stateKey])
+
+  function resetGame() {
+    doneRef.current = false
+    caughtRef.current = 0
+    heartsRef.current = []
+    burstsRef.current = []
+    missedRef.current = []
+    heartIdRef.current = 0
+    setCaught(0)
+    setHearts([])
+    setBursts([])
+    setMissed([])
+    setRoleJson(stateKey, 0)
+    setRunning(true)
+  }
+
+  function moveBasket(dx) {
+    if (doneRef.current) return
+    setBasketX(prev => Math.max(6, Math.min(94, prev + dx)))
+  }
+
+  const handlePointerMove = event => {
+    if (doneRef.current) return
+    const rect = areaRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setBasketX(Math.max(6, Math.min(94, ((event.clientX - rect.left) / rect.width) * 100)))
+  }
+
+  const done = doneRef.current || (taskCompleted && !running)
+
+  return (
+    <div className="mini-game catch-game">
+      <div
+        className="catch-area"
+        ref={areaRef}
+        onPointerMove={handlePointerMove}
+        onPointerDown={handlePointerMove}
+        style={{ touchAction: 'none' }}
+      >
+        {hearts.map(heart => (
+          <span
+            key={heart.id}
+            className="catch-heart"
+            style={{
+              left: `${heart.x}%`,
+              top: `${heart.y}%`,
+              '--size': `${heart.size}px`,
+              '--sway': `${heart.sway}px`,
+              '--sway-speed': `${heart.swaySpeed}s`,
+              '--tilt': `${heart.tilt}deg`
+            }}
+          >{heart.char}</span>
+        ))}
+        {missed.map(heart => (
+          <span key={`missed-${heart.id}`} className="catch-heart is-missed" style={{ left: `${heart.x}%`, top: `${heart.y}%`, '--size': '26px', '--sway': '0px', '--tilt': '0deg' }}>{heart.char}</span>
+        ))}
+        {bursts.map(burst => (
+          <span key={`burst-${burst.id}`} className="catch-heart-burst" style={{ left: `${burst.x}%`, top: `${burst.y}%`, '--dx': `${burst.dx}px` }}>{burst.char}</span>
+        ))}
+        <span className="catch-basket" style={{ left: `${basketX}%` }}>🧺</span>
+      </div>
+      <p className="catch-status">已接住 <strong>{Math.min(caught, target)}</strong> / {target}</p>
+      <div className="catch-controls">
+        <button type="button" onClick={() => moveBasket(-14)} aria-label="向左移动">◀</button>
+        <button type="button" onClick={() => moveBasket(14)} aria-label="向右移动">▶</button>
+      </div>
+      {done && <div className="game-done-panel"><p>{item.secret || '全部接住啦！'}</p></div>}
+      <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
+    </div>
+  )
+}
+
+// ---- 小游戏 2：戳泡泡 ----
+function PopBubblesGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const target = clampNumber(config.target, 3, 30, 10)
+  const stateKey = `wwcxrl-game-pop-${item.day}`
+  const loadPopped = () => {
+    const saved = getRoleJson(stateKey, 0)
+    return Number.isFinite(Number(saved)) ? Math.max(0, Math.min(target, Number(saved))) : 0
+  }
+  const [popped, setPopped] = useState(loadPopped)
+  const [bubbles, setBubbles] = useState([])
+  const poppedRef = React.useRef(popped)
+  const bubblesRef = React.useRef([])
+  const bubbleIdRef = React.useRef(0)
+  const doneRef = React.useRef(taskCompleted || popped >= target)
+  const aliveRef = React.useRef(true)
+  const [running, setRunning] = useState(!doneRef.current)
+
+  React.useEffect(() => () => { aliveRef.current = false }, [])
+
+  React.useEffect(() => {
+    if (!running || doneRef.current) return
+    const tick = window.setInterval(() => {
+      const next = bubblesRef.current
+        .map(bubble => ({ ...bubble, y: bubble.y - bubble.vy, wobble: bubble.wobble + 0.07 }))
+        .filter(bubble => bubble.y > -16 && !bubble.popping)
+      if (next.length < 7 && Math.random() < 0.32) {
+        next.push({ id: bubbleIdRef.current++, x: 6 + Math.random() * 88, y: 106, vy: 0.55 + Math.random() * 0.75, size: 24 + Math.random() * 26, wobble: 0 })
+      }
+      bubblesRef.current = next
+      setBubbles(next)
+    }, 46)
+    return () => window.clearInterval(tick)
+  }, [running, item.day, target, stateKey])
+
+  function popBubble(id) {
+    if (doneRef.current) return
+    const bubble = bubblesRef.current.find(entry => entry.id === id)
+    if (!bubble || bubble.popping) return
+    bubblesRef.current = bubblesRef.current.map(entry => entry.id === id ? { ...entry, popping: true } : entry)
+    setBubbles(bubblesRef.current)
+    poppedRef.current += 1
+    setPopped(poppedRef.current)
+    setRoleJson(stateKey, poppedRef.current)
+    if (poppedRef.current >= target && !doneRef.current) {
+      doneRef.current = true
+      setRunning(false)
+      onTaskComplete(item.day)
+    }
+    window.setTimeout(() => {
+      if (!aliveRef.current) return
+      bubblesRef.current = bubblesRef.current.filter(entry => entry.id !== id)
+      setBubbles(bubblesRef.current)
+    }, 340)
+  }
+
+  function resetGame() {
+    doneRef.current = false
+    poppedRef.current = 0
+    bubblesRef.current = []
+    bubbleIdRef.current = 0
+    setPopped(0)
+    setBubbles([])
+    setRoleJson(stateKey, 0)
+    setRunning(true)
+  }
+
+  const done = doneRef.current || (taskCompleted && !running)
+
+  return (
+    <div className="mini-game pop-game">
+      <div className="pop-area">
+        {bubbles.map(bubble => (
+          <button
+            key={bubble.id}
+            type="button"
+            className={`pop-bubble ${bubble.popping ? 'is-popping' : ''}`}
+            style={{ left: `${bubble.x}%`, top: `${bubble.y}%`, width: bubble.size, height: bubble.size, '--wobble': bubble.wobble }}
+            onClick={() => popBubble(bubble.id)}
+            aria-label="戳泡泡"
+          >
+            <span>🫧</span>
+          </button>
+        ))}
+      </div>
+      <p className="pop-status">已戳破 <strong>{Math.min(popped, target)}</strong> / {target}</p>
+      {done && <div className="game-done-panel"><p>{item.secret || '泡泡全破啦！'}</p></div>}
+      <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
+    </div>
+  )
+}
+
+// ---- 小游戏 3：翻牌记忆 ----
+const MEMORY_EMOJI_POOL = ['🍊', '🐶', '🌸', '🌙', '⭐', '🍀', '☁️', '🫧', '🍓', '🌷', '🦋', '🌈']
+
+function MemoryMatchGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const pairs = config.pairs === 6 ? 6 : config.pairs === 8 ? 8 : 4
+  const [round, setRound] = useState(0)
+  const cards = useMemo(() => {
+    const picked = shuffleArray(MEMORY_EMOJI_POOL.slice(0, pairs))
+    const deck = [...picked, ...picked].map((emoji, index) => ({ id: index, emoji }))
+    return shuffleArray(deck)
+  }, [pairs, round])
+  const [flipped, setFlipped] = useState([])
+  const [matchedIds, setMatchedIds] = useState([])
+  const lockRef = React.useRef(false)
+  const aliveRef = React.useRef(true)
+
+  React.useEffect(() => () => { aliveRef.current = false }, [])
+
+  React.useEffect(() => {
+    if (matchedIds.length === cards.length && cards.length > 0 && !taskCompleted) onTaskComplete(item.day)
+  }, [matchedIds, cards, taskCompleted, item.day, onTaskComplete])
+
+  function flipCard(card) {
+    if (lockRef.current || taskCompleted || flipped.includes(card.id) || matchedIds.includes(card.id)) return
+    const next = [...flipped, card.id]
+    setFlipped(next)
+    if (next.length < 2) return
+    lockRef.current = true
+    const first = cards.find(entry => entry.id === next[0])
+    const second = cards.find(entry => entry.id === next[1])
+    const matched = first.emoji === second.emoji
+    window.setTimeout(() => {
+      if (!aliveRef.current) return
+      if (matched) setMatchedIds(prev => Array.from(new Set([...prev, first.id, second.id])))
+      setFlipped([])
+      lockRef.current = false
+    }, matched ? 420 : 820)
+  }
+
+  function resetGame() {
+    lockRef.current = false
+    setFlipped([])
+    setMatchedIds([])
+    setRound(value => value + 1)
+  }
+
+  return (
+    <div className="mini-game memory-game">
+      <div className="memory-grid" style={{ '--memory-cols': 4 }}>
+        {cards.map(card => {
+          const isMatched = matchedIds.includes(card.id)
+          const isUp = isMatched || flipped.includes(card.id)
+          return (
+            <button
+              key={`${round}-${card.id}`}
+              type="button"
+              className={`memory-card-item ${isUp ? 'is-up' : ''} ${isMatched ? 'is-matched' : ''}`}
+              onClick={() => flipCard(card)}
+              disabled={taskCompleted}
+              aria-label="翻开记忆卡片"
+            >
+              <span className="memory-card-back">🎀</span>
+              <span className="memory-card-face">{card.emoji}</span>
+            </button>
+          )
+        })}
+      </div>
+      <p className="memory-status">已配对 <strong>{matchedIds.length / 2}</strong> / {pairs}</p>
+      {matchedIds.length === cards.length && cards.length > 0 && <div className="game-done-panel"><p>{item.secret || '全部配对成功啦！'}</p></div>}
+      <button type="button" className="game-restart" onClick={resetGame}>↺ 重新洗牌</button>
+    </div>
+  )
+}
+
+// ---- 小游戏 4：滑块拼图 ----
+function makeSlidableBoard(size) {
+  const count = size * size
+  const board = Array.from({ length: count }, (_, index) => (index + 1) % count)
+  let empty = count - 1
+  for (let step = 0; step < count * 130; step++) {
+    const x = empty % size
+    const y = Math.floor(empty / size)
+    const moves = []
+    if (x > 0) moves.push(empty - 1)
+    if (x < size - 1) moves.push(empty + 1)
+    if (y > 0) moves.push(empty - size)
+    if (y < size - 1) moves.push(empty + size)
+    const pick = moves[Math.floor(Math.random() * moves.length)]
+    ;[board[empty], board[pick]] = [board[pick], board[empty]]
+    empty = pick
+  }
+  return board
+}
+
+function SlidePuzzleGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const size = config.size === 4 ? 4 : 3
+  const [board, setBoard] = useState(() => makeSlidableBoard(size))
+  const [moves, setMoves] = useState(0)
+  const solved = board.every((value, index) => value === (index + 1) % (size * size))
+
+  React.useEffect(() => {
+    if (solved && !taskCompleted) onTaskComplete(item.day)
+  }, [solved, taskCompleted, item.day, onTaskComplete])
+
+  function tapTile(index) {
+    if (solved || taskCompleted) return
+    const empty = board.indexOf(0)
+    const x = index % size
+    const y = Math.floor(index / size)
+    const ex = empty % size
+    const ey = Math.floor(empty / size)
+    if (Math.abs(x - ex) + Math.abs(y - ey) !== 1) return
+    const next = [...board]
+    ;[next[index], next[empty]] = [next[empty], next[index]]
+    setBoard(next)
+    setMoves(value => value + 1)
+  }
+
+  function resetGame() {
+    setBoard(makeSlidableBoard(size))
+    setMoves(0)
+  }
+
+  return (
+    <div className="mini-game slide-game">
+      <div className="slide-board" style={{ '--slide-size': size }}>
+        {board.map((value, index) => (
+          <button
+            key={index}
+            type="button"
+            className={`slide-tile ${value === 0 ? 'is-empty' : ''}`}
+            onClick={() => tapTile(index)}
+            disabled={value === 0 || solved || taskCompleted}
+            aria-label={value === 0 ? '空格' : `第 ${value} 块`}
+          >
+            {value !== 0 ? value : ''}
+          </button>
+        ))}
+      </div>
+      <p className="slide-status">已走 <strong>{moves}</strong> 步{solved ? ' · 拼好啦！' : ''}</p>
+      {solved && <div className="game-done-panel"><p>{item.secret || '拼图完成啦！'}</p></div>}
+      <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
+    </div>
+  )
+}
+
+// ---- 一封信：拆开信封再读 ----
+function LetterQuest({ item, taskCompleted, onTaskComplete }) {
+  const [stage, setStage] = useState(taskCompleted ? 'opened' : 'closed')
+  const opening = stage === 'opening'
+  const opened = stage === 'opened'
+  const done = taskCompleted || opened
+  const openTimerRef = React.useRef(0)
+  React.useEffect(() => () => window.clearTimeout(openTimerRef.current), [])
+
+  function startOpen() {
+    if (done || opening) return
+    setStage('opening')
+    openTimerRef.current = window.setTimeout(() => setStage('opened'), 720)
+  }
+
+  return (
+    <div className={`mini-game letter-quest ${opening ? 'is-opening' : ''} ${done ? 'is-open' : ''}`}>
+      <div
+        className="letter-envelope"
+        role="button"
+        tabIndex={0}
+        aria-label={done ? '信已经拆开' : '拆开信封'}
+        onClick={startOpen}
+        onKeyDown={event => {
+          if (!done && !opening && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault()
+            startOpen()
+          }
+        }}
+      >
+        <span className="letter-envelope-flap" aria-hidden="true" />
+        <span className="letter-envelope-pocket" aria-hidden="true" />
+        <span className="letter-envelope-seal" aria-hidden="true">{item.icon || '✉️'}</span>
+        <div className="letter-envelope-copy">
+          <strong>一封写给你的信</strong>
+          <p>{opening ? '封蜡裂开，信纸正在浮起来……' : '点一下，拆开信封'}</p>
+        </div>
+      </div>
+      <article className="letter-paper" aria-hidden={!done}>
+        {item.image && <img className="letter-paper-image" src={item.image} alt="信纸配图" />}
+        <div className="letter-paper-greeting">{item.theme || '给我的小琳'}</div>
+        <p className="letter-paper-body">{item.secret}</p>
+        <div className="letter-paper-meta">
+          <span>{item.date}</span>
+          <span className="letter-paper-sign">— 爱你的小琛</span>
+        </div>
+        {!taskCompleted && (
+          <button type="button" className="letter-done-button" onClick={() => onTaskComplete(item.day)}>我读完啦，可以签到</button>
+        )}
+      </article>
+    </div>
+  )
+}
+
+// ---- 砸金蛋：点金蛋敲出今日奖励 ----
+const DEFAULT_FORTUNE_POOL = ['🧋 一杯奶茶', '☕ 一杯咖啡', '🍜 点一个好吃的外卖', '🎁 神秘大奖', '🍰 一块小蛋糕']
+const FORTUNE_PICKS_KEY = 'wwcxrl-fortune-picks-v1'
+
+function readFortunePick(day) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FORTUNE_PICKS_KEY) || '{}')
+    return String(saved[String(day)] || '').trim()
+  } catch {
+    return ''
+  }
+}
+
+function writeFortunePick(day, prize) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(FORTUNE_PICKS_KEY) || '{}')
+    saved[String(day)] = String(prize || '').trim()
+    localStorage.setItem(FORTUNE_PICKS_KEY, JSON.stringify(saved))
+  } catch {
+    // ignore
+  }
+}
+
+function FortuneQuest({ item, taskCompleted, onTaskComplete }) {
+  const isVoyageBottle = item.day === 5
+  const pool = useMemo(() => {
+    if (isVoyageBottle) return []
+    const raw = String(item.secret || '').trim()
+    if (!raw) return DEFAULT_FORTUNE_POOL
+    return raw.split(/\n+/).map(line => line.trim()).filter(Boolean)
+  }, [item.secret, isVoyageBottle])
+  const [rolling, setRolling] = useState(false)
+  const [picked, setPicked] = useState(taskCompleted)
+  const [spinText, setSpinText] = useState('')
+  const [pickText, setPickText] = useState(() => readFortunePick(item.day))
+  const timerRef = React.useRef(0)
+  const spinTimerRef = React.useRef(0)
+
+  React.useEffect(() => () => { window.clearTimeout(timerRef.current); window.clearInterval(spinTimerRef.current) }, [])
+
+  React.useEffect(() => {
+    let alive = true
+    loadCloudDayProgress(item.day).then(remote => {
+      if (!alive || !remote?.progress?.fortunePick) return
+      const prize = String(remote.progress.fortunePick).trim()
+      if (prize) {
+        writeFortunePick(item.day, prize)
+        setPickText(prize)
+      }
+    }).catch(() => {})
+    return () => { alive = false }
+  }, [item.day])
+
+  function revealFortune() {
+    if (rolling || picked) return
+    setRolling(true)
+    if (!isVoyageBottle && pool.length > 1) {
+      let index = 0
+      setSpinText(pool[0])
+      spinTimerRef.current = window.setInterval(() => {
+        index = (index + 1) % pool.length
+        setSpinText(pool[index])
+      }, 100)
+    } else if (!isVoyageBottle && pool.length === 1) {
+      setSpinText(pool[0])
+    }
+    timerRef.current = window.setTimeout(() => {
+      window.clearInterval(spinTimerRef.current)
+      const prize = isVoyageBottle ? '' : pool[Math.floor(Math.random() * pool.length)]
+      setSpinText('')
+      setPickText(prize)
+      writeFortunePick(item.day, prize)
+      saveCloudDayProgress(item.day, { fortunePick: prize })
+      setRolling(false)
+      setPicked(true)
+      onTaskComplete(item.day)
+      if (!isVoyageBottle) markCloudTaskCompleted(item.day, item.date)
+      logCloudEvent(isVoyageBottle ? 'day5_star_bottle_opened' : 'daily_fortune_picked', { day: item.day, title: item.title, prize }, item.day)
+    }, isVoyageBottle ? 1100 : 1500)
+  }
+
+  return (
+    <div className={`mini-game fortune-game ${isVoyageBottle ? 'day5-voyage-bottle' : ''} ${picked ? 'is-picked' : ''} ${rolling ? 'is-rolling' : ''}`}>
+      {isVoyageBottle && <div className="voyage-bottle-sky" aria-hidden="true"><span /> <span /> <span /></div>}
+      {isVoyageBottle ? (
+        <button className="big-toy" onClick={revealFortune} disabled={rolling} aria-label="摇一摇 524 星际心情瓶">🫧</button>
+      ) : (
+        <button
+          type="button"
+          className={`golden-egg-btn ${rolling ? 'is-cracking' : ''} ${picked ? 'is-smashed' : ''}`}
+          onClick={revealFortune}
+          disabled={rolling}
+          aria-label="砸开金蛋"
+        >
+          <img className="golden-egg-img" src="/images/capsule-golden-egg.png" alt="小金蛋" />
+          <svg className="egg-crack" viewBox="0 0 256 221" aria-hidden="true" focusable="false">
+            <path d="M64 18 L92 52 L74 86 L112 112 L96 150 L126 178 L118 204" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M150 26 L168 58 L150 92 L186 124 L168 158 L196 184" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span className="egg-hammer" aria-hidden="true">🔨</span>
+          <span className="egg-shards" aria-hidden="true"><i /><i /><i /><i /></span>
+          <span className="egg-flash" aria-hidden="true">✨</span>
+        </button>
+      )}
+      {!isVoyageBottle && (
+        <div className="fortune-stick" aria-live="polite">
+          <span className={`fortune-stick-label ${rolling ? 'is-spinning' : ''} ${picked ? 'is-settled' : ''}`}>
+            {rolling ? (spinText || '……') : picked ? pickText : '金蛋里藏着什么？'}
+          </span>
+          {picked && (
+            <span className="fortune-burst" aria-hidden="true"><span>✨</span><span>💗</span><span>⭐</span></span>
+          )}
+        </div>
+      )}
+      <p>{rolling ? '金蛋轻轻晃了晃，裂纹慢慢爬上来……' : picked ? (isVoyageBottle ? item.secret : (pickText ? `今天的小确幸：${pickText}` : item.secret || '今天也要开开心心。')) : isVoyageBottle ? '木门后的第一只心情瓶正在慢慢漂过来，轻轻点一下。' : '点一下金蛋，敲出今日的小惊喜。'}</p>
+      {isVoyageBottle && <small>{picked ? '瓶口冒出一圈小星星：524 的航线已经亮起一点点。' : '它里面装着一点点薄荷色银河、一颗小橙子星和小柚子的气泡。'}</small>}
+    </div>
+  )
+}
+
+// ---- 贴纸 / 心愿：小琳写下心愿，双方可见 ----
+const WISH_LOCAL_KEY = 'wwcxrl-wish-local-v1'
+
+function readLocalWish(day) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WISH_LOCAL_KEY) || '{}')
+    return String(saved[String(day)] || '').trim()
+  } catch (error) {
+    return ''
+  }
+}
+
+function writeLocalWish(day, text) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(WISH_LOCAL_KEY) || '{}')
+    saved[String(day)] = String(text || '').trim()
+    localStorage.setItem(WISH_LOCAL_KEY, JSON.stringify(saved))
+  } catch (error) {
+    // ignore
+  }
+}
+
+function StickerQuest({ item, taskCompleted, onTaskComplete }) {
+  const day = item.day
+  const [cloudWish, setCloudWish] = useState(null)
+  const [cloudLoaded, setCloudLoaded] = useState(false)
+  const [wishText, setWishText] = useState('')
+  const [peeled, setPeeled] = useState(taskCompleted)
+  const [saving, setSaving] = useState(false)
+  const [saveNote, setSaveNote] = useState('')
+
+  React.useEffect(() => {
+    let alive = true
+    loadCloudWish(day).then(result => {
+      if (!alive) return
+      setCloudWish(result)
+      setCloudLoaded(true)
+    })
+    return () => { alive = false }
+  }, [day])
+
+  if (!cloudLoaded) {
+    return (
+      <div className="mini-game sticker-quest">
+        <div className="sticker-board">
+          <span className="wish-write-icon" aria-hidden="true">🪄</span>
+          <p className="wish-write-title">正在翻开心愿簿……</p>
+        </div>
+      </div>
+    )
+  }
+
+  const wish = cloudWish?.wishText || readLocalWish(day)
+  const hasWish = Boolean(wish.trim())
+
+  async function saveWish() {
+    const text = wishText.trim()
+    if (!text || saving) return
+    setSaving(true)
+    setSaveNote('')
+    const saved = await saveCloudWish(day, text)
+    setSaving(false)
+    if (saved) {
+      setCloudWish(saved)
+    } else {
+      writeLocalWish(day, text)
+      setCloudWish({ day, wishText: text })
+      setSaveNote(cloudEnabled ? '心愿已经收好啦，网络有点不稳，我会再试着帮你同步。' : '心愿已经记在小本本上啦。')
+    }
+    setWishText('')
+    setPeeled(true)
+    onTaskComplete(day)
+  }
+
+  function peelSticker() {
+    if (peeled) return
+    setPeeled(true)
+    onTaskComplete(day)
+    logCloudEvent('daily_sticker_peeled', { day, title: item.title }, day)
+  }
+
+  return (
+    <div className={`mini-game sticker-quest ${peeled ? 'is-peeled' : ''}`}>
+      {hasWish ? (
+        <div className="sticker-board">
+          <button type="button" className="sticker-peel" onClick={peelSticker} disabled={peeled} aria-label="揭下心愿贴纸">
+            <span className="sticker-peel-front">{item.icon || '🏷️'}</span>
+            <span className="sticker-peel-hint">{peeled ? '已揭开' : '揭下我'}</span>
+          </button>
+          {peeled && (
+            <p className="sticker-reveal wish-reveal">
+              <strong>小琳的 Day {day} 心愿</strong>
+              {wish}
+            </p>
+          )}
+        </div>
+      ) : (
+        <div className="sticker-board wish-write-board">
+          <span className="wish-write-icon" aria-hidden="true">💌</span>
+          <p className="wish-write-title">{item.secret || '写下你今天的心愿吧'}</p>
+          <textarea
+            value={wishText}
+            onChange={event => setWishText(event.target.value)}
+            rows={3}
+            maxLength={200}
+            placeholder="把今天想说的话留在这里，我会收进小星球。"
+            aria-label="写下心愿"
+          />
+          <button type="button" className="letter-done-button" onClick={saveWish} disabled={saving || !wishText.trim()}>
+            {saving ? '保存中…' : '写好啦，签个到'}
+          </button>
+          {saveNote && <p className="wish-save-note">{saveNote}</p>}
+        </div>
+      )}
+      {saveNote && <p className="wish-save-note">{saveNote}</p>}
+      {!peeled && !hasWish && <p>今天的心愿位还空着，写下想说的话，写好后自动签到。</p>}
+    </div>
+  )
+}
+
 function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskComplete = () => {} }) {
-  const [count, setCount] = useState(0)
   const [answer, setAnswer] = useState('')
-  const [picked, setPicked] = useState(false)
   const [answerConfirmed, setAnswerConfirmed] = useState(false)
   const [answerError, setAnswerError] = useState('')
   const [chatStarted, setChatStarted] = useState(false)
-  const target = item.day === 18 ? 6 : 12
   const normalizedAnswer = answer.replace(/[\s·。！？!?,，、]/g, '')
-  const expectedAnswer = (item.answer || (item.day === 8 ? '520612' : '小星球')).replace(/[\s·。！？!?,，、]/g, '')
+  const expectedAnswer = (item.answer || (item.day === 8 ? '5201013' : '小星球')).replace(/[\s·。！？!?,，、]/g, '')
   const puzzleOk = normalizedAnswer === expectedAnswer
 
   if (item.type === 'serialRiddleFirework') {
@@ -4480,17 +5585,26 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     return <div className="daily-letter children-postponed-letter"><p>{CHILDREN_POSTPONED_MESSAGE}</p></div>
   }
 
+  if (item.type === 'game') {
+    const gameId = item.gameId || 'mazeClassic'
+    if (gameId === 'mazeClassic') return <MazeGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'catchHearts') return <CatchHeartsGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'popBubbles') return <PopBubblesGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'memoryMatch') return <MemoryMatchGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'slidePuzzle') return <SlidePuzzleGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+  }
+
   if (item.type === 'memoryPuzzle') {
     return (
       <div className="memory-puzzle">
-        <div className="memory-card">
+        <div className={`memory-card ${puzzleOk && answerConfirmed ? 'is-confirmed' : ''}`}>
           <div className="memory-photo-wrap">
             <img src={item.image} alt="谜面图" />
           </div>
           <div className="memory-copy minimal-memory-copy">
             <div className="riddle-minimal-hint">
-              <span>2026.08.09 · 猜谜语签到</span>
-              <strong>谜底是我们一起走过的地方</strong>
+              <span>{item.date.replace(/-/g, '.')} · 猜谜语签到</span>
+              <strong>{item.theme ? `谜底：${item.theme}` : '谜底是我们一起走过的地方'}</strong>
             </div>
             <label className="riddle-answer">
               <input
@@ -4536,8 +5650,8 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
             }}
           >
             <div className="chat-phone-top">
-              <span>2026年8月9日 · 第一天</span>
-              <strong>第一次散步记忆</strong>
+              <span>{item.day === 300 ? '2026年8月9日 · 第一天' : `${item.date} · Day ${item.day}`}</span>
+              <strong>{item.day === 300 ? '第一次散步记忆' : (item.memoryTitle || item.title)}</strong>
             </div>
             <div className={`chat-screen ${chatStarted ? 'animated-chat' : 'chat-waiting'}`}>
               {!chatStarted ? (
@@ -4574,15 +5688,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     )
   }
 
-  if (item.type === 'tap') {
-    return (
-      <div className="mini-game tap-game">
-        <button className="big-toy" onClick={() => setCount(value => Math.min(value + 1, target))}>{item.icon}</button>
-        <div className="progress-track"><span style={{ width: `${Math.min(count / target * 100, 100)}%` }} /></div>
-        <p>{count >= target ? item.secret : `已收集 ${count}/${target}，继续点点点～`}</p>
-      </div>
-    )
-  }
+
 
   if (item.type === 'puzzle') {
     return (
@@ -4593,21 +5699,16 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     )
   }
 
-  if (item.type === 'fortune' || item.type === 'sticker') {
-    const isVoyageBottle = item.day === 5
-    const revealFortune = () => {
-      setPicked(true)
-      onTaskComplete(item.day)
-      logCloudEvent(isVoyageBottle ? 'day5_star_bottle_opened' : 'daily_fortune_picked', { day: item.day, title: item.title }, item.day)
-    }
-    return (
-      <div className={`mini-game fortune-game ${isVoyageBottle ? 'day5-voyage-bottle' : ''} ${picked ? 'is-picked' : ''}`}>
-        {isVoyageBottle && <div className="voyage-bottle-sky" aria-hidden="true"><span /> <span /> <span /></div>}
-        <button className="big-toy" onClick={revealFortune} aria-label={isVoyageBottle ? '摇一摇 524 星际心情瓶' : '抽取今日结果'}>{isVoyageBottle ? '🫧' : item.type === 'fortune' ? '🎰' : '🏷️'}</button>
-        <p>{picked ? item.secret : isVoyageBottle ? '木门后的第一只心情瓶正在慢慢漂过来，轻轻点一下。' : '点击抽取今日结果。'}</p>
-        {isVoyageBottle && <small>{picked ? '瓶口冒出一圈小星星：524 的航线已经亮起一点点。' : '它里面装着一点点薄荷色银河、一颗小橙子星和小柚子的气泡。'}</small>}
-      </div>
-    )
+  if (item.type === 'fortune') {
+    return <FortuneQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+  }
+
+  if (item.type === 'sticker') {
+    return <StickerQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+  }
+
+  if (item.type === 'letter') {
+    return <LetterQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
   }
 
   if (item.type === 'album') {
@@ -4622,6 +5723,9 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
   return (
     <div className="daily-letter">
       <p>{item.secret}</p>
+      {!taskCompleted && (
+        <button type="button" className="letter-done-button" onClick={() => onTaskComplete(item.day)}>我读完啦，可以签到</button>
+      )}
     </div>
   )
 }
@@ -4632,7 +5736,7 @@ function Timeline() {
       <header className="section-heading playful-heading">
         <span>Our Timeline</span>
         <h2>我们的故事时间线</h2>
-        <p>现在时间线也和 520-612 连载计划连起来：每天都是通往一周年的小节点。</p>
+        <p>现在时间线也和 520-1013 连载计划连起来：每天都是通往一周年的小节点。</p>
       </header>
       <div className="timeline-list">
         {timeline.map((item, index) => (
@@ -4686,7 +5790,7 @@ function LoveBox() {
 }
 
 
-const PHOTO_WALL_KEY = 'miyou-photo-wall-v1'
+const PHOTO_WALL_KEY = 'wwcxrl-photo-wall-v1'
 // 柯基/金毛等只用作头像和吉祥物，历史测试期若被当成照片传上墙，一律清理，不允许出现在照片墙。
 const PHOTO_WALL_TEST_IMAGE_NAMES = new Set(['柯基.png', '金毛.png', 'corgi.png', 'golden.png', 'bichon.png', 'dog-one.png', 'dog-two.png'])
 function isPhotoWallTestImage(photo) {
@@ -4776,9 +5880,9 @@ async function loadCloudPhotoWallRows() {
   const supabase = await getSupabase()
   if (!supabase) return {}
   const identity = getCloudIdentity()
-  const userIds = ['miyou-orange-main', 'miyou-pomelo-main']
+  const userIds = ['wwcxrl-orange-main', 'wwcxrl-pomelo-main']
   const { data, error } = await supabase
-    .from('miyou_photo_wall')
+    .from('wwcxrl_photo_wall')
     .select('id,user_id,day,owner,image_url,image_path,caption,frame,source,updated_at')
     .in('user_id', userIds)
     .order('updated_at', { ascending: true })
@@ -4801,7 +5905,7 @@ async function loadCloudUploadedPhotoDays(targetUserId = null) {
   if (!supabase || !identity) return []
   const userId = targetUserId || identity.id
   const { data, error } = await supabase
-    .from('miyou_photo_wall')
+    .from('wwcxrl_photo_wall')
     .select('day,source')
     .eq('user_id', userId)
     .not('image_url', 'is', null)
@@ -4826,22 +5930,22 @@ async function grantEnergyChanceForPhotoDay(dayNumber) {
   return { state: local, granted: false }
 }
 
-async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame) {
-  const supabase = await getSupabase()
-  const identity = getCloudIdentity()
-  if (!supabase || !identity) return null
+async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame, identityOverride = null) {
+  const { supabase, identity } = await ensureProfile()
+  const activeIdentity = identityOverride || identity
+  if (!supabase || !activeIdentity) return null
   const blob = await dataUrlToBlob(dataUrl)
   const safeName = String(fileName || 'photo.jpg').replace(/[^a-zA-Z0-9._-]/g, '_')
-  const path = `${identity.role}/${identity.id}/${day.day}-${owner.id}-${Date.now()}-${safeName}.jpg`
-  const { error: uploadError } = await supabase.storage.from('miyou-photos').upload(path, blob, {
+  const path = `${activeIdentity.role}/${activeIdentity.id}/${day.day}-${owner.id}-${Date.now()}-${safeName}.jpg`
+  const { error: uploadError } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
     contentType: 'image/jpeg',
     upsert: true
   })
   if (uploadError) throw uploadError
-  const { data: publicData } = supabase.storage.from('miyou-photos').getPublicUrl(path)
+  const { data: publicData } = supabase.storage.from('wwcxrl-photos').getPublicUrl(path)
   const now = new Date().toISOString()
   const payload = {
-    user_id: identity.id,
+    user_id: activeIdentity.id,
     day: day.day,
     owner: owner.id,
     image_url: publicData.publicUrl,
@@ -4852,7 +5956,7 @@ async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame) {
     updated_at: now
   }
   const { data, error } = await supabase
-    .from('miyou_photo_wall')
+    .from('wwcxrl_photo_wall')
     .upsert(payload, { onConflict: 'user_id,day,owner' })
     .select('*')
     .single()
@@ -4862,8 +5966,7 @@ async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame) {
 }
 
 async function updateCloudPhotoFrame(photo, key, frame) {
-  const supabase = await getSupabase()
-  const identity = getCloudIdentity()
+  const { supabase, identity } = await ensureProfile()
   if (!supabase || !identity || !photo?.src || photo.source === 'static') return null
   const [day, owner] = key.split('-')
   const payload = {
@@ -4878,7 +5981,7 @@ async function updateCloudPhotoFrame(photo, key, frame) {
     updated_at: new Date().toISOString()
   }
   const { data, error } = await supabase
-    .from('miyou_photo_wall')
+    .from('wwcxrl_photo_wall')
     .upsert(payload, { onConflict: 'user_id,day,owner' })
     .select('*')
     .single()
@@ -4887,14 +5990,149 @@ async function updateCloudPhotoFrame(photo, key, frame) {
 }
 
 async function removeCloudPhoto(photo, key) {
-  const supabase = await getSupabase()
-  const identity = getCloudIdentity()
+  const { supabase, identity } = await ensureProfile()
   if (!supabase || !identity || !photo || photo.source === 'static') return
   const [day, owner] = key.split('-')
-  let query = supabase.from('miyou_photo_wall').delete().eq('day', Number(day)).eq('owner', owner)
+  let query = supabase.from('wwcxrl_photo_wall').delete().eq('day', Number(day)).eq('owner', owner)
   query = photo.userId ? query.eq('user_id', photo.userId) : query.eq('user_id', identity.id)
   const { error } = await query
   if (error) throw error
+}
+
+// ===== 相册待同步队列：云端失败时照片先留在本机，之后自动/手动补传 =====
+const PHOTO_WALL_PENDING_KEY = 'wwcxrl-photo-wall-pending-v1'
+
+function loadPhotoWallPending() {
+  try {
+    const list = JSON.parse(localStorage.getItem(PHOTO_WALL_PENDING_KEY) || '[]')
+    return Array.isArray(list) ? list : []
+  } catch {
+    return []
+  }
+}
+
+function savePhotoWallPending(list) {
+  try {
+    localStorage.setItem(PHOTO_WALL_PENDING_KEY, JSON.stringify(list || []))
+  } catch (error) {
+    console.warn('[wwcxrl album] pending queue save failed', error.message)
+  }
+}
+
+function enqueuePhotoWallPending(item) {
+  const list = loadPhotoWallPending()
+  const index = list.findIndex(existing => existing.type === item.type && Number(existing.day) === Number(item.day) && existing.owner === item.owner)
+  if (index >= 0) {
+    list[index] = { ...list[index], ...item, updatedAt: new Date().toISOString() }
+  } else {
+    list.push({ ...item, id: `pw-pending-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() })
+  }
+  savePhotoWallPending(list)
+  return list
+}
+
+function removePhotoWallPending(type, day, owner) {
+  const list = loadPhotoWallPending()
+  const next = list.filter(item => !(item.type === type && Number(item.day) === Number(day) && item.owner === owner))
+  savePhotoWallPending(next)
+  return next
+}
+
+function isPhotoPendingFor(key) {
+  const [day, owner] = key.split('-')
+  return loadPhotoWallPending().some(item => item.type === 'upload' && Number(item.day) === Number(day) && item.owner === owner)
+}
+
+function mergePhotoWallViews(cloud, local) {
+  const pendingKeys = new Set(loadPhotoWallPending().filter(item => item.type === 'upload').map(item => `${item.day}-${item.owner}`))
+  const merged = { ...STATIC_PHOTOS, ...local }
+  for (const [key, photo] of Object.entries(cloud)) {
+    if (pendingKeys.has(key)) continue
+    merged[key] = photo
+  }
+  for (const key of Object.keys(local)) {
+    if (cloud[key] && !pendingKeys.has(key)) delete merged[key]
+  }
+  return merged
+}
+
+async function uploadPendingPhotoItem(item) {
+  const owner = PHOTO_OWNERS.find(o => o.id === item.owner)
+  const day = dailyAdventures.find(d => Number(d.day) === Number(item.day)) || { day: Number(item.day), date: '' }
+  if (!owner || !item.dataUrl) return false
+  const identityOverride = item.userId
+    ? { id: item.userId, role: item.role || 'pomelo', displayName: item.displayName || (item.role === 'orange' ? '小琛' : '小琳'), deviceLabel: '' }
+    : null
+  const cloudPhoto = await uploadPhotoToCloud(day, owner, item.dataUrl, item.fileName || 'photo.jpg', item.frame || 'cream', identityOverride)
+  return Boolean(cloudPhoto)
+}
+
+async function flushPendingPhotoWallSync() {
+  if (!cloudEnabled) return { synced: 0, failed: 0 }
+  const pending = loadPhotoWallPending()
+  if (!pending.length) return { synced: 0, failed: 0 }
+  let synced = 0
+  let failed = 0
+  for (const item of pending) {
+    const key = `${item.day}-${item.owner}`
+    try {
+      if (item.type === 'upload') {
+        const ok = await uploadPendingPhotoItem(item)
+        if (!ok) { failed += 1; continue }
+        removePhotoWallPending('upload', item.day, item.owner)
+        const local = loadPhotoWallLocal()
+        if (local[key]) {
+          delete local[key]
+          savePhotoWallLocal(local)
+        }
+        synced += 1
+      } else if (item.type === 'frame') {
+        const photo = { src: item.imageUrl, imagePath: item.imagePath || '', caption: item.caption || '', frame: item.frame, source: 'upload', userId: item.userId || null }
+        const updated = await updateCloudPhotoFrame(photo, key, item.frame)
+        if (!updated) { failed += 1; continue }
+        removePhotoWallPending('frame', item.day, item.owner)
+        synced += 1
+      } else if (item.type === 'remove') {
+        await removeCloudPhoto({ userId: item.userId || null, source: 'upload' }, key)
+        removePhotoWallPending('remove', item.day, item.owner)
+        synced += 1
+      }
+    } catch (error) {
+      console.warn('[wwcxrl album] pending sync retry failed', item.type, item.day, item.owner, error.message)
+      failed += 1
+    }
+  }
+  return { synced, failed }
+}
+
+function reconcileLocalPhotosToPending(cloudRows) {
+  if (!cloudEnabled) return loadPhotoWallPending()
+  const local = loadPhotoWallLocal()
+  const pending = loadPhotoWallPending()
+  const pendingKeys = new Set(pending.filter(item => item.type === 'upload').map(item => `${item.day}-${item.owner}`))
+  const identity = getCloudIdentity()
+  let changed = false
+  for (const [key, photo] of Object.entries(local)) {
+    const [dayNum, ownerId] = key.split('-')
+    if (!photo?.src || photo.source === 'static' || photo.source === 'cloud') continue
+    if (cloudRows?.[key]) continue
+    if (pendingKeys.has(key)) continue
+    const owner = PHOTO_OWNERS.find(o => o.id === ownerId)
+    if (!owner || !Number(dayNum) || !photo.src.startsWith('data:')) continue
+    enqueuePhotoWallPending({
+      type: 'upload',
+      day: Number(dayNum),
+      owner: ownerId,
+      userId: identity?.id || 'wwcxrl-pomelo-main',
+      role: identity?.role || 'pomelo',
+      displayName: identity?.displayName || '',
+      dataUrl: photo.src,
+      fileName: photo.name || 'photo.jpg',
+      frame: photo.frame || 'cream'
+    })
+    changed = true
+  }
+  return changed ? loadPhotoWallPending() : pending
 }
 
 function getPhotoWallRequiredSlots(dayLimit = 24) {
@@ -4918,7 +6156,7 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
   const [localPhotos, setLocalPhotos] = useState(loadPhotoWallLocal)
   const [cloudPhotos, setCloudPhotos] = useState({})
   const [status, setStatus] = useState('正在检查照片墙…')
-  const photos = { ...STATIC_PHOTOS, ...cloudPhotos, ...localPhotos }
+  const photos = mergePhotoWallViews(cloudPhotos, localPhotos)
   const requiredSlots = getPhotoWallRequiredSlots(requiredDayLimit)
   const missingSlots = requiredSlots.filter(slot => !photos[slot.key]?.src)
   const filledCount = requiredSlots.length - missingSlots.length
@@ -4938,10 +6176,10 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
         savePhotoWallLocal({ ...loadPhotoWallLocal(), ...rows })
         setLocalPhotos(loadPhotoWallLocal())
       }
-      setStatus(remoteFilled >= remoteRequired ? '照片墙已经装饰完成，可以签到啦。' : `已从云端同步照片墙：${remoteFilled}/${remoteRequired}。`)
+      setStatus(remoteFilled >= remoteRequired ? '照片墙已经装饰完成，可以签到啦。' : `照片墙已经同步好啦：${remoteFilled}/${remoteRequired}。`)
     }).catch(error => {
-      console.warn('[miyou cloud] photo wall finale load failed', error.message)
-      if (mounted) setStatus('云端照片暂时没连上，已先读取本机照片墙。')
+      console.warn('[wwcxrl cloud] photo wall finale load failed', error.message)
+      if (mounted) setStatus('小星球网络打了个盹，先展示已经收好的照片。')
     })
     return () => { mounted = false }
   }, [])
@@ -4951,9 +6189,9 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
       onTaskComplete(item.day)
       markCloudTaskCompleted(item.day, item.date)
       saveCloudDayProgress(item.day, { photoWallFilled: filledCount, required: requiredSlots.length, completedAt: new Date().toISOString() })
-        .catch(error => console.warn('[miyou cloud] photo wall finale progress save failed', error.message))
+        .catch(error => console.warn('[wwcxrl cloud] photo wall finale progress save failed', error.message))
       logCloudEvent('photo_wall_finale_completed', { day: item.day, filledCount, required: requiredSlots.length }, item.day)
-      setStatus('照片墙装饰完成啦，611 可以签到，612 的大门也开始发光。')
+      setStatus('照片墙装饰完成啦，1012 可以签到，1013 的大门也开始发光。')
     }
   }, [complete, taskCompleted, item.day, item.date, filledCount, requiredSlots.length, onTaskComplete])
 
@@ -4961,9 +6199,9 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
     <div className={`photo-wall-finale-quest ${complete ? 'is-complete' : ''}`}>
       <div className="photo-wall-finale-hero compact-finale-hero">
         <div className="photo-wall-finale-copy">
-          <span className="tiny-label">611 · 612 Countdown Bulletin</span>
+          <span className="tiny-label">1012 · 1013 Countdown Bulletin</span>
           <h4>{complete ? '照片墙装饰完成！' : '照片墙紧急征集令'}</h4>
-          <p>叮咚叮咚，612 快到啦！小星球现在征集 520–612 的照片和聊天截图：小琛一栏、小琳一栏都挂满，才算把一周年背景墙布置好。</p>
+          <p>叮咚叮咚，1013 快到啦！小星球现在征集 520–1013 的照片和聊天截图：小琛一栏、小琳一栏都挂满，才算把一周年背景墙布置好。</p>
           <strong>{filledCount}/{requiredSlots.length} 已挂上墙</strong>
         </div>
         <div className="photo-wall-finale-meter" aria-label={`照片墙完成度 ${percent}%`}>
@@ -4979,7 +6217,7 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
         <span>📷</span>
         <div>
           <strong>{complete ? '一周年照片墙已经闪闪发光' : '请去顶部「相册」继续补照片墙'}</strong>
-          <p>{complete ? '现在可以回到这里点击签到，给 612 的最终回溯开门。' : '这里不搬整面照片墙，只负责催稿：去相册页把剩下的照片位补齐，再回来签到。'}</p>
+          <p>{complete ? '现在可以回到这里点击签到，给 1013 的最终回溯开门。' : '这里不搬整面照片墙，只负责催稿：去相册页把剩下的照片位补齐，再回来签到。'}</p>
         </div>
       </div>
 
@@ -4995,7 +6233,7 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
         </div>
       )}
 
-      {complete && <div className="photo-wall-finale-done"><span>🖼️</span><p>整面照片墙都装饰好啦。今天的签到按钮已经可以点击，612 的最终回溯也会跟着开启。</p></div>}
+      {complete && <div className="photo-wall-finale-done"><span>🖼️</span><p>整面照片墙都装饰好啦。今天的签到按钮已经可以点击，1013 的最终回溯也会跟着开启。</p></div>}
     </div>
   )
 }
@@ -5006,10 +6244,12 @@ function PhotoWall() {
   const [cloudPhotos, setCloudPhotos] = useState({})
   const [status, setStatus] = useState('')
   const [lightbox, setLightbox] = useState(null)
+  const [albumDays, setAlbumDays] = useState(() => getDailyAdventures())
+  const [pendingCount, setPendingCount] = useState(() => loadPhotoWallPending().length)
   const previewMode = isPreviewMode()
-  const openedDays = dailyAdventures.filter(item => isAlbumUploadOpen(item))
-  const photos = { ...STATIC_PHOTOS, ...cloudPhotos, ...localPhotos }
-  const filledPhotos = dailyAdventures.flatMap(day => PHOTO_OWNERS.map(owner => {
+  const openedDays = albumDays.filter(item => isAlbumUploadOpen(item))
+  const photos = mergePhotoWallViews(cloudPhotos, localPhotos)
+  const filledPhotos = albumDays.flatMap(day => PHOTO_OWNERS.map(owner => {
     const key = `${day.day}-${owner.id}`
     return { key, day, owner, photo: photos[key] }
   })).filter(slot => slot.photo?.src)
@@ -5019,16 +6259,71 @@ function PhotoWall() {
   const wallGap = wallCount <= 4 ? 18 : wallCount <= 16 ? 14 : wallCount <= 36 ? 10 : 8
 
   React.useEffect(() => {
-    let mounted = true
-    loadCloudPhotoWallRows().then(rows => {
-      if (!mounted) return
+    let alive = true
+    hydrateDailyAdventures().then(() => { if (alive) setAlbumDays(getDailyAdventures()) })
+    const handleTasksUpdated = () => { if (alive) setAlbumDays(getDailyAdventures()) }
+    window.addEventListener('wwcxrl-tasks-updated', handleTasksUpdated)
+    const handleAlbumLocalTasks = (event) => {
+      if (!alive || event.key !== ADMIN_LOCAL_TASKS_KEY) return
+      hydrateDailyAdventures().then(() => { if (alive) setAlbumDays(getDailyAdventures()) })
+    }
+    window.addEventListener('storage', handleAlbumLocalTasks)
+    return () => {
+      alive = false
+      window.removeEventListener('wwcxrl-tasks-updated', handleTasksUpdated)
+      window.removeEventListener('storage', handleAlbumLocalTasks)
+    }
+  }, [])
+
+  async function refreshCloudPhotoWall() {
+    try {
+      const rows = await loadCloudPhotoWallRows()
       setCloudPhotos(rows)
-      if (Object.keys(rows).length) setStatus('已从云端找回照片墙记录。')
-    }).catch(error => {
-      console.warn('[miyou cloud] photo wall load failed', error.message)
-      if (mounted) setStatus('云端照片暂时没连上，本机照片仍会显示。')
+      let flushed = null
+      if (cloudEnabled) {
+        reconcileLocalPhotosToPending(rows)
+        flushed = await flushPendingPhotoWallSync()
+        if (flushed.synced) {
+          const rowsAfter = await loadCloudPhotoWallRows()
+          setCloudPhotos(rowsAfter)
+        }
+      }
+      setLocalPhotos(loadPhotoWallLocal())
+      setPendingCount(loadPhotoWallPending().length)
+      return { rows, flushed }
+    } catch (error) {
+      console.warn('[wwcxrl cloud] photo wall refresh failed', error.message)
+      setPendingCount(loadPhotoWallPending().length)
+      return { rows: null, flushed: null }
+    }
+  }
+
+  React.useEffect(() => {
+    let alive = true
+    refreshCloudPhotoWall().then(result => {
+      if (!alive) return
+      const pending = loadPhotoWallPending()
+      if (pending.length) {
+        setStatus(pending.length === 1 ? '有 1 张照片还在路上，网络恢复后会自动跟上。' : `有 ${pending.length} 张照片还在路上，网络恢复后会自动跟上。`)
+      } else if (result.rows && Object.keys(result.rows).length) {
+        setStatus('照片墙已经和两台设备同步好啦。')
+      }
     })
-    return () => { mounted = false }
+    const handleOnline = () => {
+      if (!alive) return
+      setStatus('网络恢复啦，正在把照片补上去…')
+      refreshCloudPhotoWall().then(() => {
+        if (!alive) return
+        const pending = loadPhotoWallPending()
+        setPendingCount(pending.length)
+        setStatus(pending.length ? `还有 ${pending.length} 张照片在排队，马上就好。` : '照片墙同步好啦。')
+      })
+    }
+    window.addEventListener('online', handleOnline)
+    return () => {
+      alive = false
+      window.removeEventListener('online', handleOnline)
+    }
   }, [])
 
   function persistLocal(next) {
@@ -5053,32 +6348,52 @@ function PhotoWall() {
         updatedAt: new Date().toISOString()
       }
       persistLocal({ ...localPhotos, [key]: localPhoto })
+      const uploadIdentity = getCloudIdentity()
+      if (cloudEnabled) {
+        enqueuePhotoWallPending({
+          type: 'upload',
+          day: day.day,
+          owner: owner.id,
+          userId: uploadIdentity?.id || '',
+          role: uploadIdentity?.role || 'pomelo',
+          displayName: uploadIdentity?.displayName || '',
+          dataUrl,
+          fileName: file.name,
+          frame
+        })
+        setPendingCount(loadPhotoWallPending().length)
+      }
       // 无论云端是否可用，当天上传照片都记一次抽能量机会（本机计数、云端可同步）
       let grantResult = null
       try {
         grantResult = await grantEnergyChanceForPhotoDay(day.day)
-        window.dispatchEvent(new CustomEvent('miyou-photo-uploaded', { detail: { day: day.day, owner: owner.id, granted: Boolean(grantResult?.granted) } }))
+        window.dispatchEvent(new CustomEvent('wwcxrl-photo-uploaded', { detail: { day: day.day, owner: owner.id, granted: Boolean(grantResult?.granted) } }))
       } catch (energyError) {
-        console.warn('[miyou energy] photo chance grant failed', energyError.message)
+        console.warn('[wwcxrl energy] photo chance grant failed', energyError.message)
       }
       const chanceNote = grantResult?.granted ? '新增 1 次抽能量机会。' : '今天的照片抽能量机会已领取过。'
       try {
         const cloudPhoto = await uploadPhotoToCloud(day, owner, dataUrl, file.name, frame)
         if (cloudPhoto) {
+          removePhotoWallPending('upload', day.day, owner.id)
           setCloudPhotos(current => ({ ...current, [key]: cloudPhoto }))
           const nextLocal = { ...loadPhotoWallLocal() }
           delete nextLocal[key]
           persistLocal(nextLocal)
-          setStatus(grantResult ? `照片已挂上墙，也同步到云端。${chanceNote}` : '照片已挂上墙，也同步到云端；抽能量机会稍后打开彩蛋页会自动补发。')
+          setPendingCount(loadPhotoWallPending().length)
+          setStatus(grantResult ? `照片已挂上墙，两台设备都会看到。${chanceNote}` : '照片已挂上墙，两台设备都会看到；抽能量机会稍后打开彩蛋页会自动补发。')
         } else {
-          setStatus(grantResult ? `照片已先保存在本机相册。${chanceNote}` : '照片已先保存在本机相册；抽能量机会稍后打开彩蛋页会自动补发。')
+          removePhotoWallPending('upload', day.day, owner.id)
+          setPendingCount(loadPhotoWallPending().length)
+          setStatus(grantResult ? `照片已经挂上墙啦。${chanceNote}` : '照片已经挂上墙啦；抽能量机会稍后打开彩蛋页会自动补发。')
         }
       } catch (cloudError) {
-        console.warn('[miyou cloud] photo upload failed', cloudError.message)
-        setStatus(grantResult ? `照片已先保存在本机；云端同步失败，${chanceNote}` : '照片已先保存在本机；云端同步失败，稍后可再换传。')
+        console.warn('[wwcxrl cloud] photo upload failed', cloudError.message)
+        setPendingCount(loadPhotoWallPending().length)
+        setStatus(grantResult ? `照片已经收好啦，网络恢复后会自动同步。${chanceNote}` : '照片已经收好啦，网络恢复后会自动同步。')
       }
     } catch (error) {
-      console.warn('[miyou album] upload failed', error)
+      console.warn('[wwcxrl album] upload failed', error)
       setStatus('这张照片暂时没贴上去，换一张小一点的试试。')
     } finally {
       event.target.value = ''
@@ -5089,12 +6404,31 @@ function PhotoWall() {
     const currentPhoto = photos[key]
     const localNext = { ...localPhotos, [key]: { ...currentPhoto, frame, updatedAt: new Date().toISOString() } }
     persistLocal(localNext)
+    const pendingUpload = loadPhotoWallPending().find(item => item.type === 'upload' && `${item.day}-${item.owner}` === key)
+    if (pendingUpload) {
+      enqueuePhotoWallPending({ ...pendingUpload, frame })
+      setStatus('相框换好啦，会跟着照片一起同步。')
+      return
+    }
     try {
       const cloudPhoto = await updateCloudPhotoFrame(currentPhoto, key, frame)
       if (cloudPhoto) setCloudPhotos(current => ({ ...current, [key]: cloudPhoto }))
     } catch (error) {
-      console.warn('[miyou cloud] frame update failed', error.message)
-      setStatus('相框已先在本机更新，但云端同步失败。')
+      console.warn('[wwcxrl cloud] frame update failed', error.message)
+      const identity = getCloudIdentity()
+      enqueuePhotoWallPending({
+        type: 'frame',
+        day: Number(key.split('-')[0]),
+        owner: key.split('-')[1],
+        userId: currentPhoto?.userId || identity?.id || '',
+        role: identity?.role || 'pomelo',
+        imageUrl: currentPhoto?.src || '',
+        imagePath: currentPhoto?.imagePath || '',
+        caption: currentPhoto?.caption || '',
+        frame
+      })
+      setPendingCount(loadPhotoWallPending().length)
+      setStatus('相框换好啦，网络恢复后会自动同步。')
     }
   }
 
@@ -5108,12 +6442,40 @@ function PhotoWall() {
       delete next[key]
       return next
     })
+    const pendingUpload = loadPhotoWallPending().find(item => item.type === 'upload' && `${item.day}-${item.owner}` === key)
+    if (pendingUpload) {
+      removePhotoWallPending('upload', Number(key.split('-')[0]), key.split('-')[1])
+      setPendingCount(loadPhotoWallPending().length)
+      setStatus('这张照片已经从照片墙取下啦。')
+      return
+    }
     try {
       await removeCloudPhoto(currentPhoto, key)
       setStatus('这张照片已经从照片墙取下。')
     } catch (error) {
-      console.warn('[miyou cloud] photo remove failed', error.message)
-      setStatus('本机照片已取下，但云端删除失败。')
+      console.warn('[wwcxrl cloud] photo remove failed', error.message)
+      const identity = getCloudIdentity()
+      enqueuePhotoWallPending({
+        type: 'remove',
+        day: Number(key.split('-')[0]),
+        owner: key.split('-')[1],
+        userId: currentPhoto?.userId || identity?.id || '',
+        role: identity?.role || 'pomelo'
+      })
+      setPendingCount(loadPhotoWallPending().length)
+      setStatus('这张照片已经从墙上取下，会自动同步到另一边。')
+    }
+  }
+
+  async function handleRetrySync() {
+    setStatus('正在重新同步照片…')
+    const { flushed } = await refreshCloudPhotoWall()
+    const pending = loadPhotoWallPending().length
+    setPendingCount(pending)
+    if (flushed?.synced) {
+      setStatus(pending ? `已补上 ${flushed.synced} 张，还有 ${pending} 张在路上。` : `已补上 ${flushed.synced} 张，照片墙同步好啦。`)
+    } else {
+      setStatus(pending ? '网络还没恢复，照片先好好收着，恢复后会自动同步。' : '照片墙已是最新。')
     }
   }
 
@@ -5122,7 +6484,7 @@ function PhotoWall() {
       <header className="section-heading playful-heading">
         <span>Memory Wall</span>
         <h2>我们的每一天 · 双栏相册</h2>
-        <p>每天解锁两栏上传位：小琛一张，小琳一张。选好照片或聊天记录，再挑相框裱起来，拉开帷幕后就会挂到照片墙上。</p>
+        <p>每天两栏上传位：小琛一张，小琳一张。选好照片或聊天记录，再挑相框裱起来，拉开帷幕后就会挂到照片墙上。</p>
       </header>
       <div className={`curtain-upload-stage ${curtainOpen ? 'curtain-open' : ''}`}>
         <div className="curtain-panel curtain-left" aria-hidden="true" />
@@ -5133,18 +6495,24 @@ function PhotoWall() {
         </button>
         <div className="dual-upload-board sticker-card">
           <div className="album-board-topline">
-            <strong>当前已开放 {openedDays.length} 天照片位 · 最多 {openedDays.length * 2}/48 张</strong>
-            <span>已挂上 {filledPhotos.length}/48 张</span>
+            <strong>已开放 {openedDays.length} 天照片位 · 每天 2 栏，随天数增加</strong>
+            <span>已挂上 {filledPhotos.length} 张</span>
           </div>
+          {pendingCount > 0 && (
+            <div className="album-pending-bar">
+              <span>⏳ 有 {pendingCount} 张照片还在路上，网络恢复后会自动同步</span>
+              <button type="button" onClick={handleRetrySync}>立即重试</button>
+            </div>
+          )}
           {status && <p className="answer-error-note">{status}</p>}
           <div className="daily-upload-list">
-            {dailyAdventures.map(day => {
+            {albumDays.map(day => {
               const open = isAlbumUploadOpen(day)
               return (
                 <article key={day.day} className={`upload-day-card ${open ? 'is-open' : 'is-locked'}`}>
                   <div className="upload-day-title">
                     <span>{open ? day.icon : '🔒'}</span>
-                    <div><strong>Day {day.day} · {day.title}</strong><small>{day.date}</small></div>
+                    <div><strong>Day {day.day} · 纪念相册</strong><small>{day.date}</small></div>
                   </div>
                   <div className="upload-columns">
                     {PHOTO_OWNERS.map(owner => {
@@ -5157,6 +6525,7 @@ function PhotoWall() {
                             <button type="button" className={`mini-framed-photo frame-${photo.frame || 'cream'}`} onClick={() => setLightbox({ photo, owner, day })}>
                               <img src={photo.src} alt={`${owner.label} Day ${day.day}`} />
                               <small>{photo.name || photo.caption || owner.hint}</small>
+                              {isPhotoPendingFor(key) && <span className="album-pending-chip">排队中</span>}
                             </button>
                           ) : (
                             <div className="empty-upload-slot"><span>{open ? '📷' : '🔒'}</span><p>{open ? owner.hint : '这一天还没解锁，照片位先被小贴纸封好。'}</p></div>
@@ -5178,7 +6547,7 @@ function PhotoWall() {
           </div>
         </div>
         <div className="photo-wall-layer" aria-hidden={!curtainOpen}>
-          <div className="photo-wall-header"><span>🖼️</span><strong>我们的照片墙</strong><small>每次新增照片都会自动补到这里，最终 24 天 × 2 栏 = 48 张。</small></div>
+          <div className="photo-wall-header"><span>🖼️</span><strong>我们的照片墙</strong><small>每次新增照片都会自动补到这里，每天 2 栏，天数越多照片位越多。</small></div>
           <div className="photo-wall-grid" style={{ '--wall-cols': wallColumns, '--wall-rows': wallRows, '--wall-gap': `${wallGap}px`, '--wall-count': wallCount }}>
             {filledPhotos.length === 0 ? <div className="empty-wall-note">还没有照片被裱起来。先合上帷幕，在上面上传第一张吧。</div> : filledPhotos.map((slot, index) => (
               <button key={slot.key} type="button" className={`wall-photo-card frame-${slot.photo.frame || 'cream'} owner-${slot.owner.id}`} style={{ '--tilt': `${index % 2 === 0 ? -2 : 2}deg` }} onClick={() => setLightbox(slot)} aria-label={`放大查看 ${slot.owner.label} Day ${slot.day.day} 的照片`}>
@@ -5219,8 +6588,8 @@ const BACKPACK_ITEMS = {
   observatory_nav_unlocked: { icon: '🔭', name: '顶栏里的星空观测站', desc: '526 点击前往后，星空观测站正式出现在顶部导航。' },
   telescope_ready: { icon: '🔭', name: '能调焦的望远镜', desc: '调焦旋钮已经安装好，终于可以认真看星星了。' },
   one_lightyear_signal: { icon: '✨', name: '5.09 星光瓶', desc: '装着五颗云后星星和 0.09 点自己的光。低谷时摇一摇，会提醒你：光没有消失。' },
-  vacation_half_hour_ticket: { icon: '🎟️', name: '半小时放假券', desc: '使用后可以理直气壮地休息半小时。不是偷懒，是小柚子维护模式。' },
-  cloud_fluff_trim: { icon: '☁️', name: '云朵绒边', desc: '529 轻轻靠近小柚子之后获得的软软装饰，专门负责接住一点点委屈。' },
+  vacation_half_hour_ticket: { icon: '🎟️', name: '半小时放假券', desc: '使用后可以理直气壮地休息半小时。不是偷懒，是小琳需要好好休息。' },
+  cloud_fluff_trim: { icon: '☁️', name: '云朵绒边', desc: '529 轻轻靠近小琳之后获得的软软装饰，专门负责接住一点点委屈。' },
   rainbow_feather_patch: { icon: '🌈', name: '彩虹羽毛贴片', desc: '530 把好心情碎片收集回来以后做成的羽毛贴片，颜色很乖。' },
   reconciliation_star_bell: { icon: '🔔', name: '星星和好铃铛', desc: '531 认真修好别扭小结以后留下的小铃铛，响起来像一句“我听见啦”。' },
   decoratable_shuttlecock: { icon: '🏸', name: '待装饰羽毛球本体', desc: '601 儿童节工坊里的羽毛球本体，正在等云朵、彩虹和铃铛。' },
@@ -5246,7 +6615,7 @@ const TELESCOPE_PARTS = [
 ]
 const TELESCOPE_PART_IDS = TELESCOPE_PARTS.map(part => part.id)
 const TELESCOPE_READY_ID = 'focusable_telescope'
-const TELESCOPE_RUN_KEY = 'miyou-day6-planet2-observatory-state'
+const TELESCOPE_RUN_KEY = 'wwcxrl-day6-planet2-observatory-state'
 
 function hasAllTelescopeParts(bag = loadBackpack()) {
   return Number(bag?.bare_telescope || 0) > 0 && Number(bag?.telescope_focuser || 0) > 0 && Number(bag?.observatory_building || 0) > 0
@@ -5272,7 +6641,7 @@ function loadTelescopeRunState() {
 function saveTelescopeRunState(next, { cloud = true } = {}) {
   const normalized = normalizePlanet2State(next)
   setRoleJson(TELESCOPE_RUN_KEY, normalized)
-  if (cloud) saveCloudDayProgress(6, normalized).catch(error => console.warn('[miyou cloud] day6 planet2 save failed', error.message))
+  if (cloud) saveCloudDayProgress(6, normalized).catch(error => console.warn('[wwcxrl cloud] day6 planet2 save failed', error.message))
   return normalized
 }
 
@@ -5285,7 +6654,7 @@ function TelescopeRunnerQuest({ item, taskCompleted = false, onTaskComplete = ()
   React.useEffect(() => { stateRef.current = state }, [state])
   React.useEffect(() => {
     const refresh = () => setBag(loadBackpack())
-    window.addEventListener('miyou-backpack-updated', refresh)
+    window.addEventListener('wwcxrl-backpack-updated', refresh)
     const onKey = (event) => {
       if (event.key === 'ArrowLeft') { event.preventDefault(); move(-1) }
       if (event.key === 'ArrowRight') { event.preventDefault(); move(1) }
@@ -5293,7 +6662,7 @@ function TelescopeRunnerQuest({ item, taskCompleted = false, onTaskComplete = ()
     }
     window.addEventListener('keydown', onKey)
     return () => {
-      window.removeEventListener('miyou-backpack-updated', refresh)
+      window.removeEventListener('wwcxrl-backpack-updated', refresh)
       window.removeEventListener('keydown', onKey)
     }
   }, [])
@@ -5408,14 +6777,14 @@ function TelescopeRunnerQuest({ item, taskCompleted = false, onTaskComplete = ()
     saveBackpack(nextBag)
     setBag(nextBag)
     syncCloudBackpack(nextBag)
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
+    window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
     const next = setStateAndSave({ ...stateRef.current, stationUnlocked: true, mode: 'complete', position: 84 }, 'day5_observatory_building_started')
     setMessage('星空观测站建造中! 望远镜和调焦旋钮都找齐啦，等到 526 那天再来签到页面看看。')
     if (!taskCompleted) {
       onTaskComplete(item.day)
       markCloudTaskCompleted(item.day, item.date)
     }
-    window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '星空观测站建造中! 525 可以签到啦。' }))
+    window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '星空观测站建造中! 525 可以签到啦。' }))
     return next
   }
 
@@ -5491,12 +6860,12 @@ function TelescopeWorkshop() {
   const [note, setNote] = useState('把 525 找到的望远镜安放在观测平台，再把调焦旋钮装上去。')
   React.useEffect(() => {
     const refresh = () => { const next = loadBackpack(); setBag(next); setInstalled(Number(next[TELESCOPE_READY_ID] || 0) > 0) }
-    window.addEventListener('miyou-backpack-updated', refresh)
+    window.addEventListener('wwcxrl-backpack-updated', refresh)
     loadCloudBackpack().then(cloudBag => {
       const next = { ...loadBackpack(), ...(cloudBag || {}) }
       saveBackpack(next); setBag(next); setInstalled(Number(next[TELESCOPE_READY_ID] || 0) > 0)
     }).catch(() => {})
-    return () => window.removeEventListener('miyou-backpack-updated', refresh)
+    return () => window.removeEventListener('wwcxrl-backpack-updated', refresh)
   }, [])
   const hasStation = Number(bag.observatory_unlocked || 0) > 0
   const navUnlocked = Number(bag.observatory_nav_unlocked || 0) > 0
@@ -5520,7 +6889,7 @@ function TelescopeWorkshop() {
     if (!hasFocuser) { setNote('还没有调焦旋钮，先回 524 星球表面把它捡回来。'); return }
     const nextBag = { ...loadBackpack(), [TELESCOPE_READY_ID]: 1, telescope_ready: 1 }
     saveBackpack(nextBag); setBag(nextBag); setInstalled(true); syncCloudBackpack(nextBag)
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
+    window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
     setNote('获得道具：能调焦的望远镜。现在可以进入观测模式，看第一颗星球。')
     logCloudEvent('observatory_focuser_installed', { item: TELESCOPE_READY_ID }, 7)
   }
@@ -5581,7 +6950,7 @@ function TelescopeWorkshop() {
             <p>{note}</p>
             <div className="observatory-side-panels" aria-label="观测站功能面板">
               <article className="observatory-mini-panel log-panel"><span>📓</span><strong>观测日志</strong><small>记录 First Light 与每次发现</small></article>
-              <article className="observatory-mini-panel map-panel"><span>🗺️</span><strong>星图档案</strong><small>520–612 的星体逐颗亮起</small></article>
+              <article className="observatory-mini-panel map-panel"><span>🗺️</span><strong>星图档案</strong><small>520–1013 的星体逐颗亮起</small></article>
               <article className="observatory-mini-panel signal-panel"><span>📡</span><strong>信号接收器</strong><small>{hasOneLightyearSignal ? '1 光年信号已解码：5.09 / 5.09' : '等待来自 1 光年外的微弱信号'}</small></article>
             </div>
             <button type="button" onClick={installFocuser} disabled={installed}>{installed ? '已获得能调焦的望远镜' : '安装调焦旋钮'}</button>
@@ -5594,7 +6963,7 @@ function TelescopeWorkshop() {
   )
 }
 
-const OBSERVATION_STATE_KEY = 'miyou-day7-observatory-observation-state'
+const OBSERVATION_STATE_KEY = 'wwcxrl-day7-observatory-observation-state'
 const OBSERVATION_PLANET_ID = '20260520'
 const OBSERVATION_TARGET = { x: 8, y: -6, focus: 72, id: OBSERVATION_PLANET_ID }
 const OBSERVATION_DISCOVERY_THRESHOLD = 0.92
@@ -5684,7 +7053,7 @@ function OrangePlanetEyepiece({ onClose }) {
     scopeRef.current = normalized
     setScope(normalized)
     if (newlyDiscovered) {
-      window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: '发现编号 20260520 星球!' }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '发现编号 20260520 星球!' }))
     }
     loadCloudDayProgress(7).then(remote => {
       const base = remote?.progress || {}
@@ -5700,7 +7069,7 @@ function OrangePlanetEyepiece({ onClose }) {
         firstObservedAt: normalized.firstObservedAt || base.firstObservedAt || '',
         clearFocusAchievedAt: normalized.clearFocusAchievedAt || base.clearFocusAchievedAt || ''
       })
-    }).catch(error => console.warn('[miyou cloud] observatory observation save failed', error.message))
+    }).catch(error => console.warn('[wwcxrl cloud] observatory observation save failed', error.message))
     logCloudEvent(newlyDiscovered ? 'observatory_planet_20260520_discovered' : eventType, { ...normalized, clarity: Number(q.clarity.toFixed(3)), discovered: q.discovered }, 7)
     return normalized
   }
@@ -5749,7 +7118,7 @@ function OrangePlanetEyepiece({ onClose }) {
               <DogSprite type="pomelo" className="observed-pomelo" />
               <DogSprite type="orange" className="observed-orange" />
               <span className="planet-label label-a">520 开始签到</span>
-              <span className="planet-label label-b">612 一周年</span>
+              <span className="planet-label label-b">1013 纪念日</span>
               <span className="planet-label label-c">每日惊喜连载中</span>
               <strong className="planet-code">编号 20260520</strong>
             </div>
@@ -5811,10 +7180,10 @@ function StargazingQuest({ item, taskCompleted = false, onTaskComplete = () => {
     saveBackpack(nextBag)
     setBag(nextBag)
     syncCloudBackpack(nextBag)
-    saveCloudDayProgress(item.day, { observatoryNavUnlocked: true, entered: true, enteredAt: new Date().toISOString() }).catch(error => console.warn('[miyou cloud] day7 observatory progress save failed', error.message))
+    saveCloudDayProgress(item.day, { observatoryNavUnlocked: true, entered: true, enteredAt: new Date().toISOString() }).catch(error => console.warn('[wwcxrl cloud] day7 observatory progress save failed', error.message))
     saveCloudGlobalPatch({ observatoryNavUnlocked: true, observatoryEnteredAt: new Date().toISOString() }, 'global_observatory_nav_unlocked')
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
-    window.dispatchEvent(new CustomEvent('miyou-open-observatory'))
+    window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+    window.dispatchEvent(new CustomEvent('wwcxrl-open-observatory'))
     setEntered(true)
     if (!taskCompleted) {
       onTaskComplete(item.day)
@@ -5846,9 +7215,14 @@ function StargazingQuest({ item, taskCompleted = false, onTaskComplete = () => {
 
 
 const ENERGY_PROGRESS_DAY = 1
-const ENERGY_STATE_KEY = 'miyou-capsule-energy-state'
+const ENERGY_STATE_KEY = 'wwcxrl-capsule-energy-state'
 const ENERGY_AUTO_REFRESH_MS = 7000
 const ENERGY_EMPTY_STATE = { energy: 0, drawChances: 0, claimedSignedDays: [], claimedPhotoDays: [], draws: [] }
+const ENERGY_MILESTONES = [
+  { at: 100, icon: '🥛', name: '第一杯气泡' },
+  { at: 260, icon: '🧸', name: '软软的小熊' },
+  { at: 520, icon: '🪐', name: '小星球点亮' }
+]
 
 function normalizeEnergyState(progress = {}) {
   const claimed = Array.isArray(progress.claimedSignedDays) ? progress.claimedSignedDays.map(Number).filter(Boolean) : []
@@ -5881,7 +7255,7 @@ function loadEnergyLocalState() {
 function saveEnergyLocalState(next) {
   const normalized = normalizeEnergyState(next)
   setRoleJson(ENERGY_STATE_KEY, normalized)
-  window.dispatchEvent(new CustomEvent('miyou-energy-updated', { detail: normalized }))
+  window.dispatchEvent(new CustomEvent('wwcxrl-energy-updated', { detail: normalized }))
   return normalized
 }
 
@@ -5892,7 +7266,7 @@ async function persistEnergyState(next, eventType = 'energy_state_saved') {
     const remote = await loadCloudDayProgress(ENERGY_PROGRESS_DAY)
     remoteProgress = remote?.progress || {}
   } catch (error) {
-    console.warn('[miyou cloud] energy merge load failed', error.message)
+    console.warn('[wwcxrl cloud] energy merge load failed', error.message)
   }
   const merged = {
     ...remoteProgress,
@@ -5906,7 +7280,7 @@ async function persistEnergyState(next, eventType = 'energy_state_saved') {
 
 function syncEnergyState(next, eventType = 'energy_state_saved') {
   const normalized = saveEnergyLocalState(next)
-  persistEnergyState(normalized, eventType).catch(error => console.warn('[miyou cloud] energy save failed', error.message))
+  persistEnergyState(normalized, eventType).catch(error => console.warn('[wwcxrl cloud] energy save failed', error.message))
   return normalized
 }
 
@@ -5929,7 +7303,7 @@ async function loadLatestEnergyStateWithSignins() {
     loadCloudUploadedPhotoDays()
   ])
   const remoteState = getEnergyProgressOnly(remoteProgress?.progress || loadEnergyLocalState())
-  const signedDays = Array.from(new Set([...(remoteCheckins?.signed || []), ...getRoleJson('miyou-signed-days', [])].map(Number).filter(Boolean))).sort((a, b) => a - b)
+  const signedDays = Array.from(new Set([...(remoteCheckins?.signed || []), ...getRoleJson('wwcxrl-signed-days', [])].map(Number).filter(Boolean))).sort((a, b) => a - b)
   const claimed = new Set(remoteState.claimedSignedDays)
   const newSignedDays = signedDays.filter(day => !claimed.has(day))
   const uploadedPhotoDays = Array.from(new Set([...(cloudPhotoDays || []), ...getLocalUploadedPhotoDays()])).sort((a, b) => a - b)
@@ -5998,21 +7372,21 @@ function BackpackView() {
       markStamped(event?.detail?.stamped)
       setBag(loadBackpack())
     }
-    window.addEventListener('miyou-backpack-updated', refresh)
+    window.addEventListener('wwcxrl-backpack-updated', refresh)
     loadCloudBackpack().then(cloudBag => {
       const next = { ...loadBackpack(), ...(cloudBag || {}) }
       saveBackpack(next)
       setBag(next)
     }).catch(() => {})
     return () => {
-      window.removeEventListener('miyou-backpack-updated', refresh)
+      window.removeEventListener('wwcxrl-backpack-updated', refresh)
       Object.values(stampTimersRef.current).forEach(handle => window.clearTimeout(handle))
       stampTimersRef.current = {}
     }
   }, [])
 
   function showPopup(message) {
-    window.dispatchEvent(new CustomEvent('miyou-soft-toast', { detail: message }))
+    window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: message }))
   }
 
   function persistBag(next, eventType, detail = {}) {
@@ -6027,7 +7401,7 @@ function BackpackView() {
     setBag(next)
     syncCloudBackpack(next)
     logCloudEvent(eventType, { bag: next, ...detail }, 3)
-    window.dispatchEvent(new CustomEvent('miyou-backpack-updated', { detail: { stamped: stampedIds } }))
+    window.dispatchEvent(new CustomEvent('wwcxrl-backpack-updated', { detail: { stamped: stampedIds } }))
     return next
   }
 
@@ -6149,7 +7523,7 @@ function BackpackView() {
             </article>
           )
         })}
-        {!entries.length && <article className="sticker-card inventory-card empty-feature"><CuteIcon>✨</CuteIcon><h3>下一件道具正在路上</h3><p>先去每日签到完成今天的小任务，它就会被小橙子送进背包。</p></article>}
+        {!entries.length && <article className="sticker-card inventory-card empty-feature"><CuteIcon>✨</CuteIcon><h3>下一件道具正在路上</h3><p>先去每日签到完成今天的小任务，它就会被小琛送进背包。</p></article>}
         {placeholders.map(id => {
           const item = BACKPACK_ITEMS[id]
           return <article className="sticker-card inventory-card is-locked" key={`placeholder-${id}`}><CuteIcon>{item.icon}</CuteIcon><h3>{item.name}</h3><p>等待被发现</p></article>
@@ -6175,10 +7549,21 @@ function BackpackView() {
   )
 }
 
+function formatDrawTime(iso) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mi = String(date.getMinutes()).padStart(2, '0')
+  return `${mm}-${dd} ${hh}:${mi}`
+}
+
 function EnergyCapsule() {
   const [energyState, setEnergyState] = useState(loadEnergyLocalState)
-  const [status, setStatus] = useState('正在和云端同步抽奖机会…')
+  const [status, setStatus] = useState('正在准备今天的抽奖…')
   const [rolling, setRolling] = useState(false)
+  const [burst, setBurst] = useState(null)
   const refreshInFlightRef = React.useRef(false)
   const rollingRef = React.useRef(false)
   const energy = Math.min(520, Number(energyState.energy || 0))
@@ -6186,6 +7571,14 @@ function EnergyCapsule() {
   const drawChances = Math.max(0, Number(energyState.drawChances || 0))
   const signedCount = energyState.claimedSignedDays.length
   const photoCount = energyState.claimedPhotoDays.length
+  const reachedCount = ENERGY_MILESTONES.filter(milestone => energy >= milestone.at).length
+  const sealCopy = energy >= 520
+    ? '小星球已经点亮，封存的内容随时可以开启。'
+    : energy >= 260
+      ? '第二枚印章亮了，离完全点亮只差最后一段光。'
+      : energy >= 100
+        ? '第一枚印章亮了，能量还在慢慢积攒。'
+        : '能量还在积蓄，封存的内容正在慢慢解冻…'
 
   React.useEffect(() => {
     rollingRef.current = rolling
@@ -6207,19 +7600,19 @@ function EnergyCapsule() {
           const parts = []
           if (newSignedDays.length) parts.push(`签到 ${newSignedDays.length} 次`)
           if (newPhotoDays.length) parts.push(`相册上传 ${newPhotoDays.length} 天`)
-          setStatus(`新增 ${grantedCount} 次抽能量机会（${parts.join(' + ')}），已同步云端。`)
+          setStatus(`新增 ${grantedCount} 次抽能量机会（${parts.join(' + ')}），两台设备都已记下。`)
         } else {
           const local = saveEnergyLocalState(next)
           setEnergyState(local)
           setStatus(previous => {
             if (previous.startsWith('抽取成功')) return previous
-            if (reason === 'interval') return '云端进度已自动刷新。'
-            return '云端进度已同步。'
+            if (reason === 'interval') return '进度已经自动更新啦。'
+            return '进度已经同步好啦。'
           })
         }
       } catch (error) {
-        console.warn('[miyou cloud] energy refresh failed', error.message)
-        if (alive) setStatus('云端暂时没连上，本机缓存仍会保留。')
+        console.warn('[wwcxrl cloud] energy refresh failed', error.message)
+        if (alive) setStatus('网络打了个盹，进度先记在这里，恢复后会自动同步。')
       } finally {
         refreshInFlightRef.current = false
       }
@@ -6231,15 +7624,15 @@ function EnergyCapsule() {
     const handleVisibility = () => { if (!document.hidden) refreshEnergy('visible') }
     const intervalId = window.setInterval(() => refreshEnergy('interval'), ENERGY_AUTO_REFRESH_MS)
     window.addEventListener('focus', handleFocus)
-    window.addEventListener('miyou-signed-updated', handleSigned)
-    window.addEventListener('miyou-photo-uploaded', handlePhotoUploaded)
+    window.addEventListener('wwcxrl-signed-updated', handleSigned)
+    window.addEventListener('wwcxrl-photo-uploaded', handlePhotoUploaded)
     document.addEventListener('visibilitychange', handleVisibility)
     return () => {
       alive = false
       window.clearInterval(intervalId)
       window.removeEventListener('focus', handleFocus)
-      window.removeEventListener('miyou-signed-updated', handleSigned)
-      window.removeEventListener('miyou-photo-uploaded', handlePhotoUploaded)
+      window.removeEventListener('wwcxrl-signed-updated', handleSigned)
+      window.removeEventListener('wwcxrl-photo-uploaded', handlePhotoUploaded)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
   }, [])
@@ -6257,11 +7650,14 @@ function EnergyCapsule() {
         if (Number(latest.drawChances || 0) <= 0) {
           const local = saveEnergyLocalState(latest)
           setEnergyState(local)
-          setStatus('云端显示暂时没有抽能量次数，先完成每日签到再来抽。')
+          setStatus('暂时没有抽能量次数，先完成每日签到再来抽。')
           setRolling(false)
           return
         }
         const gain = Math.floor(Math.random() * 11) + 5
+        const previousEnergy = Number(latest.energy || 0)
+        const nextEnergy = Math.min(520, previousEnergy + gain)
+        const crossedMilestones = ENERGY_MILESTONES.filter(milestone => previousEnergy < milestone.at && nextEnergy >= milestone.at)
         const next = normalizeEnergyState({
           ...latest,
           energy: Math.min(520, Number(latest.energy || 0) + gain),
@@ -6270,10 +7666,14 @@ function EnergyCapsule() {
         })
         const saved = await persistEnergyState(next, 'energy_lottery_drawn')
         setEnergyState(saved)
-        setStatus(`抽取成功! 小星球能量 +${gain}，已同步云端。`)
+        const milestoneText = crossedMilestones.length
+          ? ` 并点亮${crossedMilestones.map(milestone => `「${milestone.name}」`).join('、')}印章！`
+          : ''
+        setStatus(`抽取成功! 小星球能量 +${gain}，两台设备都已记下。${milestoneText}`)
+        setBurst({ gain, key: Date.now() })
       } catch (error) {
-        console.warn('[miyou cloud] energy draw sync failed', error.message)
-        setStatus('抽取时云端暂时没连上，请稍后再试，避免两台设备不同步。')
+        console.warn('[wwcxrl cloud] energy draw sync failed', error.message)
+        setStatus('网络打了个盹，稍后再试一次，别让两台设备的进度不一样哦。')
       } finally {
         setRolling(false)
       }
@@ -6285,32 +7685,56 @@ function EnergyCapsule() {
       <header className="section-heading playful-heading premium-heading">
         <span>Small Planet Energy</span>
         <h2>小星球能量胶囊</h2>
-        <p>每天完成签到、或当天至少上传一张相册照片，都会在云端各存下一次抽能量机会。来到这里就能真实抽取随机 5-15 点小星球能量。</p>
+        <p>每天完成签到、或当天至少上传一张相册照片，都会存下一次抽能量机会。来到这里就能真实抽取随机 5-15 点小星球能量。</p>
       </header>
       <div className={`capsule-vault sticker-card premium-card ${rolling ? 'is-rolling' : ''}`}>
         <div className="capsule-orbit-scene" aria-hidden="true">
           <span className="vault-ring ring-a" />
           <span className="vault-ring ring-b" />
-          <span className="vault-core">🎁</span>
+          <span className="vault-core"><img className="vault-core-img" src="/images/capsule-golden-egg.png" alt="小星球能量金蛋" /></span>
           <i className="vault-spark spark-a">✦</i>
           <i className="vault-spark spark-b">♡</i>
           <i className="vault-spark spark-c">✧</i>
+          {burst && <span key={burst.key} className="capsule-energy-burst">+{burst.gain}</span>}
         </div>
         <div className="capsule-copy">
-                    <h3>彩蛋内容暂时封存中</h3>
-          <p>抽奖次数、抽到的能量和历史记录都会同步到云端。下次用同一个身份打开，进度不会丢。</p>
+          <h3>彩蛋内容暂时封存中</h3>
+          <p className="capsule-seal-copy">{sealCopy}</p>
+          <p>抽奖次数、抽到的能量和历史记录都会自动同步。下次打开，进度不会丢。</p>
           <div className="capsule-energy-meter" aria-label={`小星球能量 ${energy} / 520`}>
             <div><strong>小星球能量</strong><span>{energy}/520</span></div>
-            <b><i style={{ width: `${percent}%` }} /></b>
+            <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} /><em style={{ left: '19.2%' }} /><em style={{ left: '50%' }} /><em style={{ left: '100%' }} /></b>
             <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 天相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '完成每日签到或上传当天相册照片后，会先获得抽能量次数。'}</small>
+          </div>
+          <div className="capsule-milestones" aria-label={`能量印章 ${reachedCount} / ${ENERGY_MILESTONES.length}`}>
+            {ENERGY_MILESTONES.map(milestone => {
+              const lit = energy >= milestone.at
+              return (
+                <span key={milestone.at} className={`capsule-milestone ${lit ? 'is-lit' : 'is-locked'}`} title={`${milestone.icon} ${milestone.name} · ${milestone.at} 点`}>
+                  <b>{milestone.icon}</b>
+                  <small>{milestone.name}</small>
+                  <em>{milestone.at}</em>
+                </span>
+              )
+            })}
+            <i className="capsule-milestone-count">{reachedCount}/{ENERGY_MILESTONES.length} 枚点亮</i>
           </div>
           <div className="capsule-draw-panel">
             <strong>抽能量次数：{drawChances}</strong>
             <button type="button" onClick={drawEnergy} disabled={rolling || drawChances <= 0}>{rolling ? '抽取中…' : '抽取 5-15 点能量'}</button>
-            <p>{status}</p>
-            <small className="capsule-auto-refresh-note">已开启每 {Math.round(ENERGY_AUTO_REFRESH_MS / 1000)} 秒云端轻量刷新；另一台设备抽完后，这里会自动跟上。</small>
+            <p aria-live="polite">{status}</p>
+            <small className="capsule-auto-refresh-note">已开启自动同步；另一台设备抽完后，这里会自动跟上。</small>
           </div>
-          {!!energyState.draws.length && <small className="capsule-draw-history">最近一次：+{energyState.draws[energyState.draws.length - 1].gain} 点</small>}
+          {!!energyState.draws.length && (
+            <div className="capsule-draw-history">
+              <strong>最近抽取记录</strong>
+              <ul>
+                {energyState.draws.slice(-5).reverse().map((draw, index) => (
+                  <li key={`${draw.at}-${index}`}><span>+{draw.gain} 点</span><time>{formatDrawTime(draw.at)}</time></li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -6320,13 +7744,13 @@ function EnergyCapsule() {
 function TemplateGuide({ setCurrent }) {
   function startDay5ThemeDemo() {
     const referenceProgress = [1, 2, 3]
-    setRoleJson('miyou-signed-days', referenceProgress)
-    setRoleJson('miyou-completed-days', referenceProgress)
+    setRoleJson('wwcxrl-signed-days', referenceProgress)
+    setRoleJson('wwcxrl-completed-days', referenceProgress)
     saveBackpack({ ...loadBackpack(), matchbox: 1, match: 2, foam_key: 1 })
-    removeRoleValue('miyou-day4-dark-maze-state')
+    removeRoleValue('wwcxrl-day4-dark-maze-state')
     setVoyageThemeLocal(false, 'template-day5-demo-reset', { cloud: false })
-    window.dispatchEvent(new Event('miyou-backpack-updated'))
-    window.dispatchEvent(new Event('miyou-signed-updated'))
+    window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+    window.dispatchEvent(new Event('wwcxrl-signed-updated'))
     setCurrent('checkin')
   }
 
@@ -6441,7 +7865,7 @@ function PlanetApp() {
   const [current, setCurrent] = useState('home')
   const [toast, setToast] = useState('')
   const readVoyageTheme = () => {
-    try { return localStorage.getItem('miyou-voyage-theme') === 'yes' } catch { return false }
+    try { return localStorage.getItem('wwcxrl-voyage-theme') === 'yes' } catch { return false }
   }
   const [voyageTheme, setVoyageTheme] = useState(readVoyageTheme)
   const setThemeMode = (enabled) => {
@@ -6456,13 +7880,13 @@ function PlanetApp() {
       if (!alive || !cloudBag) return
       const next = { ...loadBackpack(), ...(cloudBag || {}) }
       saveBackpack(next)
-      window.dispatchEvent(new Event('miyou-backpack-updated'))
-    }).catch(error => console.warn('[miyou cloud] app backpack hydrate failed', error.message))
-    window.addEventListener('miyou-theme-updated', refresh)
+      window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+    }).catch(error => console.warn('[wwcxrl cloud] app backpack hydrate failed', error.message))
+    window.addEventListener('wwcxrl-theme-updated', refresh)
     window.addEventListener('storage', refresh)
     return () => {
       alive = false
-      window.removeEventListener('miyou-theme-updated', refresh)
+      window.removeEventListener('wwcxrl-theme-updated', refresh)
       window.removeEventListener('storage', refresh)
     }
   }, [])
@@ -6479,16 +7903,16 @@ function PlanetApp() {
       window.clearTimeout(timerId)
       timerId = window.setTimeout(() => setToast(''), 3000)
     }
-    window.addEventListener('miyou-soft-toast', showToast)
-    window.addEventListener('miyou-open-observatory', openObservatory)
+    window.addEventListener('wwcxrl-soft-toast', showToast)
+    window.addEventListener('wwcxrl-open-observatory', openObservatory)
     return () => {
       window.clearTimeout(timerId)
-      window.removeEventListener('miyou-soft-toast', showToast)
-      window.removeEventListener('miyou-open-observatory', openObservatory)
+      window.removeEventListener('wwcxrl-soft-toast', showToast)
+      window.removeEventListener('wwcxrl-open-observatory', openObservatory)
     }
   }, [])
   const themeSwitchAvailable = (() => {
-    try { return voyageTheme || getRoleJson('miyou-completed-days', []).includes(TEMPLATE_THEME_SWITCH_DAY) } catch { return voyageTheme }
+    try { return voyageTheme || getRoleJson('wwcxrl-completed-days', []).includes(TEMPLATE_THEME_SWITCH_DAY) } catch { return voyageTheme }
   })()
   const [firstGuideOpen, setFirstGuideOpen] = useState(() => {
     if (typeof window === 'undefined') return false
@@ -6496,7 +7920,7 @@ function PlanetApp() {
     return false
   })
   function dismissFirstGuide() {
-    localStorage.setItem('miyou-template-first-guide-seen-v1', 'yes')
+    localStorage.setItem('wwcxrl-template-first-guide-seen-v1', 'yes')
     setFirstGuideOpen(false)
   }
   return (
@@ -6520,7 +7944,7 @@ function PlanetApp() {
           <TemplateGuide setCurrent={next => { dismissFirstGuide(); setCurrent(next) }} />
         </div>
       </div>}
-      {toast && <div className="miyou-soft-toast" role="status">{toast}</div>}
+      {toast && <div className="wwcxrl-soft-toast" role="status">{toast}</div>}
       <footer className="site-footer">
         {themeSwitchAvailable && <button type="button" className="theme-toggle-button subtle" onClick={() => setThemeMode(!voyageTheme)}>{voyageTheme ? '🍊 切回旧皮肤' : '🚀 切到新皮肤'}</button>}
         <button onClick={returnToInvitationLayer}>回到 8月9日邀请信</button></footer>
@@ -6528,11 +7952,525 @@ function PlanetApp() {
   )
 }
 
+// 管理页本地任务库：未连接云端时也允许完整走“发布→列表可见→编辑/删除”流程。
+const ADMIN_LOCAL_TASKS_KEY = 'wwcxrl-admin-local-tasks'
+
+function loadLocalAdminTasks() {
+  try {
+    return JSON.parse(localStorage.getItem(ADMIN_LOCAL_TASKS_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveLocalAdminTasks(list) {
+  localStorage.setItem(ADMIN_LOCAL_TASKS_KEY, JSON.stringify(list))
+}
+
+// 按 Day 自动推算解锁日期：Day 300 = 2026-08-09，之后每天顺延。
+function adminDayToDate(day) {
+  const base = new Date('2026-08-09T00:00:00')
+  base.setDate(base.getDate() + (Number(day) || 300) - 300)
+  const yyyy = base.getFullYear()
+  const mm = String(base.getMonth() + 1).padStart(2, '0')
+  const dd = String(base.getDate()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd}`
+}
+
+// 一键示例：选好类型后点“填入示例”，改一改就能发布。
+const ADMIN_TASK_EXAMPLES = {
+  memoryPuzzle: {
+    title: '第 X 天的小谜语',
+    prompt: '还记得我们第一次约会的地方吗？',
+    answer: '郑州二砂文化创意园',
+    secret: '答对啦，这是属于我们的第 X 天。',
+    reward: '打开今天的纪念日签到',
+    icon: '🧭'
+  },
+  letter: {
+    title: '第 X 天的一封信',
+    prompt: '今天有一封信想给你。',
+    secret: '想你的第 X 天，我们慢慢来。',
+    reward: '读完这封信，签个到',
+    icon: '💌'
+  },
+  fortune: {
+    title: '今日砸金蛋',
+    prompt: '点一下金蛋，敲出今天的小惊喜。',
+    secret: '🧋 一杯奶茶\n☕ 一杯咖啡\n🍜 点一个好吃的外卖\n🎁 神秘大奖\n🍰 一块小蛋糕',
+    reward: '砸开金蛋，签个到',
+    icon: '🥚'
+  },
+  sticker: {
+    title: '今日小贴纸',
+    prompt: '点一下，揭下今天的贴纸。',
+    secret: '留下你今天的心愿吧，我会好好收进小星球。',
+    reward: '揭下贴纸，签个到',
+    icon: '🏷️'
+  },
+  game: {
+    title: '第 X 天的小游戏',
+    prompt: '玩完这个小游戏就能签到啦。',
+    secret: '游戏完成！今天也一起加油。',
+    reward: '玩完游戏，签个到',
+    icon: '🎮'
+  }
+}
+
+function emptyAdminTask(day = 301) {
+  return {
+    day,
+    date: adminDayToDate(day),
+    title: '',
+    icon: '✨',
+    type: 'memoryPuzzle',
+    theme: '',
+    reward: '',
+    prompt: '',
+    secret: '',
+    answer: '',
+    image: '',
+    memoryTitle: '',
+    memoryCaption: '',
+    chat: '',
+    gameId: 'mazeClassic',
+    gameConfig: {},
+    status: 'published'
+  }
+}
+
+function parseAdminChatLines(text) {
+  return String(text || '').split(/\r?\n/).map(line => line.trim()).filter(Boolean).map(line => {
+    let side = 'me'
+    let body = line
+    if (/^(小琳|她|her)[:：]\s*/.test(line)) {
+      side = 'her'
+      body = line.replace(/^(小琳|她|her)[:：]\s*/, '')
+    } else if (/^(小琛|我|me)[:：]\s*/.test(line)) {
+      side = 'me'
+      body = line.replace(/^(小琛|我|me)[:：]\s*/, '')
+    }
+    return { side, text: body }
+  })
+}
+
+function AdminTaskPage() {
+  const [ok, setOk] = useState(() => typeof window !== 'undefined' && sessionStorage.getItem('wwcxrl-admin-ok') === '1')
+  const [password, setPassword] = useState('')
+  const [passwordError, setPasswordError] = useState('')
+  const [tasks, setTasks] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [draft, setDraft] = useState(emptyAdminTask)
+  const [editingDay, setEditingDay] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
+  const [missingFields, setMissingFields] = useState([])
+  const [dateAuto, setDateAuto] = useState(true)
+  const [toast, setToast] = useState('')
+  const todayKey = getTodayKey()
+
+  const refresh = React.useCallback(async () => {
+    setLoading(true)
+    const cloud = await loadCloudDailyTasks()
+    const cloudRows = (cloud || []).map(task => ({ ...task, source: 'cloud' }))
+    const localRows = loadLocalAdminTasks().map(task => ({ ...task, source: 'local' }))
+    const merged = new Map()
+    cloudRows.forEach(row => merged.set(Number(row.day), row))
+    localRows.forEach(row => { if (!merged.has(Number(row.day))) merged.set(Number(row.day), row) })
+    setTasks(Array.from(merged.values()).sort((a, b) => Number(a.day) - Number(b.day)))
+    setLoading(false)
+  }, [])
+
+  React.useEffect(() => {
+    if (ok) refresh()
+  }, [ok, refresh])
+
+  const codeRows = dailyAdventures.map(item => ({ ...item, source: 'code', status: 'builtin' }))
+  const allRowsMap = new Map()
+  codeRows.forEach(row => allRowsMap.set(Number(row.day), row))
+  tasks.forEach(row => allRowsMap.set(Number(row.day), row))
+  const allRows = Array.from(allRowsMap.values()).sort((a, b) => Number(a.day) - Number(b.day))
+  const usedDays = new Set(allRows.map(row => Number(row.day)))
+  let nextFreeDay = 301
+  while (usedDays.has(nextFreeDay)) nextFreeDay += 1
+  function nextFreeAdminDay(fromDay) {
+    const used = new Set(allRows.map(row => Number(row.day)))
+    let day = Math.max(301, Number(fromDay) + 1)
+    while (used.has(day)) day += 1
+    return day
+  }
+
+  React.useEffect(() => {
+    if (!toast) return
+    const timerId = window.setTimeout(() => setToast(''), 3600)
+    return () => window.clearTimeout(timerId)
+  }, [toast])
+
+  // 新建模式且表单仍为空时，自动跳到下一个空闲 Day
+  React.useEffect(() => {
+    if (editingDay) return
+    if (draft.title || draft.prompt || draft.answer || draft.secret) return
+    if (usedDays.has(Number(draft.day))) {
+      setDraft(emptyAdminTask(nextFreeDay))
+    }
+  }, [tasks, editingDay, draft.day])
+
+  if (!ok) {
+    return (
+      <main className="admin-page admin-login">
+        <form className="admin-login-card sticker-card" onSubmit={event => {
+          event.preventDefault()
+          if (password === ADMIN_PASSWORD) {
+            sessionStorage.setItem('wwcxrl-admin-ok', '1')
+            setOk(true)
+          } else {
+            setPasswordError('密码不对哦')
+          }
+        }}>
+          <h1>🔐 任务管理</h1>
+          <p>这里是只有小琛能进的任务布置页。</p>
+          <label>管理密码
+            <input type="password" value={password} onChange={event => { setPassword(event.target.value); setPasswordError('') }} placeholder="输入管理密码" autoFocus />
+          </label>
+          {passwordError && <p className="admin-error">{passwordError}</p>}
+          <button type="submit" className="admin-save-publish">进入管理页</button>
+        </form>
+      </main>
+    )
+  }
+
+  function save(status) {
+    const missing = []
+    if (!draft.day) missing.push('天数')
+    if (!draft.date) missing.push('日期')
+    if (!draft.title.trim()) missing.push('标题')
+    if (draft.type === 'memoryPuzzle' && !draft.answer.trim()) missing.push('谜底答案')
+    if (draft.type === 'letter' && !draft.secret.trim()) missing.push('信的内容')
+    if (missing.length) {
+      setMissingFields(missing)
+      setToast(`还差：${missing.join('、')}，填一下就能发布啦`)
+      return
+    }
+    setMissingFields([])
+    const payload = {
+      day: Number(draft.day),
+      date: draft.date,
+      title: draft.title,
+      icon: draft.icon || '✨',
+      type: draft.type,
+      theme: draft.theme,
+      reward: draft.reward,
+      prompt: draft.prompt,
+      secret: draft.secret,
+      answer: draft.answer,
+      image: draft.image,
+      memoryTitle: draft.memoryTitle,
+      memoryCaption: draft.memoryCaption,
+      chatMessages: parseAdminChatLines(draft.chat),
+      gameId: draft.gameId,
+      gameConfig: draft.gameConfig || {},
+      status
+    }
+    if (!cloudEnabled) {
+      const localList = loadLocalAdminTasks().filter(task => Number(task.day) !== Number(payload.day))
+      localList.push(payload)
+      saveLocalAdminTasks(localList)
+      setToast(status === 'published' ? `Day ${draft.day} 已发布（本地模式，未连接云端）` : `Day ${draft.day} 已存为草稿（本地）`)
+      setEditingDay(null)
+      setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+      refresh()
+      return
+    }
+    setSaving(true)
+    saveCloudDailyTask(payload).then(okSave => {
+      setSaving(false)
+      if (okSave) {
+        setToast(status === 'published' ? `Day ${draft.day} 已发布` : `Day ${draft.day} 已存为草稿`)
+        setEditingDay(null)
+        setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+        refresh()
+      } else {
+        setToast('保存失败：云端写入被拒绝，请查看浏览器控制台')
+      }
+    })
+  }  async function handleImageFile(event) {
+    const file = event.target.files && event.target.files[0]
+    event.target.value = ''
+    if (!file) return
+    if (!draft.day) { setToast('请先填写天数 Day，再上传配图'); return }
+    setUploadingImage(true)
+    setToast('配图上传中…')
+    const url = await uploadCloudTaskImage(file, draft.day)
+    setUploadingImage(false)
+    if (url) {
+      setDraft(previous => ({ ...previous, image: url }))
+      setToast('配图已上传，发布后她即可看到。')
+    } else {
+      setToast('配图上传失败：云端未连接或存储不可用，可改用图片链接。')
+    }
+  }
+
+
+  function remove(row) {
+    if (!window.confirm(`确认删除 Day ${row.day}？删除后不可恢复。`)) return
+    if (row.source === 'local') {
+      const localList = loadLocalAdminTasks().filter(task => Number(task.day) !== Number(row.day))
+      saveLocalAdminTasks(localList)
+      setToast(`Day ${row.day} 已删除（本地）`)
+      if (editingDay === row.day) {
+        setEditingDay(null)
+        setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+      }
+      refresh()
+      return
+    }
+    deleteCloudDailyTask(row.day).then(okDel => {
+      setToast(okDel ? `Day ${row.day} 已删除` : '删除失败，请查看控制台')
+      if (okDel && editingDay === row.day) {
+        setEditingDay(null)
+        setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+      }
+      refresh()
+    })
+  }
+
+  function editTask(row) {
+    setEditingDay(row.day)
+    setDraft({
+      day: row.day,
+      date: row.date || adminDayToDate(row.day),
+      title: row.title || '',
+      icon: row.icon || '✨',
+      type: row.type || 'memoryPuzzle',
+      theme: row.theme || '',
+      reward: row.reward || '',
+      prompt: row.prompt || '',
+      secret: row.secret || '',
+      answer: row.answer || '',
+      image: row.image || '',
+      memoryTitle: row.memoryTitle || '',
+      memoryCaption: row.memoryCaption || '',
+      gameId: row.gameId || 'mazeClassic',
+      gameConfig: { ...getMiniGameDefaults(row.gameId || 'mazeClassic'), ...(row.gameConfig || {}) },
+      chat: Array.isArray(row.chatMessages)
+        ? row.chatMessages.map(msg => `${msg.side === 'her' ? '小琳' : '小琛'}：${msg.text}`).join('\n')
+        : '',
+      status: row.status === 'draft' ? 'draft' : 'published'
+    })
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  function statusLabel(row) {
+    if (row.source === 'code') return '内置'
+    if (row.source === 'local') return row.status === 'draft' ? '本地草稿' : '本地已发布'
+    if (row.status === 'draft') return '草稿'
+    return row.date < todayKey ? '已过期' : '已发布'
+  }
+
+  function fillExample() {
+    const example = ADMIN_TASK_EXAMPLES[draft.type]
+    if (!example) return
+    const day = draft.day || 301
+    const withDay = value => String(value || '').replace('X', day)
+    setDraft(prev => ({
+      ...prev,
+      title: withDay(example.title),
+      prompt: withDay(example.prompt),
+      answer: withDay(example.answer),
+      secret: withDay(example.secret),
+      reward: withDay(example.reward),
+      icon: example.icon
+    }))
+    setToast('已填入示例，改一改就能发布啦')
+  }
+
+  const activeTypeHint = ADMIN_TASK_TYPES.find(type => type.id === draft.type)
+  const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）' })[draft.type] || '完成后显示的内容'
+  const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : '完成后显示的一段话'
+  const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
+
+  return (
+    <main className="admin-page">
+      <header className="admin-header">
+        <div>
+          <h1>🍊 小星球任务管理</h1>
+          <p>发布后她打开网站即可看到；任务按日期自动解锁，不用重新部署。</p>
+        </div>
+        {!cloudEnabled && <p className="admin-cloud-banner">⚠️ 本地模式：任务会保存到本机（可正常预览发布流程），不会写入线上。配置 Supabase 环境变量后即切换到云端发布。</p>}
+        <button type="button" className="admin-logout" onClick={() => { sessionStorage.removeItem('wwcxrl-admin-ok'); setOk(false) }}>退出管理</button>
+      </header>
+
+      <section className="admin-task-form sticker-card">
+        <h2>{editingDay ? `编辑 Day ${editingDay}` : '新建任务'}</h2>
+        <div className="admin-form-grid">
+          <label className={missingFields.includes('天数') || missingFields.includes('日期') ? 'admin-field-missing' : ''}>天数 Day
+            <input type="number" min="1" max="999" value={draft.day} onChange={event => {
+              const day = Number(event.target.value)
+              const next = { ...draft, day }
+              if (dateAuto) next.date = adminDayToDate(day)
+              setDraft(next)
+              setMissingFields([])
+            }} />
+          </label>
+          <label className={missingFields.includes('日期') ? 'admin-field-missing' : ''}>日期（自动解锁日）
+            <span className="admin-date-row">
+              <input type="date" value={draft.date} onChange={event => { setDateAuto(false); setDraft({ ...draft, date: event.target.value }); setMissingFields([]) }} />
+              <button type="button" className="admin-date-auto" title="按 Day 自动推算日期" onClick={() => { setDateAuto(true); setDraft({ ...draft, date: adminDayToDate(draft.day) }); setMissingFields([]) }}>↻ 自动</button>
+            </span>
+          </label>
+          <label className={missingFields.includes('标题') ? 'admin-field-missing' : ''}>标题
+            <input value={draft.title} onChange={event => { setDraft({ ...draft, title: event.target.value }); setMissingFields([]) }} placeholder="例如：第 301 天的小谜语" />
+          </label>
+          <label>任务类型
+            <span className="admin-type-row">
+              <select value={draft.type} onChange={event => {
+                const type = event.target.value
+                const next = { ...draft, type }
+                if (type === 'game' && !draft.gameId) next.gameId = 'mazeClassic'
+                if (type === 'game' && !draft.gameConfig) next.gameConfig = { ...getMiniGameDefaults(draft.gameId || 'mazeClassic') }
+                setDraft(next)
+                setMissingFields([])
+              }}>
+                {ADMIN_TASK_TYPES.map(type => <option key={type.id} value={type.id}>{type.label}</option>)}
+              </select>
+              <button type="button" className="admin-example-btn" onClick={fillExample}>✨ 填入示例</button>
+            </span>
+          </label>
+          {draft.type === 'game' && activeGame && (
+            <>
+              <label>小游戏
+                <select value={draft.gameId} onChange={event => {
+                  const gameId = event.target.value
+                  setDraft({ ...draft, gameId, gameConfig: { ...getMiniGameDefaults(gameId) } })
+                }}>
+                  {MINI_GAMES.map(game => <option key={game.id} value={game.id}>{game.icon} {game.label}</option>)}
+                </select>
+              </label>
+              {activeGame.fields.map(field => (
+                <label key={field.key}>{field.label}
+                  {field.type === 'number' ? (
+                    <input type="number" min={field.min} max={field.max} value={draft.gameConfig?.[field.key] ?? activeGame.defaults[field.key]} onChange={event => setDraft({ ...draft, gameConfig: { ...draft.gameConfig, [field.key]: Number(event.target.value) } })} />
+                  ) : (
+                    <select value={String(draft.gameConfig?.[field.key] ?? activeGame.defaults[field.key])} onChange={event => setDraft({ ...draft, gameConfig: { ...draft.gameConfig, [field.key]: event.target.value } })}>
+                      {field.options.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                    </select>
+                  )}
+                </label>
+              ))}
+            </>
+          )}
+        </div>
+        <label className="admin-full">任务说明（她看到的第一段话，选填）
+          <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
+        </label>
+        {draft.type === 'memoryPuzzle' && (
+          <label className={`admin-full${missingFields.includes('谜底答案') ? ' admin-field-missing' : ''}`}>谜底答案（她答对后才能签到）
+            <input value={draft.answer} onChange={event => { setDraft({ ...draft, answer: event.target.value }); setMissingFields([]) }} placeholder="例如：郑州二砂文化创意园" />
+          </label>
+        )}
+        <label className={`admin-full${missingFields.includes('完成后显示的内容') ? ' admin-field-missing' : ''}`}>{secretLabel}
+          <textarea value={draft.secret} onChange={event => { setDraft({ ...draft, secret: event.target.value }); setMissingFields([]) }} rows={draft.type === 'fortune' ? 4 : 2} placeholder={secretPlaceholder} />
+        </label>
+        <label className="admin-full">配图（可选：谜语/信/贴纸顶部图片，支持上传）
+          <input value={draft.image} onChange={event => setDraft({ ...draft, image: event.target.value })} placeholder="/images/xxx.jpg 或 https://…" />
+          <span className="admin-image-upload-row">
+            <input type="file" accept="image/*" onChange={handleImageFile} disabled={uploadingImage || !draft.day} />
+            <small>{uploadingImage ? '上传中…' : '选择图片后自动上传到云端'}</small>
+          </span>
+          {draft.image && <img className="admin-image-preview" src={draft.image} alt="配图预览" />}
+        </label>
+        <details className="admin-advanced">
+          <summary>高级选项（选填）</summary>
+          <div className="admin-form-grid">
+            <label>图标（emoji）
+              <input value={draft.icon} onChange={event => setDraft({ ...draft, icon: event.target.value })} placeholder="✨" />
+            </label>
+            <label>主题（谜底提示 / 副标题）
+              <input value={draft.theme} onChange={event => setDraft({ ...draft, theme: event.target.value })} placeholder="例如：我们第一次一起散步的地方" />
+            </label>
+            <label>奖励（显示在标题下方）
+              <input value={draft.reward} onChange={event => setDraft({ ...draft, reward: event.target.value })} placeholder="例如：打开今天的纪念日签到" />
+            </label>
+          </div>
+          {draft.type === 'memoryPuzzle' && (
+            <>
+              <label className="admin-full">聊天台词（可选，每行一条，前缀“小琛：/小琳：”）
+                <textarea value={draft.chat} onChange={event => setDraft({ ...draft, chat: event.target.value })} rows={4} placeholder={'小琛：还记得那天吗？\n小琳：记得呀。'} />
+              </label>
+              <div className="admin-form-grid">
+                <label>回忆标题（聊天框标题）
+                  <input value={draft.memoryTitle} onChange={event => setDraft({ ...draft, memoryTitle: event.target.value })} placeholder="例如：第一次散步记忆" />
+                </label>
+                <label>回忆说明（选填）
+                  <input value={draft.memoryCaption} onChange={event => setDraft({ ...draft, memoryCaption: event.target.value })} placeholder="选填" />
+                </label>
+              </div>
+            </>
+          )}
+        </details>
+{activeTypeHint && <p className="admin-type-hint">💡 {activeTypeHint.hint}</p>}
+        <div className="admin-actions">
+          <button type="button" className="admin-save-draft" disabled={saving} onClick={() => save('draft')}>{saving ? '保存中…' : '存为草稿'}</button>
+          <button type="button" className="admin-save-publish" disabled={saving} onClick={() => save('published')}>{saving ? '保存中…' : '发布任务'}</button>
+          {editingDay && <button type="button" className="admin-cancel" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day)))) }}>取消编辑</button>}
+        </div>
+      </section>
+
+      <section className="admin-task-preview sticker-card">
+        <h2>预览卡片</h2>
+        <div className="admin-preview-card">
+          <div className="admin-preview-icon">{draft.icon || '✨'}</div>
+          <div>
+            <div className="tiny-label">Day {String(draft.day || '').padStart(2, '0')} · {draft.date || '未设置日期'}</div>
+            <h3>{draft.title || '未命名任务'}</h3>
+            <p>{draft.type === 'memoryPuzzle' && draft.theme ? `谜底：${draft.theme}` : draft.reward}</p>
+            {draft.type === 'game' && activeGame && (
+              <p className="admin-preview-prompt">🎮 {activeGame.icon} {activeGame.label} · {activeGame.fields.map(field => `${field.label}：${draft.gameConfig?.[field.key] ?? activeGame.defaults[field.key]}`).join(' · ')}</p>
+            )}
+            {draft.prompt && <p className="admin-preview-prompt">{draft.prompt}</p>}
+          </div>
+        </div>
+      </section>
+
+      <section className="admin-task-list sticker-card">
+        <h2>任务列表（{allRows.length}）</h2>
+        {loading ? <p>加载中…</p> : allRows.length === 0 ? <p>还没有任务。</p> : (
+          <div className="admin-table-wrap">
+            <table className="admin-task-table">
+              <thead>
+                <tr><th>Day</th><th>日期</th><th>标题</th><th>类型</th><th>状态</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                {allRows.map(row => (
+                  <tr key={`${row.source}-${row.day}`}>
+                    <td>{row.day}</td>
+                    <td>{row.date}</td>
+                    <td>{row.icon} {row.title}</td>
+                    <td>{ADMIN_TASK_TYPES.find(type => type.id === row.type)?.label || row.type}</td>
+                    <td><span className={`admin-status admin-status-${row.source === 'code' ? 'builtin' : row.status}`}>{statusLabel(row)}</span></td>
+                    <td>
+                      <button type="button" className="admin-row-edit" onClick={() => editTask(row)}>编辑</button>
+                      {row.source !== 'code' && <button type="button" className="admin-row-delete" onClick={() => remove(row)}>删除</button>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+      {toast && <div className="wwcxrl-soft-toast admin-toast" role="status">{toast}</div>}
+    </main>
+  )
+}
+
+
 function App() {
+  if (isAdminPageRequested()) return <AdminTaskPage />
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search)
     if (params.get('ownerDevice') === '1' || params.get('owner') === '1') {
-      localStorage.setItem('miyou-owner-device', 'yes')
+      localStorage.setItem('wwcxrl-owner-device', 'yes')
       params.delete('ownerDevice')
       params.delete('owner')
       const query = params.toString()
@@ -6554,7 +8492,7 @@ function App() {
     && new URLSearchParams(window.location.search).get('planet') === '1'
   const globalState = typeof window !== 'undefined' ? loadGlobalLocalState() : GLOBAL_EMPTY_STATE
   const initiallyOpen = typeof window !== 'undefined'
-    && (localDevBypass || localStorage.getItem('miyou-camouflage-opened') === 'yes' || localStorage.getItem('miyou-planet-unlocked') === 'yes' || globalState.planetUnlocked || globalState.invitationOpened)
+    && (localDevBypass || localStorage.getItem('wwcxrl-camouflage-opened') === 'yes' || localStorage.getItem('wwcxrl-planet-unlocked') === 'yes' || globalState.planetUnlocked || globalState.invitationOpened)
   const [open, setOpen] = useState(initiallyOpen)
   React.useEffect(() => {
     if (open) return
@@ -6570,3 +8508,4 @@ function App() {
 }
 
 createRoot(document.getElementById('root')).render(<App />)
+

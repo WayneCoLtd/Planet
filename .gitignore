@@ -45,3 +45,10 @@ photo_rename_*manifest*.csv
 
 # local release archives
 releases/
+
+# 本地运行残留（不提交）
+dev.pid
+dev2.err
+preview.pid
+tmp-*.html
+

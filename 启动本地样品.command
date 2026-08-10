@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-PORT="${MIYOU_TEMPLATE_PORT:-5173}"
+PORT="${WWCXRL_TEMPLATE_PORT:-5173}"
 URL="http://127.0.0.1:${PORT}/?planet=1&preview=1&owner=1"
 
 cd "$ROOT"
