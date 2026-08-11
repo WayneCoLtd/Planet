@@ -535,7 +535,7 @@ export async function saveCloudMeetingDates({ next = '', past = [] }) {
     }
     const rows = []
     if (next) {
-      rows.push({ kind: 'next', date: String(next), note: '', emoji: '💕', created_by: identity.role })
+      rows.push({ kind: 'next', date: String(next), end_date: '', note: '', emoji: '💕', created_by: identity.role })
     }
     ;(past || []).filter(item => item && (item.start || item.date)).forEach(item => {
       rows.push({
