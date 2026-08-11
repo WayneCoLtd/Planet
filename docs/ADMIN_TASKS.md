@@ -38,6 +38,18 @@
 
 - 任务表：Supabase `wwcxrl_daily_tasks`（管理页新建 / 编辑 / 删除）。
 - 加载顺序：**云端已发布任务优先，代码 `src/data/loveData.js` 作为兜底**，按 day 去重合并。
+
+## 4. 异地见面日历（彩蛋页倒计时）
+
+管理页底部「💌 异地见面日历」可设置：
+
+- **下次见面日期**：一个日期，彩蛋页会显示「距离下次见面还有 X 天」，并自动翻到那个月份、用 🎀 圈出当天。
+- **已见面的浪漫日子**：可添加多段**时间范围**（开始日期 ~ 结束日期），每段可点开标记图案选择器（💗💕🌷🌸🦄🍓🎀 等 18 个预设，选中后自动收起）并填写备注。彩蛋页小日历会把整段范围涂上爱心：起点/终点显示所选图案、中间日子显示 ♡，下方以「图案 + 日期范围 + 备注」的贴纸展示。
+
+存储：Supabase 表 `wwcxrl_meeting_dates`（kind = `next` / `past`），未连接云端时回退到本地 `localStorage['wwcxrl-meeting-dates']`。
+
+> 已上线的老库需要先执行一次建表 SQL（见 `supabase_wwcxrl_schema.sql` 末尾「异地见面日历」段落）；若之前已建过单日版本的表，需补执行：
+> `alter table public.wwcxrl_meeting_dates add column if not exists end_date text not null default '';`
   - 想长期保留的「内置」任务留在代码里即可；想随时改的任务放管理页。
 - 配图上传：管理页上传的图片会压缩到 1200px 后存入 Supabase 存储桶 `wwcxrl-photos`，URL 写入任务记录的 image 字段。
 

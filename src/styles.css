@@ -1405,9 +1405,10 @@ main { position: relative; }
 }
 .slot-controls {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto;
   gap: 8px;
   align-items: center;
+  justify-content: start;
 }
 .upload-file-button,
 .remove-photo-button,
@@ -11361,17 +11362,24 @@ html { overflow-x: hidden; }
   .capsule-milestone.is-lit { animation: none; }
 }
 
-/* ============ 管理页：云端提示条 + 高级选项折叠 ============ */
-.admin-cloud-banner {
+/* ============ 管理页：同步状态提示 + 高级选项折叠 ============ */
+.admin-cloud-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   margin: 0 0 14px;
-  padding: 10px 14px;
-  border-radius: 14px;
-  background: #fff3cd;
-  border: 1px solid rgba(200, 150, 40, .4);
-  color: #7a5b12;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1.6;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid rgba(135, 84, 45, .14);
+  color: var(--soft-ink);
+  font-size: .84rem;
+  line-height: 1.5;
+}
+.admin-cloud-note.is-cloud {
+  background: rgba(225, 255, 240, .72);
+  border-color: rgba(60, 170, 120, .3);
+  color: #2f7d5a;
 }
 .admin-advanced {
   margin-top: 16px;
@@ -11486,4 +11494,822 @@ html { overflow-x: hidden; }
   .catch-heart.is-missed,
   .egg-shards,
   .egg-flash { display: none; }
+}
+
+/* ============ 新增小游戏：三消 / 喂食 / 连连看 / 泡泡消消乐 / 樱花拼图 ============ */
+
+/* ---- 爱心/水果三消 MatchThreeGame ---- */
+.match3-game { display: grid; gap: 12px; margin-top: 16px; }
+.match3-board {
+  display: grid;
+  grid-template-columns: repeat(var(--match-cols, 6), minmax(0, 1fr));
+  gap: 5px;
+  max-width: 420px;
+  margin-inline: auto;
+  width: 100%;
+  padding: 10px;
+  border-radius: 22px;
+  background: linear-gradient(160deg, #fff3d9, #ffe3f0 55%, #e4fff2);
+  box-shadow: 0 14px 34px rgba(112, 70, 36, .12);
+}
+.match3-tile {
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 14px;
+  font-size: clamp(1.2rem, 4.4vw, 1.9rem);
+  display: grid;
+  place-items: center;
+  background: linear-gradient(145deg, #fffaf0, #ffeef6);
+  box-shadow: 0 4px 10px rgba(112, 70, 36, .14), inset 0 0 0 2px rgba(255, 255, 255, .75);
+  touch-action: manipulation;
+  transition: transform .14s ease, box-shadow .14s ease;
+}
+.match3-tile:active:not(:disabled) { transform: scale(.92); }
+.match3-tile.is-selected { transform: scale(1.05); box-shadow: 0 0 0 3px #ff9fbd, 0 6px 14px rgba(255, 143, 77, .35); }
+.match3-tile.is-cursor { box-shadow: 0 0 0 2px rgba(185, 167, 255, .85); }
+.match3-tile.is-matched { animation: match3-pop .32s ease-out both; }
+.match3-status, .feed-status, .whack-status, .sakura-status { margin: 0; text-align: center; font-size: .95rem; color: var(--soft-ink); }
+.match3-status strong, .feed-status strong, .whack-status strong, .sakura-status strong { color: var(--ink); font-size: 1.1rem; }
+.match3-hint, .feed-hint, .whack-hint { margin: 0; text-align: center; font-size: .9rem; line-height: 1.6; color: var(--soft-ink); }
+.match3-hint strong, .feed-hint strong, .whack-hint strong { color: #c96a4f; }
+.match3-message { margin: 0; text-align: center; font-size: .9rem; font-weight: 700; color: #d97a3d; min-height: 1.4em; }
+.match3-tile.is-denied { animation: match3-denied .32s ease-in-out both; }
+.feed-status strong.is-urgent, .whack-status strong.is-urgent { color: #e2555e; animation: urgent-blink 1s ease-in-out infinite; }
+@keyframes match3-denied { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+@keyframes urgent-blink { 50% { opacity: .4; } }
+@keyframes match3-pop { 0% { opacity: 1; scale: 1; } 55% { scale: 1.35; } 100% { opacity: 0; scale: .4; } }
+
+/* ---- 给狗狗喂食 FeedDogGame ---- */
+.feed-game { display: grid; gap: 12px; margin-top: 16px; }
+.feed-area {
+  position: relative;
+  height: 300px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #dff3ff, #fff9e8 78%);
+  border: 2px solid rgba(255, 255, 255, .85);
+  box-shadow: inset 0 0 0 6px rgba(255, 255, 255, .5), 0 14px 34px rgba(112, 70, 36, .12);
+  touch-action: none;
+  cursor: grab;
+}
+.feed-food {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: var(--size, 1.5rem);
+  transform: translate(-50%, -50%) rotate(var(--tilt, 0deg));
+  animation: catch-heart-sway var(--sway-speed, 1.4s) ease-in-out infinite;
+  pointer-events: none;
+  filter: drop-shadow(0 3px 5px rgba(0, 0, 0, .2));
+  will-change: transform;
+}
+.feed-food.is-missed { animation: catch-heart-miss .55s ease-out both; pointer-events: none; }
+.feed-yum {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-size: 1.1rem;
+  transform: translate(-50%, -50%);
+  animation: catch-heart-burst-pop .55s ease-out both;
+  pointer-events: none;
+}
+.feed-dog {
+  position: absolute;
+  bottom: 4px;
+  transform: translateX(-50%);
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+  transition: left .12s ease-out;
+  filter: drop-shadow(0 6px 8px rgba(95, 54, 32, .22));
+}
+.feed-dog-sprite { width: 58px; height: 58px; }
+.feed-dog-bowl { font-size: 1.45rem; margin-top: -8px; }
+.feed-controls { display: flex; gap: .6rem; justify-content: center; }
+.feed-controls button {
+  width: 3.6rem;
+  height: 3rem;
+  border: 0;
+  border-radius: 16px;
+  font-size: 1.2rem;
+  color: #653f26;
+  font-weight: 900;
+  background: linear-gradient(135deg, #ffe9b0, #ffd28a);
+  box-shadow: 0 8px 16px rgba(255, 170, 90, .4);
+  touch-action: manipulation;
+}
+.feed-controls button:active { transform: translateY(1px) scale(.97); }
+
+/* ---- 敲敲打地鼠 WhackAMoleGame ---- */
+.whack-game { display: grid; gap: 12px; margin-top: 16px; }
+.whack-board {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  max-width: 420px;
+  margin-inline: auto;
+  width: 100%;
+  padding: 14px;
+  border-radius: 24px;
+  background: linear-gradient(180deg, #cdeec2, #a9dc9a);
+  box-shadow: inset 0 0 0 6px rgba(255, 255, 255, .55), 0 14px 34px rgba(112, 70, 36, .12);
+}
+.whack-hole {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 50%;
+  overflow: hidden;
+  cursor: pointer;
+  touch-action: manipulation;
+  background: radial-gradient(circle at 50% 24%, #9a6a46, #5e3a24 74%);
+  box-shadow: inset 0 10px 16px rgba(0, 0, 0, .35), 0 6px 12px rgba(70, 45, 25, .3);
+}
+.whack-hole-mouth {
+  position: absolute;
+  left: 12%;
+  right: 12%;
+  bottom: 5%;
+  height: 44%;
+  border-radius: 50% 50% 46% 46%;
+  background: radial-gradient(circle at 50% 28%, #4a2c18, #2f1b0e 80%);
+}
+.whack-mole {
+  position: absolute;
+  left: 50%;
+  bottom: 26%;
+  transform: translateX(-50%);
+  font-size: clamp(1.8rem, 6vw, 2.6rem);
+  filter: drop-shadow(0 4px 5px rgba(0, 0, 0, .25));
+  pointer-events: none;
+  animation: whack-pop .26s cubic-bezier(.2, .9, .3, 1.3) both;
+}
+.whack-bonk {
+  position: absolute;
+  left: 50%;
+  bottom: 30%;
+  transform: translateX(-50%);
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  pointer-events: none;
+  animation: whack-bonk .38s ease-out both;
+}
+.whack-hole:active:not(:disabled) { transform: scale(.94); }
+.whack-hole:disabled { cursor: default; opacity: 1; filter: none; }
+@keyframes whack-pop { 0% { transform: translateX(-50%) scale(.35); opacity: 0; } 100% { transform: translateX(-50%) scale(1); opacity: 1; } }
+@keyframes whack-bonk { 0% { transform: translateX(-50%) scale(.6); opacity: 1; } 100% { transform: translateX(-50%) translateY(-18px) scale(1.4) rotate(14deg); opacity: 0; } }
+
+/* ---- 外部嵌入小游戏 EmbeddedGame ---- */
+.embedded-game { display: grid; gap: 12px; margin-top: 16px; }
+.embedded-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: linear-gradient(160deg, #fff3d9, #ffe3f0 55%, #e4fff2);
+  box-shadow: 0 8px 20px rgba(112, 70, 36, .1);
+}
+.embedded-bar strong { font-size: 1rem; }
+.embedded-bar span { font-size: .9rem; color: var(--soft-ink); }
+.embedded-bar span.is-ready { color: #2f9e6b; font-weight: 900; }
+.embedded-fullscreen-button {
+  border: 0;
+  border-radius: 999px;
+  padding: .42rem 1rem;
+  font-size: .86rem;
+  color: #fff;
+  background: linear-gradient(135deg, #ff9fbd, #ff8f4d);
+  box-shadow: 0 6px 14px rgba(255, 143, 77, .35);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.embedded-fullscreen-button:active { transform: translateY(1px) scale(.97); }
+.embedded-frame-wrap {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 2px solid rgba(255, 255, 255, .85);
+  box-shadow: 0 14px 34px rgba(112, 70, 36, .12);
+  background: #000;
+}
+.embedded-frame { display: block; width: 100%; height: min(62vh, 560px); border: 0; background: #000; }
+.embedded-frame-wrap:fullscreen,
+.embedded-frame-wrap:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  max-width: none;
+  border-radius: 0;
+  border: 0;
+  box-shadow: none;
+  background: radial-gradient(circle at 50% 28%, rgba(255, 178, 205, .18), transparent 55%), linear-gradient(160deg, #2c2236, #171226 60%, #1c2a3a);
+  display: block;
+}
+.embedded-frame-wrap:fullscreen .embedded-frame,
+.embedded-frame-wrap:-webkit-full-screen .embedded-frame {
+  width: 100vw;
+  height: 100vh;
+}
+/* 带原生比例的嵌入游戏：嵌入框与全屏都按游戏比例等比显示，避免拉伸/裁切 */
+.embedded-frame-wrap[data-aspect] {
+  --game-aspect: 1;
+  aspect-ratio: var(--game-aspect);
+  width: 100%;
+  height: auto;
+  max-width: calc(min(62vh, 560px) * var(--game-aspect));
+  margin-left: auto;
+  margin-right: auto;
+}
+.embedded-frame-wrap[data-aspect] .embedded-frame {
+  width: 100%;
+  height: 100%;
+}
+.embedded-frame-wrap[data-aspect]:fullscreen,
+.embedded-frame-wrap[data-aspect]:-webkit-full-screen {
+  aspect-ratio: auto;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.embedded-frame-wrap[data-aspect]:fullscreen .embedded-frame,
+.embedded-frame-wrap[data-aspect]:-webkit-full-screen .embedded-frame {
+  width: min(100vw, calc(100vh * var(--game-aspect)));
+  height: min(100vh, calc(100vw / var(--game-aspect)));
+  max-width: none;
+  max-height: none;
+  background: #000;
+}
+.embedded-esc-hint {
+  position: absolute;
+  right: 14px;
+  top: 12px;
+  z-index: 5;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: rgba(20, 28, 40, .72);
+  color: #fff;
+  font-size: .85rem;
+  letter-spacing: .04em;
+  pointer-events: none;
+  animation: embedded-hint-in .25s ease-out both;
+}
+.embedded-exit-fullscreen {
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  z-index: 6;
+  border: 0;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: .85rem;
+  color: #fff;
+  background: rgba(226, 85, 94, .85);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, .3);
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.embedded-note { margin: 0; text-align: center; font-size: .85rem; color: var(--soft-ink); }
+@keyframes embedded-hint-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+
+/* ---- 失败面板（限时类游戏共用） ---- */
+.game-fail-panel {
+  text-align: center;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #fff1e8, #ffe7ea);
+  border: 2px dashed rgba(226, 85, 94, .45);
+  box-shadow: 0 12px 26px rgba(112, 70, 36, .1);
+}
+.game-fail-panel p { margin: 0 0 10px; font-size: .95rem; color: #8a4a52; }
+.game-fail-panel p strong { color: #d94b56; }
+
+/* ---- 樱花拼图 SakuraPuzzleGame ---- */
+.sakura-game { display: grid; gap: 12px; margin-top: 16px; }
+.sakura-board {
+  display: grid;
+  grid-template-columns: repeat(var(--sakura-size, 3), minmax(0, 1fr));
+  gap: 6px;
+  max-width: 360px;
+  margin-inline: auto;
+  width: 100%;
+  padding: 10px;
+  border-radius: 20px;
+  background: linear-gradient(160deg, #fff3d9, #ffe3f0 60%, #e4fff2);
+  box-shadow: 0 14px 34px rgba(112, 70, 36, .12);
+}
+.sakura-tile {
+  position: relative;
+  aspect-ratio: 1;
+  border: 0;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: #fffaf0;
+  box-shadow: 0 4px 10px rgba(112, 70, 36, .18);
+  touch-action: manipulation;
+}
+.sakura-tile:active:not(:disabled) { transform: translateY(1px) scale(.97); }
+.sakura-tile.is-empty { background: rgba(255, 255, 255, .35); box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7); cursor: default; }
+.sakura-tile-num {
+  position: absolute;
+  right: 4px;
+  bottom: 3px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 900;
+  line-height: 1.3;
+  color: #fff;
+  background: rgba(155, 75, 110, .55);
+}
+.sakura-actions { display: flex; gap: 10px; justify-content: center; align-items: center; flex-wrap: wrap; }
+.sakura-preview-button {
+  border: 0;
+  border-radius: 999px;
+  padding: .42rem 1.05rem;
+  font-size: .86rem;
+  color: #8a4d5f;
+  background: rgba(255, 224, 236, .85);
+  box-shadow: 0 6px 14px rgba(112, 70, 36, .12);
+  cursor: pointer;
+}
+.sakura-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 2600;
+  display: grid;
+  place-items: center;
+  background: rgba(49, 29, 18, .62);
+  cursor: zoom-out;
+  animation: sakura-preview-in .25s ease-out both;
+}
+.sakura-preview img { width: min(440px, 88vw); border-radius: 18px; box-shadow: 0 22px 60px rgba(0, 0, 0, .4); }
+@keyframes sakura-preview-in { from { opacity: 0; scale: .94; } to { opacity: 1; scale: 1; } }
+
+@media (max-width: 760px) {
+  .match3-board { padding: 7px; gap: 4px; }
+  .whack-board { gap: 8px; padding: 10px; }
+  .feed-area { height: 260px; }
+  .feed-dog-sprite { width: 50px; height: 50px; }
+  .sakura-board { max-width: 320px; }
+  .embedded-frame { height: 50vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .match3-tile, .match3-tile.is-denied, .whack-mole, .whack-bonk, .sakura-tile, .sakura-preview, .feed-food, .feed-yum { animation: none !important; transition: none !important; }
+  .match3-tile.is-matched { opacity: 0 !important; }
+}
+
+/* ===== 异地见面倒计时 + 可爱小日历（彩蛋页） ===== */
+.meeting-calendar-card {
+  display: grid;
+  grid-template-columns: minmax(230px, .72fr) minmax(300px, 1fr);
+  gap: 12px;
+  align-items: stretch;
+  margin-bottom: 16px;
+  padding: 14px;
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 8% 12%, rgba(255, 226, 109, .25), transparent 22%),
+    radial-gradient(circle at 94% 18%, rgba(255, 159, 189, .3), transparent 26%),
+    radial-gradient(circle at 82% 92%, rgba(141, 231, 194, .22), transparent 24%),
+    linear-gradient(160deg, #fffdf6, #fff0f6 52%, #edfaff);
+  border: 2px solid rgba(255, 255, 255, .9);
+  box-shadow: 0 16px 34px rgba(160, 93, 52, .1);
+}
+.meeting-countdown {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 12px 10px 10px;
+  border-radius: 18px;
+  text-align: center;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .68), rgba(255, 228, 240, .58));
+  border: 2px dashed rgba(255, 111, 145, .35);
+}
+.meeting-countdown:before {
+  content: "♡ ✦ ♡ ✦ ♡";
+  position: absolute;
+  top: 7px;
+  left: 0;
+  right: 0;
+  color: rgba(255, 111, 145, .22);
+  font-size: .72rem;
+  letter-spacing: .28em;
+}
+.meeting-countdown-kicker {
+  color: var(--rose);
+  font-size: .8rem;
+  letter-spacing: .12em;
+}
+.meeting-countdown-main {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  margin-top: 6px;
+}
+.meeting-countdown-main strong {
+  color: var(--ink);
+  font-size: clamp(.98rem, 1.8vw, 1.2rem);
+}
+.meeting-countdown-main b {
+  color: #ff5f8b;
+  font-family: Darumadrop One, cursive;
+  font-size: clamp(2rem, 4.5vw, 2.8rem);
+  line-height: 1.05;
+  text-shadow: 0 3px 0 rgba(255, 111, 145, .16);
+  animation: meetingPulse 1.8s ease-in-out infinite;
+}
+.meeting-countdown-main b em {
+  color: var(--rose);
+  font-family: Kiwi Maru, serif;
+  font-size: .38em;
+  font-style: normal;
+  margin-left: 6px;
+}
+.meeting-countdown-main b.is-past {
+  animation: none;
+  color: var(--grape);
+}
+.meeting-countdown-main b.is-today {
+  color: #ff9f43;
+}
+.meeting-next-date {
+  margin: 8px 0 0;
+  color: var(--soft-ink);
+  font-size: .86rem;
+}
+@keyframes meetingPulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+.meeting-calendar {
+  align-self: center;
+  width: min(100%, 360px);
+  margin-inline: auto;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .6);
+  border: 1px solid rgba(255, 159, 189, .22);
+}
+.meeting-calendar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.meeting-calendar-head strong {
+  color: var(--ink);
+  font-size: .98rem;
+}
+.meeting-calendar-nav {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--rose);
+  background: linear-gradient(135deg, #fff2d7, #ffe4ee);
+  box-shadow: 0 5px 12px rgba(255, 111, 145, .16);
+  font-size: 1.1rem;
+  line-height: 1;
+  transition: transform .15s ease;
+}
+.meeting-calendar-nav:hover {
+  transform: translateY(-2px);
+}
+.meeting-calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+  margin-bottom: 3px;
+}
+.meeting-calendar-week span {
+  padding: 3px 0;
+  color: var(--soft-ink);
+  font-size: .74rem;
+  text-align: center;
+}
+.meeting-calendar-week span.is-weekend {
+  color: var(--rose);
+}
+.meeting-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 3px;
+}
+.meeting-calendar-cell {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 36px;
+  border-radius: 10px;
+  color: var(--ink);
+  background: rgba(255, 255, 255, .58);
+  border: 1px solid rgba(255, 159, 189, .16);
+  font-size: .86rem;
+}
+.meeting-calendar-cell.is-empty {
+  background: transparent;
+  border-color: transparent;
+}
+.meeting-calendar-cell.is-past-day {
+  background: linear-gradient(135deg, #fff0f4, #ffe3ec);
+  border-color: rgba(255, 111, 145, .4);
+  box-shadow: inset 0 0 0 1.5px rgba(255, 255, 255, .75);
+}
+.meeting-calendar-cell.is-past-mid {
+  background: linear-gradient(135deg, #ffeef3, #ffdde8);
+  border-color: rgba(255, 111, 145, .18);
+  box-shadow: none;
+}
+.meeting-calendar-cell.is-past-start {
+  border-left: 2px solid rgba(255, 111, 145, .55);
+}
+.meeting-calendar-cell.is-past-end {
+  border-right: 2px solid rgba(255, 111, 145, .55);
+}
+.meeting-calendar-cell.is-next-day {
+  background: linear-gradient(135deg, #fff7d6, #ffe1ec 60%, #e7f6ff);
+  border: 2px solid #ff9fbd;
+  animation: nextDayGlow 2s ease-in-out infinite;
+}
+@keyframes nextDayGlow {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255, 159, 189, .22), 0 8px 18px rgba(255, 111, 145, .18); }
+  50% { box-shadow: 0 0 0 5px rgba(255, 159, 189, .34), 0 10px 24px rgba(255, 111, 145, .3); }
+}
+.meeting-calendar-cell.is-today b {
+  position: relative;
+}
+.meeting-calendar-cell.is-today b:after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -4px;
+  transform: translateX(-50%);
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--sky);
+}
+.meeting-day-mark {
+  position: absolute;
+  top: 1px;
+  right: 2px;
+  pointer-events: none;
+  font-size: .58rem;
+  font-style: normal;
+}
+.meeting-day-mark.is-mid {
+  top: auto;
+  right: auto;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: rgba(255, 111, 145, .8);
+  font-size: .66rem;
+}
+.meeting-day-mark.is-next {
+  top: -4px;
+  right: -2px;
+  font-size: .78rem;
+}
+.meeting-calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px 12px;
+  margin-top: 8px;
+  color: var(--soft-ink);
+  font-size: .76rem;
+}
+.legend-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  margin-right: 4px;
+  border-radius: 50%;
+  vertical-align: -1px;
+}
+.legend-dot.is-past { background: #ff9fbd; }
+.legend-dot.is-next { background: linear-gradient(135deg, #ffd98a, #ff9fbd); box-shadow: 0 0 0 2px rgba(255, 159, 189, .25); }
+.legend-dot.is-today { background: #9bd9ff; }
+.meeting-past-chips {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 7px;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+}
+.meeting-past-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  color: var(--soft-ink);
+  background: linear-gradient(135deg, #fff1f5, #fff8e8);
+  border: 1px dashed rgba(255, 111, 145, .35);
+  font-size: .78rem;
+}
+.meeting-past-chip b { font-style: normal; }
+.meeting-past-chip em { color: var(--rose); font-style: normal; font-weight: 700; white-space: nowrap; }
+.meeting-past-chip small { color: var(--soft-ink); white-space: nowrap; }
+@media (max-width: 760px) {
+  .meeting-calendar-card {
+    grid-template-columns: 1fr;
+  }
+  .meeting-calendar {
+    width: min(100%, 360px);
+  }
+}
+
+/* ===== 管理端：异地见面日历设置 ===== */
+.admin-meeting-dates {
+  margin-top: 18px;
+}
+.admin-meeting-desc {
+  color: var(--soft-ink);
+  font-size: .92rem;
+  line-height: 1.7;
+}
+.admin-meeting-block {
+  margin-top: 14px;
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .55);
+  border: 1px dashed rgba(255, 159, 189, .32);
+}
+.admin-meeting-block h3 {
+  margin: 0 0 10px;
+  color: var(--ink);
+  font-size: 1.02rem;
+}
+.admin-meeting-next {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 12px;
+  align-items: center;
+}
+.admin-meeting-next input[type="date"] {
+  max-width: 220px;
+}
+.admin-meeting-next small {
+  color: var(--soft-ink);
+  font-size: .85rem;
+}
+.admin-meeting-empty {
+  color: var(--soft-ink);
+  font-size: .9rem;
+}
+.admin-meeting-past-row {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: #fffdf8;
+  border: 1px solid rgba(135, 84, 45, .1);
+}
+.admin-meeting-range {
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+.admin-meeting-range label {
+  display: grid;
+  gap: 4px;
+  color: var(--soft-ink);
+  font-size: .85rem;
+}
+.admin-meeting-range input[type="date"] {
+  max-width: 200px;
+}
+.admin-meeting-emoji-area {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.admin-meeting-emoji-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-meeting-emoji-label {
+  color: var(--soft-ink);
+  font-size: .85rem;
+}
+.admin-meeting-emoji-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px dashed rgba(255, 159, 189, .5);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 1.05rem;
+  box-shadow: 0 4px 10px rgba(255, 111, 145, .12);
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.admin-meeting-emoji-trigger:hover {
+  transform: translateY(-1px);
+}
+.admin-meeting-emoji-trigger i {
+  color: var(--rose);
+  font-size: .68rem;
+  font-style: normal;
+  transition: transform .15s ease;
+}
+.admin-meeting-emoji-trigger.is-open {
+  box-shadow: 0 0 0 3px rgba(255, 159, 189, .28);
+}
+.admin-meeting-emoji-trigger.is-open i {
+  transform: rotate(180deg);
+}
+.admin-meeting-emoji-palette {
+  display: grid;
+  grid-template-columns: repeat(9, 36px);
+  gap: 6px;
+  padding: 10px;
+  border-radius: 14px;
+  background: #fff7fb;
+  border: 1px solid rgba(255, 159, 189, .3);
+}
+.admin-meeting-emoji-option {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: 1px solid rgba(255, 159, 189, .3);
+  border-radius: 12px;
+  background: #fff;
+  font-size: 1.05rem;
+  transition: transform .12s ease, box-shadow .12s ease;
+}
+.admin-meeting-emoji-option:hover {
+  transform: translateY(-2px);
+}
+.admin-meeting-emoji-option.is-selected {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px var(--rose);
+  transform: scale(1.08);
+}
+.admin-meeting-note-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: center;
+}
+.admin-meeting-preview {
+  color: var(--rose);
+  font-size: .88rem;
+  white-space: nowrap;
+}
+.admin-meeting-add {
+  justify-self: start;
+  padding: 9px 16px;
+  border: 0;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  box-shadow: 0 8px 18px rgba(255, 111, 145, .18);
+}
+.admin-meeting-actions {
+  align-items: center;
+}
+.admin-meeting-actions small {
+  color: var(--soft-ink);
+}
+@media (max-width: 760px) {
+  .admin-meeting-next {
+    grid-template-columns: 1fr;
+  }
+  .admin-meeting-range {
+    grid-template-columns: 1fr 1fr;
+  }
+  .admin-meeting-range .admin-row-delete {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+  .admin-meeting-emoji-palette {
+    grid-template-columns: repeat(6, 36px);
+  }
+  .admin-meeting-note-row {
+    grid-template-columns: 1fr;
+  }
+  .admin-meeting-preview {
+    white-space: normal;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .meeting-countdown-main b, .meeting-calendar-cell.is-next-day {
+    animation: none !important;
+  }
 }

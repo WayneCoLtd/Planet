@@ -482,3 +482,73 @@ export async function loadCloudWish(day) {
     return null
   }
 }
+
+// ============ 异地见面日历（wwcxrl_meeting_dates）：下次见面日期 + 已见面的浪漫日子 ============
+function normalizeMeetingRow(row) {
+  return {
+    kind: row.kind === 'next' ? 'next' : 'past',
+    date: row.date || '',
+    note: row.note || '',
+    emoji: row.emoji || '💕',
+    endDate: row.end_date || row.date || ''
+  }
+}
+
+export async function loadCloudMeetingDates() {
+  try {
+    const { supabase } = await ensureProfile()
+    if (!supabase) return null
+    const { data, error } = await supabase
+      .from('wwcxrl_meeting_dates')
+      .select('kind,date,note,emoji')
+    if (error) {
+      console.warn('[wwcxrl cloud] meeting dates load failed', error.message)
+      return null
+    }
+    const rows = (data || []).map(normalizeMeetingRow)
+    const nextRow = rows.find(row => row.kind === 'next')
+    return {
+      next: nextRow ? nextRow.date : '',
+      past: rows
+        .filter(row => row.kind === 'past' && row.date)
+        .map(row => ({ start: row.date, end: row.endDate || row.date, note: row.note, emoji: row.emoji }))
+        .sort((a, b) => String(a.start).localeCompare(String(b.start)))
+    }
+  } catch (error) {
+    console.warn('[wwcxrl cloud] meeting dates load exception', error)
+    return null
+  }
+}
+
+export async function saveCloudMeetingDates({ next = '', past = [] }) {
+  try {
+    const { supabase, identity } = await ensureProfile()
+    if (!supabase || !identity) return false
+    // 小数据集：整组重写，避免逐行 upsert 的冲突逻辑
+    await supabase.from('wwcxrl_meeting_dates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    const rows = []
+    if (next) {
+      rows.push({ kind: 'next', date: String(next), note: '', emoji: '💕', created_by: identity.role })
+    }
+    ;(past || []).filter(item => item && (item.start || item.date)).forEach(item => {
+      rows.push({
+        kind: 'past',
+        date: String(item.start || item.date || ''),
+        end_date: String(item.end || item.start || item.date || ''),
+        note: String(item.note || '').trim(),
+        emoji: String(item.emoji || '💕').trim() || '💕',
+        created_by: identity.role
+      })
+    })
+    if (!rows.length) return true
+    const { error } = await supabase.from('wwcxrl_meeting_dates').insert(rows)
+    if (error) {
+      console.warn('[wwcxrl cloud] meeting dates save failed', error.message)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.warn('[wwcxrl cloud] meeting dates save exception', error)
+    return false
+  }
+}

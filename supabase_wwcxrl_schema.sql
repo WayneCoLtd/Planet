@@ -218,6 +218,35 @@ drop policy if exists "wwcxrl_wishes_public_update" on public.wwcxrl_wishes;
 create policy "wwcxrl_wishes_public_update" on public.wwcxrl_wishes for update using (true) with check (true);
 drop policy if exists "wwcxrl_wishes_public_delete" on public.wwcxrl_wishes;
 create policy "wwcxrl_wishes_public_delete" on public.wwcxrl_wishes for delete using (true);
+
+-- ============ 异地见面日历（wwcxrl_meeting_dates）：下次见面日期 + 已见面的浪漫日子 ============
+-- 管理端（?admin=1）设置；彩蛋页展示倒计时和小日历并给已见面日期做标记。
+create table if not exists public.wwcxrl_meeting_dates (
+  id uuid primary key default gen_random_uuid(),
+  kind text not null check (kind in ('next', 'past')),
+  date text not null,
+  end_date text not null default '',
+  note text not null default '',
+  emoji text not null default '💕',
+  created_by text not null default 'orange',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (kind, date)
+);
+
+alter table public.wwcxrl_meeting_dates enable row level security;
+
+drop policy if exists "wwcxrl_meeting_dates_public_read" on public.wwcxrl_meeting_dates;
+create policy "wwcxrl_meeting_dates_public_read" on public.wwcxrl_meeting_dates for select using (true);
+drop policy if exists "wwcxrl_meeting_dates_public_insert" on public.wwcxrl_meeting_dates;
+create policy "wwcxrl_meeting_dates_public_insert" on public.wwcxrl_meeting_dates for insert with check (true);
+drop policy if exists "wwcxrl_meeting_dates_public_update" on public.wwcxrl_meeting_dates;
+create policy "wwcxrl_meeting_dates_public_update" on public.wwcxrl_meeting_dates for update using (true) with check (true);
+drop policy if exists "wwcxrl_meeting_dates_public_delete" on public.wwcxrl_meeting_dates;
+create policy "wwcxrl_meeting_dates_public_delete" on public.wwcxrl_meeting_dates for delete using (true);
+-- 已上线的老库只需执行上面这一段（建表 + RLS + 策略）即可，无需重建其他表。
+-- 若此前已建过该表（单日版本），补执行：
+-- alter table public.wwcxrl_meeting_dates add column if not exists end_date text not null default '';
 -- 已建表的老库执行下面两条即可（新库建表已包含）：
 -- alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
 -- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'letter', 'fortune', 'sticker', 'game'));

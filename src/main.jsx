@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates } from './cloud'
 import './styles.css'
 
 const PASSWORD = '5201013'
@@ -36,7 +36,7 @@ const ADMIN_TASK_TYPES = [
   { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
   { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
   { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
-  { id: 'game', label: '小游戏', hint: '选择一个内置小游戏（迷宫 / 接爱心 / 戳泡泡 / 翻牌记忆 / 滑块拼图），玩完即可签到' }
+  { id: 'game', label: '小游戏', hint: '选择一款内置小游戏（迷宫/接爱心/戳泡泡/翻牌/拼图/三消/喂食/打地鼠/樱花拼图，以及鱼了个鱼/人生重开模拟器/五子棋/换装/矿工/气球/馅饼/砌砖/贪吃蛇/笑脸/弹力球等嵌入小游戏），玩完即可签到' }
 ]
 
 // 云端任务优先、代码 dailyAdventures 兜底的合并任务列表（按 day 去重排序）。
@@ -233,13 +233,8 @@ function setVoyageThemeLocal(enabled, source = 'theme-update', { cloud = true } 
 
 function returnToInvitationLayer() {
   if (typeof window === 'undefined') return
-  const resetState = { ...GLOBAL_EMPTY_STATE, themeMode: 'classic', voyageUnlocked: false, observatoryNavUnlocked: false, observatoryEnteredAt: '', invitationOpened: false, planetUnlocked: false }
-  localStorage.removeItem('wwcxrl-camouflage-opened')
-  localStorage.removeItem('wwcxrl-planet-unlocked')
-  localStorage.removeItem(roleStorageKey(GLOBAL_STATE_KEY))
-  saveGlobalLocalState(resetState)
-  const remotePatch = { global: resetState }
-  saveCloudGlobalPatch({ themeMode: 'classic', voyageUnlocked: false, invitationOpened: false, planetUnlocked: false, observatoryNavUnlocked: false, observatoryEnteredAt: '', updatedAt: new Date().toISOString() }, 'global_reset_to_invitation')
+  // 仅标记“主动回看邀请信”，不清空解锁/主题进度，避免下次访问被强制从邀请信开始。
+  try { sessionStorage.setItem('wwcxrl-invitation-view-requested', 'yes') } catch {}
   window.history.replaceState(null, '', '/')
   window.location.reload()
 }
@@ -775,6 +770,7 @@ function InvitationLayer({ onReveal }) {
   const [flowerBloomId, setFlowerBloomId] = useState(() => Date.now())
 
   function revealPlanet() {
+    try { sessionStorage.removeItem('wwcxrl-invitation-view-requested') } catch {}
     localStorage.setItem('wwcxrl-camouflage-opened', 'yes')
     localStorage.setItem('wwcxrl-planet-unlocked', 'yes')
     saveCloudGlobalPatch({ invitationOpened: true, planetUnlocked: true }, 'global_planet_unlocked')
@@ -4739,6 +4735,37 @@ function MazeGame({ item, taskCompleted, onTaskComplete }) {
 }
 
 // ===== 通用小游戏模板注册表（管理页 game 类型可选的参数） =====
+const EMBEDDED_SECONDS_FIELD = {
+  key: 'seconds',
+  label: '需要玩满的秒数',
+  type: 'select',
+  options: [
+    { value: '60', label: '60 秒' },
+    { value: '90', label: '90 秒' },
+    { value: '120', label: '120 秒' },
+    { value: '150', label: '150 秒' },
+    { value: '180', label: '180 秒' }
+  ]
+}
+
+const EMBEDDED_GAME_SOURCES = {
+  // aspect 为游戏画布的原生宽高比（宽/高）。带 aspect 的游戏在嵌入框与全屏时按此比例等比显示，
+  // 避免被拉伸裁切；不带 aspect 的 DOM 游戏（如 yulegeyu）直接铺满。
+  yulegeyu: { source: 'yulegeyu', title: '鱼了个鱼·羊了个羊' },
+  lifeRestart: { source: 'life-restart', title: '人生重开模拟器', aspect: 3 / 4 },
+  gobang: { source: 'gobang', title: '五子棋·人机对战', aspect: 3 / 2 },
+  dressUp: { source: 'dress-up', title: '给小琳换装' },
+  goldMiner: { source: 'gold-miner', title: '黄金矿工' },
+  balloonParadise: { source: 'balloon-paradise', title: '气球天堂' },
+  fruitPie: { source: 'fruit-pie', title: '水果馅饼' },
+  brickBreak: { source: 'brick-break', title: '砌砖' },
+  fruitSnake: { source: 'fruit-snake', title: '吃水果的蛇' },
+  pandaRun: { source: 'panda-run', title: '圣诞熊猫跑步' },
+  christmasBalloon: { source: 'christmas-balloon', title: '圣诞气球' },
+  smileGame: { source: 'smile-game', title: '笑脸微笑' },
+  bouncyBall: { source: 'bouncy-ball', title: '弹力球' }
+}
+
 const MINI_GAMES = [
   {
     id: 'mazeClassic',
@@ -4798,6 +4825,170 @@ const MINI_GAMES = [
     label: '滑块拼图',
     icon: '🧩',
     hint: '点击相邻滑块把它滑进空格，按顺序拼好即可完成签到',
+    defaults: { size: 3 },
+    fields: [
+      { key: 'size', label: '拼图大小', type: 'select', options: [
+        { value: '3', label: '3×3' },
+        { value: '4', label: '4×4' }
+      ] }
+    ]
+  },
+  {
+    id: 'matchThree',
+    label: '爱心/水果三消',
+    icon: '🍊',
+    hint: '交换相邻图标，三个及以上连成一线即可消除，消够数量即可完成签到',
+    defaults: { target: 12 },
+    fields: [
+      { key: 'target', label: '需要消除的图标数', type: 'number', min: 5, max: 30 }
+    ]
+  },
+  {
+    id: 'feedDog',
+    label: '给狗狗喂食',
+    icon: '🐶',
+    hint: '在倒计时内移动狗狗接住落下的食物，接满即可完成签到',
+    defaults: { target: 12, speed: 'normal', seconds: 30 },
+    fields: [
+      { key: 'target', label: '需要接住的数量', type: 'number', min: 5, max: 25 },
+      { key: 'speed', label: '下落速度', type: 'select', options: [
+        { value: 'slow', label: '慢' },
+        { value: 'normal', label: '中' },
+        { value: 'fast', label: '快' }
+      ] },
+      { key: 'seconds', label: '倒计时（秒）', type: 'select', options: [
+        { value: '20', label: '20 秒' },
+        { value: '30', label: '30 秒' },
+        { value: '45', label: '45 秒' },
+        { value: '60', label: '60 秒' }
+      ] }
+    ]
+  },
+  {
+    id: 'whackAMole',
+    label: '敲敲打地鼠',
+    icon: '🔨',
+    hint: '在倒计时内点中冒出的小动物，敲够数量即可完成签到',
+    defaults: { target: 15, seconds: 45 },
+    fields: [
+      { key: 'target', label: '需要敲中的数量', type: 'number', min: 5, max: 30 },
+      { key: 'seconds', label: '倒计时（秒）', type: 'select', options: [
+        { value: '20', label: '20 秒' },
+        { value: '30', label: '30 秒' },
+        { value: '45', label: '45 秒' },
+        { value: '60', label: '60 秒' }
+      ] }
+    ]
+  },
+  {
+    id: 'yulegeyu',
+    label: '鱼了个鱼·羊了个羊',
+    icon: '🐟',
+    hint: '点击牌堆把相同的小动物消掉，通关即可，玩满设定秒数也能签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'lifeRestart',
+    label: '人生重开模拟器',
+    icon: '🎲',
+    hint: '分配天赋抽一次全新人生，读一读命运的小剧情，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'gobang',
+    label: '五子棋·人机对战',
+    icon: '⚫',
+    hint: '和电脑下一盘五子棋，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'dressUp',
+    label: '给小琳换装',
+    icon: '👗',
+    hint: '打开女孩换装小游戏，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'goldMiner',
+    label: '黄金矿工',
+    icon: '⛏️',
+    hint: '放下抓钩抓宝贝攒金币，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'balloonParadise',
+    label: '气球天堂',
+    icon: '🎈',
+    hint: '戳破飘起来的气球，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'fruitPie',
+    label: '水果馅饼',
+    icon: '🥧',
+    hint: '收集水果做香喷喷的馅饼，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'brickBreak',
+    label: '砌砖',
+    icon: '🧱',
+    hint: '弹球敲掉砖块，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'fruitSnake',
+    label: '吃水果的蛇',
+    icon: '🐍',
+    hint: '小蛇吃水果越吃越长，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'pandaRun',
+    label: '圣诞熊猫跑步',
+    icon: '🐼',
+    hint: '圣诞熊猫快乐奔跑，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'christmasBalloon',
+    label: '圣诞气球',
+    icon: '🎄',
+    hint: '戳破圣诞气球收礼物，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'smileGame',
+    label: '笑脸微笑',
+    icon: '😊',
+    hint: '把笑脸都点亮，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'bouncyBall',
+    label: '弹力球',
+    icon: '🏀',
+    hint: '小球弹跳闯关，玩满设定秒数即可签到',
+    defaults: { seconds: 150 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'sakuraPuzzle',
+    label: '樱花拼图',
+    icon: '🌸',
+    hint: '把打乱的樱花图块滑回原位，拼好即可完成签到',
     defaults: { size: 3 },
     fields: [
       { key: 'size', label: '拼图大小', type: 'select', options: [
@@ -5226,6 +5417,920 @@ function SlidePuzzleGame({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
+// ---- 小游戏 5：爱心/水果三消 ----
+const MATCH3_POOL = ['🍊', '🍓', '🌸', '💛', '💖', '🍀', '🫐', '🍎']
+
+function findMatch3Cells(board) {
+  const rows = board.length
+  const cols = board[0]?.length || 0
+  const matched = new Set()
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const value = board[y][x]
+      if (!value) continue
+      let run = 1
+      while (x + run < cols && board[y][x + run] === value) run += 1
+      if (run >= 3) for (let i = 0; i < run; i++) matched.add(`${x + i}-${y}`)
+      run = 1
+      while (y + run < rows && board[y + run][x] === value) run += 1
+      if (run >= 3) for (let i = 0; i < run; i++) matched.add(`${x}-${y + i}`)
+    }
+  }
+  return [...matched].map(key => key.split('-').map(Number))
+}
+
+function makeMatch3Board(cols, rows) {
+  let board
+  do {
+    board = Array.from({ length: rows }, () =>
+      Array.from({ length: cols }, () => MATCH3_POOL[Math.floor(Math.random() * MATCH3_POOL.length)])
+    )
+  } while (findMatch3Cells(board).length > 0)
+  return board
+}
+
+function applyMatch3Gravity(board, matchedPositions) {
+  const rows = board.length
+  const cols = board[0].length
+  const next = board.map(row => [...row])
+  for (const [x, y] of matchedPositions) next[y][x] = null
+  for (let x = 0; x < cols; x++) {
+    const column = []
+    for (let y = rows - 1; y >= 0; y--) {
+      if (next[y][x] !== null) column.push(next[y][x])
+    }
+    for (let y = rows - 1; y >= 0; y--) {
+      next[y][x] = column.length ? column.shift() : MATCH3_POOL[Math.floor(Math.random() * MATCH3_POOL.length)]
+    }
+  }
+  return next
+}
+
+function MatchThreeGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const target = clampNumber(config.target, 5, 30, 12)
+  const cols = 6
+  const rows = 6
+  const stateKey = `wwcxrl-game-match3-${item.day}`
+  const loadMatches = () => {
+    const saved = getRoleJson(stateKey, 0)
+    return Number.isFinite(Number(saved)) ? Math.max(0, Math.min(target, Number(saved))) : 0
+  }
+  const [board, setBoard] = useState(() => makeMatch3Board(cols, rows))
+  const [matches, setMatches] = useState(loadMatches)
+  const [selected, setSelected] = useState(null)
+  const [matchedCells, setMatchedCells] = useState([])
+  const [deniedCells, setDeniedCells] = useState([])
+  const [message, setMessage] = useState('')
+  const [cursor, setCursor] = useState({ x: 0, y: 0 })
+  const boardRef = React.useRef(board)
+  const matchedRef = React.useRef(loadMatches())
+  const selectedRef = React.useRef(null)
+  const cursorRef = React.useRef({ x: 0, y: 0 })
+  const busyRef = React.useRef(false)
+  const aliveRef = React.useRef(true)
+  const timerRef = React.useRef(0)
+  const doneRef = React.useRef(taskCompleted || loadMatches() >= target)
+
+  React.useEffect(() => () => {
+    aliveRef.current = false
+    window.clearTimeout(timerRef.current)
+  }, [])
+
+  function syncBoard(next) {
+    boardRef.current = next
+    setBoard(next)
+  }
+
+  function resolveCascade(current, depth) {
+    syncBoard(current)
+    const matched = findMatch3Cells(current)
+    if (!matched.length) {
+      busyRef.current = false
+      return
+    }
+    setMatchedCells(matched)
+    matchedRef.current += matched.length
+    setMatches(matchedRef.current)
+    setRoleJson(stateKey, matchedRef.current)
+    if (matchedRef.current >= target && !doneRef.current) {
+      doneRef.current = true
+      onTaskComplete(item.day)
+    }
+    timerRef.current = window.setTimeout(() => {
+      if (!aliveRef.current) return
+      setMatchedCells([])
+      resolveCascade(applyMatch3Gravity(current, matched), depth + 1)
+    }, depth > 5 ? 70 : 300)
+  }
+
+  function trySwap(from, to) {
+    const current = boardRef.current
+    const previous = current.map(row => [...row])
+    const swapped = current.map(row => [...row])
+    ;[swapped[from.y][from.x], swapped[to.y][to.x]] = [swapped[to.y][to.x], swapped[from.y][from.x]]
+    busyRef.current = true
+    selectedRef.current = null
+    setSelected(null)
+    if (!findMatch3Cells(swapped).length) {
+      setDeniedCells([from, to])
+      setMessage('这样消不掉，换一组相邻的试试～')
+      syncBoard(swapped)
+      timerRef.current = window.setTimeout(() => {
+        if (!aliveRef.current) return
+        syncBoard(previous)
+        setDeniedCells([])
+        setMessage('')
+        busyRef.current = false
+      }, 320)
+      return
+    }
+    setMessage('')
+    resolveCascade(swapped, 0)
+  }
+
+  function tapCell(x, y) {
+    if (busyRef.current || doneRef.current || taskCompleted) return
+    const current = selectedRef.current
+    if (!current) {
+      selectedRef.current = { x, y }
+      setSelected({ x, y })
+      return
+    }
+    if (current.x === x && current.y === y) {
+      selectedRef.current = null
+      setSelected(null)
+      return
+    }
+    if (Math.abs(current.x - x) + Math.abs(current.y - y) !== 1) {
+      setMessage('只能交换相邻的两颗哦，点旁边的一颗试试～')
+      selectedRef.current = { x, y }
+      setSelected({ x, y })
+      return
+    }
+    setMessage('')
+    trySwap(current, { x, y })
+  }
+
+  function resetGame() {
+    busyRef.current = false
+    selectedRef.current = null
+    setSelected(null)
+    setMatchedCells([])
+    setDeniedCells([])
+    setMessage('')
+    matchedRef.current = 0
+    setMatches(0)
+    setRoleJson(stateKey, 0)
+    doneRef.current = taskCompleted
+    syncBoard(makeMatch3Board(cols, rows))
+  }
+
+  React.useEffect(() => {
+    const isTypingTarget = target => {
+      const tag = target?.tagName?.toLowerCase?.()
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable
+    }
+    const handleKey = event => {
+      if (busyRef.current || doneRef.current || taskCompleted) return
+      if (isTypingTarget(event.target)) return
+      const dirs = { ArrowUp: [0, -1], ArrowDown: [0, 1], ArrowLeft: [-1, 0], ArrowRight: [1, 0] }
+      const dir = dirs[event.key]
+      if (dir) {
+        event.preventDefault()
+        const next = {
+          x: Math.max(0, Math.min(cols - 1, cursorRef.current.x + dir[0])),
+          y: Math.max(0, Math.min(rows - 1, cursorRef.current.y + dir[1]))
+        }
+        cursorRef.current = next
+        setCursor(next)
+        return
+      }
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        const cur = cursorRef.current
+        const sel = selectedRef.current
+        if (!sel) {
+          selectedRef.current = cur
+          setSelected(cur)
+          return
+        }
+        if (sel.x === cur.x && sel.y === cur.y) {
+          selectedRef.current = null
+          setSelected(null)
+          return
+        }
+    if (Math.abs(sel.x - cur.x) + Math.abs(sel.y - cur.y) === 1) trySwap(sel, cur)
+    else {
+      setMessage('只能交换相邻的两颗哦，点旁边的一颗试试～')
+      selectedRef.current = cur
+      setSelected(cur)
+    }
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cols, rows, taskCompleted])
+
+  const done = taskCompleted || matchedRef.current >= target
+
+  return (
+    <div className={`mini-game match3-game ${done ? 'is-complete' : ''}`}>
+      <p className="match3-hint">先点一颗，再点它旁边的一颗交换；三颗及以上连成一线就会消除。</p>
+      <div className="match3-board" style={{ '--match-cols': cols }}>
+        {board.map((row, y) => row.map((value, x) => {
+          const isSelected = selected && selected.x === x && selected.y === y
+          const isMatched = matchedCells.some(([mx, my]) => mx === x && my === y)
+          const isCursor = cursor.x === x && cursor.y === y
+          const isDenied = deniedCells.some(([dx, dy]) => dx === x && dy === y)
+          return (
+            <button
+              key={`${x}-${y}`}
+              type="button"
+              className={`match3-tile ${isSelected ? 'is-selected' : ''} ${isMatched ? 'is-matched' : ''} ${isCursor ? 'is-cursor' : ''} ${isDenied ? 'is-denied' : ''}`}
+              onClick={() => tapCell(x, y)}
+              aria-label={`第 ${y + 1} 行第 ${x + 1} 列 ${value}`}
+            >{value}</button>
+          )
+        }))}
+      </div>
+      {message && <p className="match3-message" role="status">{message}</p>}
+      <p className="match3-status">已消除 <strong>{Math.min(matches, target)}</strong> / {target} 颗</p>
+      {done && <div className="game-done-panel"><p>{item.secret || '甜到心里啦，消除目标完成！'}</p></div>}
+      <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开局</button>
+    </div>
+  )
+}
+
+// ---- 小游戏 6：给狗狗喂食（接食物） ----
+const FEED_FOOD_POOL = ['🍖', '🍰', '🍓', '🥕', '🍩', '🧀', '🍬', '🦴']
+
+function FeedDogGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const target = clampNumber(config.target, 5, 25, 12)
+  const fallSpeed = config.speed === 'fast' ? 3.1 : config.speed === 'slow' ? 1.5 : 2.2
+  const seconds = clampNumber(config.seconds, 10, 120, 30)
+  const stateKey = `wwcxrl-game-feed-${item.day}`
+  const loadCaught = () => {
+    const saved = getRoleJson(stateKey, 0)
+    return Number.isFinite(Number(saved)) ? Math.max(0, Math.min(target, Number(saved))) : 0
+  }
+  const [caught, setCaught] = useState(loadCaught)
+  const [foods, setFoods] = useState([])
+  const [yums, setYums] = useState([])
+  const [misses, setMisses] = useState([])
+  const [dogX, setDogX] = useState(50)
+  const [timeLeft, setTimeLeft] = useState(seconds)
+  const [failed, setFailed] = useState(false)
+  const areaRef = React.useRef(null)
+  const dogRef = React.useRef(dogX)
+  const deadlineRef = React.useRef(Date.now() + seconds * 1000)
+  const timeLeftRef = React.useRef(seconds)
+  const failedRef = React.useRef(false)
+  const caughtRef = React.useRef(loadCaught())
+  const foodsRef = React.useRef([])
+  const yumsRef = React.useRef([])
+  const missesRef = React.useRef([])
+  const foodIdRef = React.useRef(0)
+  const burstIdRef = React.useRef(0)
+  const doneRef = React.useRef(taskCompleted || loadCaught() >= target)
+  const [running, setRunning] = useState(!doneRef.current)
+
+  React.useEffect(() => { dogRef.current = dogX }, [dogX])
+
+  React.useEffect(() => {
+    if (!running || doneRef.current) return
+    const tick = window.setInterval(() => {
+      const dog = dogRef.current
+      const now = Date.now()
+      const remaining = Math.max(0, Math.ceil((deadlineRef.current - now) / 1000))
+      if (remaining !== timeLeftRef.current) {
+        timeLeftRef.current = remaining
+        setTimeLeft(remaining)
+      }
+      if (remaining <= 0 && !doneRef.current) {
+        failedRef.current = true
+        setFailed(true)
+        setRunning(false)
+        return
+      }
+      const next = []
+      let extra = 0
+      for (const food of foodsRef.current) {
+        const y = food.y + food.vy
+        if (y >= 82 && Math.abs(food.x - dog) <= 12) {
+          extra += 1
+          yumsRef.current.push({ id: burstIdRef.current++, x: food.x, y: 82, born: now, dx: (Math.random() - 0.5) * 30, char: food.char })
+        } else if (y < 98) {
+          next.push({ ...food, y })
+        } else {
+          missesRef.current.push({ id: food.id, x: food.x, y: 96, missedAt: now, char: food.char })
+        }
+      }
+      if (extra > 0) {
+        caughtRef.current += extra
+        setCaught(caughtRef.current)
+        setRoleJson(stateKey, caughtRef.current)
+        if (caughtRef.current >= target && !doneRef.current) {
+          doneRef.current = true
+          setRunning(false)
+          onTaskComplete(item.day)
+        }
+      }
+      if (next.length < 5 && Math.random() < 0.3) {
+        next.push({
+          id: foodIdRef.current++,
+          x: 8 + Math.random() * 84,
+          y: -8,
+          vy: fallSpeed * (0.75 + Math.random() * 0.5),
+          size: 19 + Math.random() * 15,
+          sway: 3 + Math.random() * 7,
+          swaySpeed: 0.9 + Math.random() * 1.4,
+          tilt: (Math.random() - 0.5) * 34,
+          char: FEED_FOOD_POOL[Math.floor(Math.random() * FEED_FOOD_POOL.length)]
+        })
+      }
+      foodsRef.current = next
+      yumsRef.current = yumsRef.current.filter(burst => now - burst.born < 620)
+      missesRef.current = missesRef.current.filter(food => now - food.missedAt < 700)
+      setFoods(next)
+      setYums(yumsRef.current)
+      setMisses(missesRef.current)
+    }, 42)
+    return () => window.clearInterval(tick)
+  }, [running, item.day, onTaskComplete, target, fallSpeed, stateKey])
+
+  function resetGame() {
+    doneRef.current = false
+    failedRef.current = false
+    caughtRef.current = 0
+    foodsRef.current = []
+    yumsRef.current = []
+    missesRef.current = []
+    foodIdRef.current = 0
+    setCaught(0)
+    setFoods([])
+    setYums([])
+    setMisses([])
+    setFailed(false)
+    deadlineRef.current = Date.now() + seconds * 1000
+    timeLeftRef.current = seconds
+    setTimeLeft(seconds)
+    setRoleJson(stateKey, 0)
+    setRunning(true)
+  }
+
+  function moveDog(dx) {
+    if (doneRef.current || failedRef.current) return
+    setDogX(prev => Math.max(6, Math.min(94, prev + dx)))
+  }
+
+  const handlePointerMove = event => {
+    if (doneRef.current || failedRef.current) return
+    const rect = areaRef.current?.getBoundingClientRect()
+    if (!rect) return
+    setDogX(Math.max(6, Math.min(94, ((event.clientX - rect.left) / rect.width) * 100)))
+  }
+
+  React.useEffect(() => {
+    const isTypingTarget = target => {
+      const tag = target?.tagName?.toLowerCase?.()
+      return tag === 'input' || tag === 'textarea' || tag === 'select' || target?.isContentEditable
+    }
+    const handleKey = event => {
+      if (doneRef.current || failedRef.current || isTypingTarget(event.target)) return
+      if (event.key === 'ArrowLeft' || event.key === 'a' || event.key === 'A') {
+        event.preventDefault()
+        moveDog(-12)
+      } else if (event.key === 'ArrowRight' || event.key === 'd' || event.key === 'D') {
+        event.preventDefault()
+        moveDog(12)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
+
+  const done = doneRef.current || (taskCompleted && !running)
+
+  return (
+    <div className="mini-game feed-game">
+      <p className="feed-hint">在 <strong>{seconds}</strong> 秒内接满 <strong>{target}</strong> 份食物就可以签到啦，快移动狗狗接住好吃的！</p>
+      <div
+        className="feed-area"
+        ref={areaRef}
+        onPointerMove={handlePointerMove}
+        onPointerDown={handlePointerMove}
+        style={{ touchAction: 'none' }}
+      >
+        {foods.map(food => (
+          <span
+            key={food.id}
+            className="feed-food"
+            style={{
+              left: `${food.x}%`,
+              top: `${food.y}%`,
+              '--size': `${food.size}px`,
+              '--sway': `${food.sway}px`,
+              '--sway-speed': `${food.swaySpeed}s`,
+              '--tilt': `${food.tilt}deg`
+            }}
+          >{food.char}</span>
+        ))}
+        {misses.map(food => (
+          <span key={`missed-${food.id}`} className="feed-food is-missed" style={{ left: `${food.x}%`, top: `${food.y}%`, '--size': '26px', '--sway': '0px', '--tilt': '0deg' }}>{food.char}</span>
+        ))}
+        {yums.map(burst => (
+          <span key={`yum-${burst.id}`} className="feed-yum" style={{ left: `${burst.x}%`, top: `${burst.y}%`, '--dx': `${burst.dx}px` }}>{burst.char}</span>
+        ))}
+        <div className="feed-dog" style={{ left: `${dogX}%` }}>
+          <DogSprite type="pomelo" className="feed-dog-sprite" />
+          <span className="feed-dog-bowl">🍽️</span>
+        </div>
+      </div>
+      <p className="feed-status">已接到 <strong>{Math.min(caught, target)}</strong> / {target} 份食物 · 剩余 <strong className={timeLeft <= 10 ? 'is-urgent' : ''}>{timeLeft}</strong> 秒</p>
+      <div className="feed-controls">
+        <button type="button" onClick={() => moveDog(-14)} aria-label="向左移动">◀</button>
+        <button type="button" onClick={() => moveDog(14)} aria-label="向右移动">▶</button>
+      </div>
+      {done && <div className="game-done-panel"><p>{item.secret || '狗狗吃饱饱啦！'}</p></div>}
+      {failed && (
+        <div className="game-fail-panel">
+          <p>时间到啦，还差 <strong>{target - Math.min(caught, target)}</strong> 份，再来一次吧！</p>
+          <button type="button" className="game-restart" onClick={resetGame}>↺ 再来一次</button>
+        </div>
+      )}
+      <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
+    </div>
+  )
+}
+
+// ---- 小游戏 7：敲敲打地鼠 ----
+const WHACK_POOL = ['🐶', '🐱', '🐰', '🦊', '🍓', '🐹']
+
+function WhackAMoleGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const target = clampNumber(config.target, 5, 30, 15)
+  const seconds = clampNumber(config.seconds, 10, 120, 45)
+  const stateKey = `wwcxrl-game-whack-${item.day}`
+  const loadHits = () => {
+    const saved = getRoleJson(stateKey, 0)
+    return Number.isFinite(Number(saved)) ? Math.max(0, Math.min(target, Number(saved))) : 0
+  }
+  const [hits, setHits] = useState(loadHits)
+  const [active, setActive] = useState([])
+  const [bonked, setBonked] = useState([])
+  const [timeLeft, setTimeLeft] = useState(seconds)
+  const [failed, setFailed] = useState(false)
+  const hitsRef = React.useRef(loadHits())
+  const activeRef = React.useRef([])
+  const bonkedRef = React.useRef([])
+  const doneRef = React.useRef(taskCompleted || loadHits() >= target)
+  const failedRef = React.useRef(false)
+  const deadlineRef = React.useRef(Date.now() + seconds * 1000)
+  const timeLeftRef = React.useRef(seconds)
+  const aliveRef = React.useRef(true)
+  const moleIdRef = React.useRef(0)
+  const [running, setRunning] = useState(!doneRef.current)
+
+  React.useEffect(() => () => { aliveRef.current = false }, [])
+
+  React.useEffect(() => {
+    if (!running || doneRef.current) return
+    const tick = window.setInterval(() => {
+      const now = Date.now()
+      const remaining = Math.max(0, Math.ceil((deadlineRef.current - now) / 1000))
+      if (remaining !== timeLeftRef.current) {
+        timeLeftRef.current = remaining
+        setTimeLeft(remaining)
+      }
+      if (remaining <= 0 && !doneRef.current) {
+        failedRef.current = true
+        setFailed(true)
+        setRunning(false)
+        return
+      }
+      let next = activeRef.current.filter(mole => mole.expiresAt > now)
+      const wanted = next.length < 2 ? 2 - next.length : 0
+      for (let i = 0; i < wanted; i++) {
+        if (Math.random() >= 0.88) continue
+        const hole = Math.floor(Math.random() * 9)
+        if (next.some(mole => mole.hole === hole)) continue
+        next.push({
+          id: moleIdRef.current++,
+          hole,
+          char: WHACK_POOL[Math.floor(Math.random() * WHACK_POOL.length)],
+          expiresAt: now + 900 + Math.random() * 500
+        })
+      }
+      activeRef.current = next
+      bonkedRef.current = bonkedRef.current.filter(item => now - item.at < 380)
+      setActive(next)
+      setBonked(bonkedRef.current)
+    }, 120)
+    return () => window.clearInterval(tick)
+  }, [running, target, seconds, stateKey])
+
+  function bonk(id) {
+    if (doneRef.current || failedRef.current) return
+    const mole = activeRef.current.find(item => item.id === id)
+    if (!mole) return
+    activeRef.current = activeRef.current.filter(item => item.id !== id)
+    bonkedRef.current.push({ id, hole: mole.hole, char: mole.char, at: Date.now() })
+    hitsRef.current += 1
+    setHits(hitsRef.current)
+    setRoleJson(stateKey, hitsRef.current)
+    setActive(activeRef.current)
+    setBonked(bonkedRef.current)
+    if (hitsRef.current >= target && !doneRef.current) {
+      doneRef.current = true
+      setRunning(false)
+      onTaskComplete(item.day)
+    }
+  }
+
+  function resetGame() {
+    doneRef.current = false
+    failedRef.current = false
+    hitsRef.current = 0
+    activeRef.current = []
+    bonkedRef.current = []
+    setHits(0)
+    setActive([])
+    setBonked([])
+    setFailed(false)
+    deadlineRef.current = Date.now() + seconds * 1000
+    timeLeftRef.current = seconds
+    setTimeLeft(seconds)
+    setRoleJson(stateKey, 0)
+    setRunning(true)
+  }
+
+  const done = doneRef.current || (taskCompleted && !running)
+
+  return (
+    <div className="mini-game whack-game">
+      <p className="whack-hint">小动物会从洞里冒出来，在 <strong>{seconds}</strong> 秒内敲中 <strong>{target}</strong> 只就能签到！</p>
+      <div className="whack-board">
+        {Array.from({ length: 9 }, (_, hole) => {
+          const mole = active.find(item => item.hole === hole)
+          const bonkedItem = bonked.find(item => item.hole === hole)
+          return (
+            <button
+              key={hole}
+              type="button"
+              className={`whack-hole ${mole ? 'has-mole' : ''}`}
+              onClick={() => mole && bonk(mole.id)}
+              disabled={!mole || done || failed}
+              aria-label={mole ? `敲中 ${mole.char}` : '空洞口'}
+            >
+              <span className="whack-hole-mouth" aria-hidden="true" />
+              {mole && <span className="whack-mole">{mole.char}</span>}
+              {bonkedItem && <span className="whack-bonk">{bonkedItem.char}</span>}
+            </button>
+          )
+        })}
+      </div>
+      <p className="whack-status">已敲中 <strong>{Math.min(hits, target)}</strong> / {target} 只 · 剩余 <strong className={timeLeft <= 10 ? 'is-urgent' : ''}>{timeLeft}</strong> 秒</p>
+      {done && <div className="game-done-panel"><p>{item.secret || '手速超快，小动物都被敲中啦！'}</p></div>}
+      {failed && (
+        <div className="game-fail-panel">
+          <p>时间到啦，还差 <strong>{target - Math.min(hits, target)}</strong> 只，再来一次吧！</p>
+          <button type="button" className="game-restart" onClick={resetGame}>↺ 再来一次</button>
+        </div>
+      )}
+      <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
+    </div>
+  )
+}
+
+// ---- 小游戏 8：外部嵌入小游戏（玩满秒数即可签到） ----
+function EmbeddedGame({ item, taskCompleted, onTaskComplete, source = '', title = '', aspect = 0 }) {
+  const seconds = clampNumber(item.gameConfig?.seconds, 10, 300, 150)
+  const [elapsed, setElapsed] = useState(0)
+  const [fullscreen, setFullscreen] = useState(false)
+  const [showEscHint, setShowEscHint] = useState(false)
+  const [fitStyle, setFitStyle] = useState(null)
+  const elapsedRef = React.useRef(0)
+  const doneRef = React.useRef(taskCompleted)
+  const aliveRef = React.useRef(true)
+  const frameWrapRef = React.useRef(null)
+  const frameRef = React.useRef(null)
+  const escHintTimerRef = React.useRef(0)
+  const lastFitRef = React.useRef('')
+
+  React.useEffect(() => () => {
+    aliveRef.current = false
+    window.clearTimeout(escHintTimerRef.current)
+  }, [])
+
+  React.useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = Boolean(document.fullscreenElement || document.webkitFullscreenElement)
+      setFullscreen(active)
+      if (!active) setShowEscHint(false)
+      applyFullscreenFit()
+    }
+    document.addEventListener('fullscreenchange', handleFullscreenChange)
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange)
+    window.addEventListener('resize', applyFullscreenFit)
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange)
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange)
+      window.removeEventListener('resize', applyFullscreenFit)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  React.useEffect(() => {
+    if (!fullscreen || aspect) return
+    const timer = window.setInterval(applyFullscreenFit, 900)
+    return () => window.clearInterval(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fullscreen, aspect])
+
+  React.useEffect(() => {
+    // 文档级 Esc 兜底：保证在任何浏览器（含无头/移动端浏览器）按 Esc 都能退出全屏。
+    const handleKey = event => {
+      if (event.key !== 'Escape') return
+      if (!(document.fullscreenElement || document.webkitFullscreenElement)) return
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {})
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen()
+    }
+    document.addEventListener('keydown', handleKey)
+    return () => document.removeEventListener('keydown', handleKey)
+  }, [])
+
+  React.useEffect(() => {
+    if (taskCompleted) return
+    const tick = window.setInterval(() => {
+      elapsedRef.current += 1
+      setElapsed(elapsedRef.current)
+      if (elapsedRef.current >= seconds && !doneRef.current) {
+        doneRef.current = true
+        onTaskComplete(item.day)
+      }
+    }, 1000)
+    return () => window.clearInterval(tick)
+  }, [seconds, item.day, onTaskComplete, taskCompleted])
+
+  const ready = elapsed >= seconds || taskCompleted
+  const fullscreenSupported = typeof document !== 'undefined'
+    && Boolean(document.documentElement?.requestFullscreen || document.documentElement?.webkitRequestFullscreen)
+
+  function toggleFullscreen() {
+    const wrap = frameWrapRef.current
+    if (!wrap) return
+    const active = document.fullscreenElement || document.webkitFullscreenElement
+    if (active) {
+      if (document.exitFullscreen) document.exitFullscreen().catch(() => {})
+      else if (document.webkitExitFullscreen) document.webkitExitFullscreen()
+      return
+    }
+    const request = wrap.requestFullscreen || wrap.webkitRequestFullscreen
+    if (!request) return
+    const result = request.call(wrap)
+    if (result?.then) {
+      result.then(() => {
+        applyFullscreenFit()
+        setShowEscHint(true)
+        window.clearTimeout(escHintTimerRef.current)
+        escHintTimerRef.current = window.setTimeout(() => setShowEscHint(false), 3000)
+      }).catch(() => {})
+    } else {
+      applyFullscreenFit()
+      setShowEscHint(true)
+      window.clearTimeout(escHintTimerRef.current)
+      escHintTimerRef.current = window.setTimeout(() => setShowEscHint(false), 3000)
+    }
+  }
+
+  function applyFullscreenFit() {
+    if (aspect) return
+    const frame = frameRef.current
+    const fullscreenOn = Boolean(document.fullscreenElement || document.webkitFullscreenElement)
+    if (!frame || !fullscreenOn) {
+      if (lastFitRef.current) {
+        lastFitRef.current = ''
+        setFitStyle(null)
+      }
+      return
+    }
+    const screenW = Math.max(1, window.innerWidth)
+    const screenH = Math.max(1, window.innerHeight)
+    let cw = 0
+    let ch = 0
+    let rx = 0
+    let ry = 0
+    try {
+      const doc = frame.contentDocument
+      const canvas = doc?.querySelector('canvas')
+      if (canvas) {
+        const rect = canvas.getBoundingClientRect()
+        cw = rect.width || canvas.clientWidth || canvas.width || 0
+        ch = rect.height || canvas.clientHeight || canvas.height || 0
+        rx = rect.x || 0
+        ry = rect.y || 0
+      }
+    } catch {}
+    if (cw <= 0 || ch <= 0) {
+      if (lastFitRef.current) {
+        lastFitRef.current = ''
+        setFitStyle(null)
+      }
+      return
+    }
+    // 画布比例与屏幕接近时铺满（cover，无黑边）；差异大时完整显示（contain，居中留柔和渐变背景）。
+    const gameAspect = cw / ch
+    const screenAspect = screenW / screenH
+    const aspectDiff = Math.abs(gameAspect - screenAspect) / Math.max(gameAspect, screenAspect)
+    const scale = aspectDiff < 0.25
+      ? Math.max(screenW / cw, screenH / ch)
+      : Math.min(screenW / cw, screenH / ch)
+    const next = {
+      position: 'absolute',
+      left: screenW / 2 - (rx + cw / 2) * scale,
+      top: screenH / 2 - (ry + ch / 2) * scale,
+      width: cw * scale,
+      height: ch * scale,
+      transform: `scale(${scale})`,
+      transformOrigin: '0 0'
+    }
+    const key = JSON.stringify(next)
+    if (key !== lastFitRef.current) {
+      lastFitRef.current = key
+      setFitStyle(next)
+    }
+  }
+
+  return (
+    <div className="mini-game embedded-game">
+      <div className="embedded-bar">
+        <strong>{title}</strong>
+        <span className={ready ? 'is-ready' : ''}>{ready ? '✓ 已玩够时间，可以签到啦' : `已玩 ${Math.min(elapsed, seconds)} / ${seconds} 秒`}</span>
+        {fullscreenSupported && (
+          <button type="button" className="embedded-fullscreen-button" onClick={toggleFullscreen} aria-label={fullscreen ? '退出全屏' : '进入全屏'}>
+            {fullscreen ? '↩ 退出全屏' : '⛶ 全屏'}
+          </button>
+        )}
+      </div>
+      <div className="embedded-frame-wrap" ref={frameWrapRef} data-aspect={aspect || undefined} style={aspect ? { '--game-aspect': aspect } : undefined}>
+        <iframe
+          ref={frameRef}
+          src={`/games/${source}/index.html`}
+          title={title}
+          className="embedded-frame"
+          loading="lazy"
+          allowFullScreen
+          allow="autoplay; fullscreen"
+          onLoad={applyFullscreenFit}
+          style={fitStyle || undefined}
+        />
+        {fullscreen && (
+          <button type="button" className="embedded-exit-fullscreen" onClick={toggleFullscreen} aria-label="退出全屏">✕ 退出全屏</button>
+        )}
+        {showEscHint && <div className="embedded-esc-hint" role="status">按 Esc 可退出全屏</div>}
+      </div>
+      <p className="embedded-note">在下方画面里玩，玩满 {seconds} 秒就会自动点亮签到按钮；点「⛶ 全屏」放大玩，按 Esc 退出全屏。</p>
+    </div>
+  )
+}
+
+// ---- 小游戏 9：樱花拼图（滑动拼图） ----
+function buildSakuraArt() {
+  const blossoms = []
+  const branches = [
+    { x: 90, y: 430, angle: 0 },
+    { x: 200, y: 470, angle: 22 },
+    { x: 300, y: 445, angle: -16 },
+    { x: 415, y: 468, angle: 34 }
+  ]
+  branches.forEach((branch, index) => {
+    for (let i = 0; i < 5; i++) {
+      const px = branch.x + Math.cos((branch.angle * Math.PI) / 180) * (i * 24)
+      const py = branch.y - 26 - Math.abs(Math.sin((branch.angle * Math.PI) / 180)) * (i * 12) - (i % 2) * 18
+      blossoms.push(
+        `<g transform="translate(${px},${py}) scale(${0.7 + (i % 3) * 0.18})">
+          <ellipse cx="-7" cy="-2" rx="6" ry="9" fill="#ffc2d9" opacity=".9"/>
+          <ellipse cx="7" cy="-2" rx="6" ry="9" fill="#ffb0cf" opacity=".9"/>
+          <ellipse cx="0" cy="-10" rx="6" ry="8" fill="#ffd0e2" opacity=".9"/>
+          <ellipse cx="0" cy="6" rx="6" ry="8" fill="#ffb9d4" opacity=".9"/>
+          <circle cx="0" cy="0" r="3" fill="#fff1a8"/>
+        </g>`
+      )
+    }
+  })
+  const petals = Array.from({ length: 8 }, (_, i) =>
+    `<g transform="translate(${40 + i * 68},${110 + (i % 3) * 52}) rotate(${i * 41})" opacity="${0.55 + (i % 3) * 0.15}">
+      <ellipse cx="0" cy="0" rx="5" ry="9" fill="#ffb9d4"/>
+    </g>`
+  ).join('')
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+    <defs>
+      <linearGradient id="sakura-sky" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#ffe9f3"/>
+        <stop offset=".55" stop-color="#f4dcff"/>
+        <stop offset="1" stop-color="#dff0ff"/>
+      </linearGradient>
+    </defs>
+    <rect width="600" height="600" fill="url(#sakura-sky)"/>
+    <circle cx="516" cy="92" r="56" fill="#fff3b8" opacity=".95"/>
+    <circle cx="516" cy="92" r="76" fill="#fff3b8" opacity=".3"/>
+    <ellipse cx="140" cy="112" rx="92" ry="26" fill="#ffffff" opacity=".65"/>
+    <ellipse cx="228" cy="96" rx="64" ry="20" fill="#ffffff" opacity=".5"/>
+    <path d="M0 468 Q 120 398 240 452 T 520 428 L 600 600 L 0 600 Z" fill="#cfe8b8" opacity=".9"/>
+    <path d="M-12 468 Q 110 420 200 462 M 120 452 Q 230 415 320 450 M 320 450 Q 420 428 520 452" stroke="#8a5a3a" stroke-width="9" fill="none" stroke-linecap="round"/>
+    ${blossoms.join('')}
+    ${petals}
+    <text x="300" y="556" text-anchor="middle" font-size="27" font-family="serif" fill="#d66a92">桜 · 我们的樱花拼图</text>
+  </svg>`
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`
+}
+
+const SAKURA_ART = buildSakuraArt()
+
+function SakuraPuzzleGame({ item, taskCompleted, onTaskComplete }) {
+  const config = item.gameConfig || {}
+  const size = config.size === 4 ? 4 : 3
+  const [board, setBoard] = useState(() => makeSlidableBoard(size))
+  const [moves, setMoves] = useState(0)
+  const [preview, setPreview] = useState(false)
+  const solved = board.every((value, index) => value === (index + 1) % (size * size))
+  const previewTimerRef = React.useRef(0)
+
+  React.useEffect(() => () => window.clearTimeout(previewTimerRef.current), [])
+
+  React.useEffect(() => {
+    if (solved && !taskCompleted) onTaskComplete(item.day)
+  }, [solved, taskCompleted, item.day, onTaskComplete])
+
+  function tapTile(index) {
+    if (solved || taskCompleted) return
+    const empty = board.indexOf(0)
+    const x = index % size
+    const y = Math.floor(index / size)
+    const ex = empty % size
+    const ey = Math.floor(empty / size)
+    if (Math.abs(x - ex) + Math.abs(y - ey) !== 1) return
+    const next = [...board]
+    ;[next[index], next[empty]] = [next[empty], next[index]]
+    setBoard(next)
+    setMoves(value => value + 1)
+  }
+
+  function resetGame() {
+    setBoard(makeSlidableBoard(size))
+    setMoves(0)
+  }
+
+  function showPreview() {
+    setPreview(true)
+    window.clearTimeout(previewTimerRef.current)
+    previewTimerRef.current = window.setTimeout(() => setPreview(false), 1800)
+  }
+
+  return (
+    <div className="mini-game sakura-game">
+      <div className="sakura-board" style={{ '--sakura-size': size }}>
+        {board.map((value, index) => {
+          const empty = value === 0
+          const x = value % size
+          const y = Math.floor(value / size)
+          return (
+            <button
+              key={index}
+              type="button"
+              className={`sakura-tile ${empty ? 'is-empty' : ''}`}
+              onClick={() => tapTile(index)}
+              disabled={empty || solved || taskCompleted}
+              aria-label={empty ? '空格' : `第 ${value} 块`}
+              style={empty ? undefined : {
+                backgroundImage: `url("${SAKURA_ART}")`,
+                backgroundSize: `${size * 100}% ${size * 100}%`,
+                backgroundPosition: `${(x / (size - 1)) * 100}% ${(y / (size - 1)) * 100}%`
+              }}
+            >
+              {!empty && <span className="sakura-tile-num">{value}</span>}
+            </button>
+          )
+        })}
+      </div>
+      <p className="sakura-status">已走 <strong>{moves}</strong> 步{solved ? ' · 拼好啦！' : ''}</p>
+      {solved && <div className="game-done-panel"><p>{item.secret || '樱花图拼好啦，春天也住进小星球啦！'}</p></div>}
+      <div className="sakura-actions">
+        <button type="button" className="game-restart" onClick={resetGame}>↺ 重新打乱</button>
+        <button type="button" className="sakura-preview-button" onClick={showPreview}>👀 看一眼原图</button>
+      </div>
+      {preview && (
+        <div className="sakura-preview" role="button" tabIndex={0} aria-label="关闭樱花原图预览" onClick={() => setPreview(false)} onKeyDown={event => { if (event.key === 'Enter' || event.key === ' ') setPreview(false) }}>
+          <img src={SAKURA_ART} alt="樱花原图" />
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ---- 一封信：拆开信封再读 ----
 function LetterQuest({ item, taskCompleted, onTaskComplete }) {
   const [stage, setStage] = useState(taskCompleted ? 'opened' : 'closed')
@@ -5587,11 +6692,17 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
 
   if (item.type === 'game') {
     const gameId = item.gameId || 'mazeClassic'
-    if (gameId === 'mazeClassic') return <MazeGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'catchHearts') return <CatchHeartsGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'popBubbles') return <PopBubblesGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'memoryMatch') return <MemoryMatchGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'slidePuzzle') return <SlidePuzzleGame item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'mazeClassic') return <MazeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'catchHearts') return <CatchHeartsGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'popBubbles') return <PopBubblesGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'memoryMatch') return <MemoryMatchGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'slidePuzzle') return <SlidePuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'matchThree') return <MatchThreeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'feedDog') return <FeedDogGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'whackAMole') return <WhackAMoleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    const embeddedGame = EMBEDDED_GAME_SOURCES[gameId]
+    if (embeddedGame) return <EmbeddedGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} source={embeddedGame.source} title={embeddedGame.title} aspect={embeddedGame.aspect} />
+    if (gameId === 'sakuraPuzzle') return <SakuraPuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
   }
 
   if (item.type === 'memoryPuzzle') {
@@ -5802,14 +6913,6 @@ function isPhotoWallTestImage(photo) {
 const PHOTO_OWNERS = [
   { id: 'orange', label: '小琛这一栏', icon: '/images/柯基.png', hint: '上传这一天的照片：照片、聊天截图、饭饭、路上的云都可以。' },
   { id: 'pomelo', label: '小琳这一栏', icon: '/images/金毛.png', hint: '你也可以每天挑一张，裱好以后一起挂上墙。' }
-]
-const PHOTO_FRAMES = [
-  { id: 'cream', label: '奶油拍立得' },
-  { id: 'film', label: '复古电影胶片' },
-  { id: 'lace', label: '蕾丝珍珠手账' },
-  { id: 'star', label: '星月鎏金相框' },
-  { id: 'citrus', label: '狗狗果冻相框' },
-  { id: 'voyage', label: '星空漫游相框' }
 ]
 // 照片墙只展示真正上传的照片，不再预置任何参考照片。
 const STATIC_PHOTOS = {}
@@ -6044,14 +7147,15 @@ function isPhotoPendingFor(key) {
 }
 
 function mergePhotoWallViews(cloud, local) {
-  const pendingKeys = new Set(loadPhotoWallPending().filter(item => item.type === 'upload').map(item => `${item.day}-${item.owner}`))
+  // 照片位若有在途操作（上传/换框/取下），以本机最新状态为准；否则云端优先、本机兜底。
+  // 注意：不能删除同时存在于云端和本机的照片位，否则切换相框后照片会从墙上消失。
+  const pendingKeys = new Set(loadPhotoWallPending()
+    .filter(item => item.type === 'upload' || item.type === 'frame' || item.type === 'remove')
+    .map(item => `${item.day}-${item.owner}`))
   const merged = { ...STATIC_PHOTOS, ...local }
   for (const [key, photo] of Object.entries(cloud)) {
     if (pendingKeys.has(key)) continue
     merged[key] = photo
-  }
-  for (const key of Object.keys(local)) {
-    if (cloud[key] && !pendingKeys.has(key)) delete merged[key]
   }
   return merged
 }
@@ -6335,7 +7439,7 @@ function PhotoWall() {
     const file = event.target.files?.[0]
     if (!file) return
     const key = `${day.day}-${owner.id}`
-    const frame = photos[key]?.frame || PHOTO_FRAMES[0].id
+    const frame = 'cream'
     setStatus('正在把照片裱进相册…')
     try {
       const dataUrl = await resizeImageFile(file)
@@ -6400,38 +7504,6 @@ function PhotoWall() {
     }
   }
 
-  async function handleFrameChange(key, frame) {
-    const currentPhoto = photos[key]
-    const localNext = { ...localPhotos, [key]: { ...currentPhoto, frame, updatedAt: new Date().toISOString() } }
-    persistLocal(localNext)
-    const pendingUpload = loadPhotoWallPending().find(item => item.type === 'upload' && `${item.day}-${item.owner}` === key)
-    if (pendingUpload) {
-      enqueuePhotoWallPending({ ...pendingUpload, frame })
-      setStatus('相框换好啦，会跟着照片一起同步。')
-      return
-    }
-    try {
-      const cloudPhoto = await updateCloudPhotoFrame(currentPhoto, key, frame)
-      if (cloudPhoto) setCloudPhotos(current => ({ ...current, [key]: cloudPhoto }))
-    } catch (error) {
-      console.warn('[wwcxrl cloud] frame update failed', error.message)
-      const identity = getCloudIdentity()
-      enqueuePhotoWallPending({
-        type: 'frame',
-        day: Number(key.split('-')[0]),
-        owner: key.split('-')[1],
-        userId: currentPhoto?.userId || identity?.id || '',
-        role: identity?.role || 'pomelo',
-        imageUrl: currentPhoto?.src || '',
-        imagePath: currentPhoto?.imagePath || '',
-        caption: currentPhoto?.caption || '',
-        frame
-      })
-      setPendingCount(loadPhotoWallPending().length)
-      setStatus('相框换好啦，网络恢复后会自动同步。')
-    }
-  }
-
   async function handleRemove(key) {
     const currentPhoto = photos[key]
     const nextLocal = { ...localPhotos }
@@ -6484,7 +7556,7 @@ function PhotoWall() {
       <header className="section-heading playful-heading">
         <span>Memory Wall</span>
         <h2>我们的每一天 · 双栏相册</h2>
-        <p>每天两栏上传位：小琛一张，小琳一张。选好照片或聊天记录，再挑相框裱起来，拉开帷幕后就会挂到照片墙上。</p>
+        <p>每天两栏上传位：小琛一张，小琳一张。选好照片或聊天记录裱起来，拉开帷幕后就会挂到照片墙上。</p>
       </header>
       <div className={`curtain-upload-stage ${curtainOpen ? 'curtain-open' : ''}`}>
         <div className="curtain-panel curtain-left" aria-hidden="true" />
@@ -6522,7 +7594,7 @@ function PhotoWall() {
                         <div key={owner.id} className={`upload-slot owner-${owner.id}`}>
                           <div className="slot-heading"><img className="owner-avatar owner-avatar-lg" src={owner.icon} alt={owner.label} /><strong>{owner.label}</strong></div>
                           {photo?.src ? (
-                            <button type="button" className={`mini-framed-photo frame-${photo.frame || 'cream'}`} onClick={() => setLightbox({ photo, owner, day })}>
+                            <button type="button" className="mini-framed-photo frame-cream" onClick={() => setLightbox({ photo, owner, day })}>
                               <img src={photo.src} alt={`${owner.label} Day ${day.day}`} />
                               <small>{photo.name || photo.caption || owner.hint}</small>
                               {isPhotoPendingFor(key) && <span className="album-pending-chip">排队中</span>}
@@ -6532,9 +7604,6 @@ function PhotoWall() {
                           )}
                           <div className="slot-controls">
                             <label className={`upload-file-button ${open ? '' : 'disabled'}`}>{photo?.src ? '换一张' : '上传'}<input type="file" accept="image/*" disabled={!open} onChange={event => handleUpload(day, owner, event)} /></label>
-                            <select disabled={!open || !photo?.src} value={photo?.frame || PHOTO_FRAMES[0].id} onChange={event => handleFrameChange(key, event.target.value)} aria-label="选择相框">
-                              {PHOTO_FRAMES.map(frame => <option key={frame.id} value={frame.id}>{frame.label}</option>)}
-                            </select>
                             {photo?.src && photo.source !== 'static' && <button type="button" className="remove-photo-button" onClick={() => handleRemove(key)}>取下</button>}
                           </div>
                         </div>
@@ -6550,7 +7619,7 @@ function PhotoWall() {
           <div className="photo-wall-header"><span>🖼️</span><strong>我们的照片墙</strong><small>每次新增照片都会自动补到这里，每天 2 栏，天数越多照片位越多。</small></div>
           <div className="photo-wall-grid" style={{ '--wall-cols': wallColumns, '--wall-rows': wallRows, '--wall-gap': `${wallGap}px`, '--wall-count': wallCount }}>
             {filledPhotos.length === 0 ? <div className="empty-wall-note">还没有照片被裱起来。先合上帷幕，在上面上传第一张吧。</div> : filledPhotos.map((slot, index) => (
-              <button key={slot.key} type="button" className={`wall-photo-card frame-${slot.photo.frame || 'cream'} owner-${slot.owner.id}`} style={{ '--tilt': `${index % 2 === 0 ? -2 : 2}deg` }} onClick={() => setLightbox(slot)} aria-label={`放大查看 ${slot.owner.label} Day ${slot.day.day} 的照片`}>
+              <button key={slot.key} type="button" className={`wall-photo-card frame-cream owner-${slot.owner.id}`} style={{ '--tilt': `${index % 2 === 0 ? -2 : 2}deg` }} onClick={() => setLightbox(slot)} aria-label={`放大查看 ${slot.owner.label} Day ${slot.day.day} 的照片`}>
                 <img src={slot.photo.src} alt={`${slot.owner.label} Day ${slot.day.day}`} />
                 <span><img className="owner-avatar owner-avatar-sm" src={slot.owner.icon} alt="" /> Day {slot.day.day}</span>
               </button>
@@ -6560,7 +7629,7 @@ function PhotoWall() {
       </div>
       {lightbox && (
         <button type="button" className="photo-lightbox" onClick={() => setLightbox(null)} aria-label="关闭照片预览">
-          <span className={`lightbox-frame frame-${lightbox.photo.frame || 'cream'}`}>
+          <span className="lightbox-frame frame-cream">
             <img src={lightbox.photo.src} alt={`${lightbox.owner.label} Day ${lightbox.day.day}`} />
             <strong><img className="owner-avatar owner-avatar-sm" src={lightbox.owner.icon} alt="" /> Day {lightbox.day.day} · {lightbox.owner.label}</strong>
             <small>{lightbox.photo.caption || lightbox.photo.name || '我们的照片墙'}</small>
@@ -7559,6 +8628,165 @@ function formatDrawTime(iso) {
   return `${mm}-${dd} ${hh}:${mi}`
 }
 
+// ---- 彩蛋页：异地见面倒计时 + 可爱小日历 ----
+const WEEK_LABELS_CN = ['一', '二', '三', '四', '五', '六', '日']
+
+function MeetingCountdownCalendar() {
+  const [data, setData] = React.useState({ next: '', past: [] })
+  const [loaded, setLoaded] = React.useState(false)
+  const [viewDate, setViewDate] = React.useState(() => {
+    const now = new Date()
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  })
+
+  React.useEffect(() => {
+    let alive = true
+    loadMeetingDates().then(value => {
+      if (!alive) return
+      setData(value || { next: '', past: [] })
+      setLoaded(true)
+      // 如果下次见面在别的月份，默认翻到那个月份，让她一眼看到
+      if (value?.next) {
+        const next = new Date(`${value.next}T00:00:00`)
+        if (!Number.isNaN(next.getTime())) {
+          setViewDate(new Date(next.getFullYear(), next.getMonth(), 1))
+        }
+      }
+    })
+    return () => { alive = false }
+  }, [])
+
+  const daysLeft = meetingDaysLeft(data.next)
+  const today = new Date()
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+
+  // 把「已见面时间段」展开到每一天：start/end 显示图案，中间日显示 ♡
+  const pastDayInfo = new Map()
+  ;(data.past || []).forEach(item => {
+    const start = item.start || item.date || ''
+    const end = item.end || item.start || item.date || start
+    if (!start) return
+    const s = new Date(`${start}T00:00:00`)
+    const e = new Date(`${end}T00:00:00`)
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime()) || e < s) return
+    const cursor = new Date(s)
+    let guard = 0
+    while (cursor <= e && guard < 366) {
+      const ds = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
+      const isStart = cursor.getTime() === s.getTime()
+      const isEnd = cursor.getTime() === e.getTime()
+      const edge = isStart && isEnd ? 'single' : isStart ? 'start' : isEnd ? 'end' : 'mid'
+      pastDayInfo.set(ds, { emoji: item.emoji || '💗', note: item.note || '', edge })
+      cursor.setDate(cursor.getDate() + 1)
+      guard += 1
+    }
+  })
+
+  function formatRange(item) {
+    const start = (item.start || item.date || '').replace(/-/g, '.')
+    const end = (item.end || item.start || item.date || '').replace(/-/g, '.')
+    return start === end ? start : `${start} - ${end}`
+  }
+
+  const year = viewDate.getFullYear()
+  const month = viewDate.getMonth()
+  const firstWeekday = (new Date(year, month, 1).getDay() + 6) % 7
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  function moveMonth(offset) {
+    setViewDate(prev => new Date(prev.getFullYear(), prev.getMonth() + offset, 1))
+  }
+
+  function dateStr(day) {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  }
+
+  const cells = []
+  for (let i = 0; i < firstWeekday; i++) cells.push(null)
+  for (let day = 1; day <= daysInMonth; day++) cells.push(day)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const countdownCopy = !loaded
+    ? '正在翻日历…'
+    : !data.next
+      ? '下一次见面的日子还在路上 💌'
+      : daysLeft > 0
+        ? `距离下次见面还有`
+        : daysLeft === 0
+          ? '就是今天！我们要见面啦'
+          : '已经见面啦，期待下一次 💕'
+
+  return (
+    <section className="meeting-calendar-card sticker-card" aria-label="异地见面倒计时与见面日历">
+      <div className="meeting-countdown">
+        <span className="meeting-countdown-kicker">♡ 异地也要数着日子 ♡</span>
+        <div className="meeting-countdown-main">
+          <strong>{countdownCopy}</strong>
+          {loaded && data.next && daysLeft !== null && (
+            <b className={daysLeft === 0 ? 'is-today' : daysLeft < 0 ? 'is-past' : ''}>
+              {daysLeft > 0 ? daysLeft : ''}
+              {daysLeft > 0 && <em>天</em>}
+            </b>
+          )}
+        </div>
+        {data.next && <p className="meeting-next-date">📅 {data.next.replace(/-/g, '.')} 是我们约定的见面日</p>}
+      </div>
+
+      <div className="meeting-calendar">
+        <div className="meeting-calendar-head">
+          <button type="button" className="meeting-calendar-nav" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
+          <strong>{year} 年 {month + 1} 月</strong>
+          <button type="button" className="meeting-calendar-nav" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
+        </div>
+        <div className="meeting-calendar-week">
+          {WEEK_LABELS_CN.map((label, index) => (
+            <span key={label} className={index >= 5 ? 'is-weekend' : ''}>{label}</span>
+          ))}
+        </div>
+        <div className="meeting-calendar-grid">
+          {cells.map((day, index) => {
+            if (!day) return <span key={`empty-${index}`} className="meeting-calendar-cell is-empty" />
+            const ds = dateStr(day)
+            const pastInfo = pastDayInfo.get(ds)
+            const isPast = !!pastInfo
+            const isNext = data.next === ds
+            const isToday = ds === todayStr
+            return (
+              <span
+                key={ds}
+                className={`meeting-calendar-cell ${isPast ? 'is-past-day' : ''} ${isPast && pastInfo.edge === 'mid' ? 'is-past-mid' : ''} ${isPast && (pastInfo.edge === 'start' || pastInfo.edge === 'single') ? 'is-past-start' : ''} ${isPast && pastInfo.edge === 'end' ? 'is-past-end' : ''} ${isNext ? 'is-next-day' : ''} ${isToday ? 'is-today' : ''}`}
+                title={isPast ? `${pastInfo.emoji} ${pastInfo.note || '我们见面的日子'}` : isNext ? '下次见面的日子 💕' : ''}
+              >
+                {isPast && pastInfo.edge !== 'mid' && <i className="meeting-day-mark" aria-hidden="true">{pastInfo.emoji || '💗'}</i>}
+                {isPast && pastInfo.edge === 'mid' && <i className="meeting-day-mark is-mid" aria-hidden="true">♡</i>}
+                {isNext && <i className="meeting-day-mark is-next" aria-hidden="true">🎀</i>}
+                <b>{day}</b>
+              </span>
+            )
+          })}
+        </div>
+        <div className="meeting-calendar-legend">
+          <span><i className="legend-dot is-past" />已见面的日子</span>
+          <span><i className="legend-dot is-next" />下次见面</span>
+          <span><i className="legend-dot is-today" />今天</span>
+        </div>
+      </div>
+
+      {(data.past || []).length > 0 && (
+        <div className="meeting-past-chips">
+          {data.past.slice().reverse().map(item => (
+            <span key={`${item.start || item.date}-${item.end || ''}`} className="meeting-past-chip" title={item.note}>
+              <b>{item.emoji || '💗'}</b>
+              <em>{formatRange(item)}</em>
+              {item.note && <small>{item.note}</small>}
+            </span>
+          ))}
+        </div>
+      )}
+    </section>
+  )
+}
+
 function EnergyCapsule() {
   const [energyState, setEnergyState] = useState(loadEnergyLocalState)
   const [status, setStatus] = useState('正在准备今天的抽奖…')
@@ -7687,6 +8915,7 @@ function EnergyCapsule() {
         <h2>小星球能量胶囊</h2>
         <p>每天完成签到、或当天至少上传一张相册照片，都会存下一次抽能量机会。来到这里就能真实抽取随机 5-15 点小星球能量。</p>
       </header>
+      <MeetingCountdownCalendar />
       <div className={`capsule-vault sticker-card premium-card ${rolling ? 'is-rolling' : ''}`}>
         <div className="capsule-orbit-scene" aria-hidden="true">
           <span className="vault-ring ring-a" />
@@ -7967,6 +9196,66 @@ function saveLocalAdminTasks(list) {
   localStorage.setItem(ADMIN_LOCAL_TASKS_KEY, JSON.stringify(list))
 }
 
+// ---- 异地见面日历：下次见面日期 + 已见面的浪漫日子（云端优先，本地兜底） ----
+const MEETING_DATES_LOCAL_KEY = 'wwcxrl-meeting-dates'
+
+function loadMeetingDatesLocal() {
+  try {
+    return JSON.parse(localStorage.getItem(MEETING_DATES_LOCAL_KEY) || 'null')
+  } catch {
+    return null
+  }
+}
+
+function saveMeetingDatesLocal(data) {
+  localStorage.setItem(MEETING_DATES_LOCAL_KEY, JSON.stringify(data))
+}
+
+async function loadMeetingDates() {
+  const cloud = cloudEnabled ? await loadCloudMeetingDates() : null
+  if (cloud) {
+    saveMeetingDatesLocal(cloud)
+    return cloud
+  }
+  return loadMeetingDatesLocal() || { next: '', past: [] }
+}
+
+async function saveMeetingDates(data) {
+  const normalized = {
+    next: String(data.next || ''),
+    past: (data.past || [])
+      .filter(item => item && (item.start || item.date))
+      .map(item => {
+        const start = String(item.start || item.date || '')
+        const end = String(item.end || item.start || item.date || '')
+        return {
+          start,
+          end: end >= start ? end : start,
+          note: String(item.note || '').trim(),
+          emoji: String(item.emoji || '💕').trim() || '💕'
+        }
+      })
+  }
+  saveMeetingDatesLocal(normalized)
+  if (cloudEnabled) {
+    const ok = await saveCloudMeetingDates(normalized)
+    return { ok, saved: normalized }
+  }
+  return { ok: true, saved: normalized }
+}
+
+function meetingDaysLeft(dateStr) {
+  if (!dateStr) return null
+  const target = new Date(`${dateStr}T00:00:00`)
+  if (Number.isNaN(target.getTime())) return null
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.round((target.getTime() - today.getTime()) / 86400000)
+}
+
+// 管理端可选的可爱情侣标记图案
+const MEETING_EMOJI_PRESETS = ['💗', '💕', '❤️', '🧡', '🌷', '🌸', '🍑', '🦄', '🐻', '🐰', '🍓', '🍰', '🎀', '⭐', '🌈', '🫧', '🥰', '💌']
+
 // 按 Day 自动推算解锁日期：Day 300 = 2026-08-09，之后每天顺延。
 function adminDayToDate(day) {
   const base = new Date('2026-08-09T00:00:00')
@@ -8067,7 +9356,55 @@ function AdminTaskPage() {
   const [missingFields, setMissingFields] = useState([])
   const [dateAuto, setDateAuto] = useState(true)
   const [toast, setToast] = useState('')
+  const [meetingNext, setMeetingNext] = useState('')
+  const [meetingPast, setMeetingPast] = useState([])
+  const [meetingLoaded, setMeetingLoaded] = useState(false)
+  const [meetingSaving, setMeetingSaving] = useState(false)
+  const [emojiOpenIndex, setEmojiOpenIndex] = useState(null)
   const todayKey = getTodayKey()
+
+  // 异地见面日历：载入云端/本地已有设置
+  React.useEffect(() => {
+    let alive = true
+    loadMeetingDates().then(value => {
+      if (!alive || !value) return
+      setMeetingNext(value.next || '')
+      setMeetingPast(Array.isArray(value.past) ? value.past : [])
+      setMeetingLoaded(true)
+    })
+    return () => { alive = false }
+  }, [])
+
+  // 点击页面其他位置时收起展开中的 emoji 面板
+  React.useEffect(() => {
+    if (emojiOpenIndex === null) return
+    const closeOnOutside = event => {
+      if (!event.target.closest('.admin-meeting-emoji-area')) setEmojiOpenIndex(null)
+    }
+    document.addEventListener('click', closeOnOutside)
+    return () => document.removeEventListener('click', closeOnOutside)
+  }, [emojiOpenIndex])
+
+  function addMeetingPastRow() {
+    setMeetingPast(prev => [...prev, { start: '', end: '', note: '', emoji: '💗' }])
+  }
+
+  function updateMeetingPastRow(index, patch) {
+    setMeetingPast(prev => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+  }
+
+  function removeMeetingPastRow(index) {
+    setMeetingPast(prev => prev.filter((_, i) => i !== index))
+  }
+
+  async function saveMeetingDatesSettings() {
+    setMeetingSaving(true)
+    const result = await saveMeetingDates({ next: meetingNext, past: meetingPast })
+    setMeetingSaving(false)
+    setToast(result?.ok
+      ? (cloudEnabled ? '见面日历已保存并同步到云端，两台设备都能看到。' : '见面日历已保存（本地模式，未连接云端）。')
+      : '保存失败，请稍后再试。')
+  }
 
   const refresh = React.useCallback(async () => {
     setLoading(true)
@@ -8296,7 +9633,9 @@ function AdminTaskPage() {
           <h1>🍊 小星球任务管理</h1>
           <p>发布后她打开网站即可看到；任务按日期自动解锁，不用重新部署。</p>
         </div>
-        {!cloudEnabled && <p className="admin-cloud-banner">⚠️ 本地模式：任务会保存到本机（可正常预览发布流程），不会写入线上。配置 Supabase 环境变量后即切换到云端发布。</p>}
+        {cloudEnabled
+          ? <p className="admin-cloud-note is-cloud">☁️ 云端已连接，任务、签到与见面日历会自动同步。</p>
+          : <p className="admin-cloud-note">本地预览模式：数据仅保存在本机，配置 Supabase 环境变量后自动切换为云端同步。</p>}
         <button type="button" className="admin-logout" onClick={() => { sessionStorage.removeItem('wwcxrl-admin-ok'); setOk(false) }}>退出管理</button>
       </header>
 
@@ -8459,6 +9798,83 @@ function AdminTaskPage() {
           </div>
         )}
       </section>
+
+      <section className="admin-meeting-dates sticker-card">
+        <h2>💌 异地见面日历</h2>
+        <p className="admin-meeting-desc">设置下次见面的日子，以及过去已经见面的浪漫时间段。小琳打开彩蛋页就能看到倒计时和带标记的小日历。</p>
+
+        <div className="admin-meeting-block">
+          <h3>📅 下次见面（单日倒计时）</h3>
+          <div className="admin-meeting-next">
+            <input type="date" value={meetingNext} onChange={event => setMeetingNext(event.target.value)} aria-label="下次见面日期" />
+            <small>彩蛋页会显示「距离下次见面还有 X 天」并圈出这一天</small>
+          </div>
+        </div>
+
+        <div className="admin-meeting-block">
+          <h3>💌 已见面的浪漫日子</h3>
+          {meetingPast.length === 0 && <p className="admin-meeting-empty">还没有记录，添加一段属于你们的见面时间吧。</p>}
+          {meetingPast.map((item, index) => {
+            const start = item.start || item.date || ''
+            const end = item.end || start
+            const previewDate = start === end ? start.replace(/-/g, '.') : `${start.replace(/-/g, '.')} - ${end.replace(/-/g, '.')}`
+            return (
+              <div className="admin-meeting-past-row" key={`${start || 'new'}-${index}`}>
+                <div className="admin-meeting-range">
+                  <label>从
+                    <input type="date" value={start} onChange={event => updateMeetingPastRow(index, { start: event.target.value })} aria-label="见面开始日期" />
+                  </label>
+                  <label>到
+                    <input type="date" value={end} onChange={event => updateMeetingPastRow(index, { end: event.target.value })} aria-label="见面结束日期" />
+                  </label>
+                  <button type="button" className="admin-row-delete" onClick={() => removeMeetingPastRow(index)}>删除</button>
+                </div>
+                <div className="admin-meeting-emoji-area">
+                  <div className="admin-meeting-emoji-row">
+                    <span className="admin-meeting-emoji-label">标记图案</span>
+                    <button
+                      type="button"
+                      className={`admin-meeting-emoji-trigger ${emojiOpenIndex === index ? 'is-open' : ''}`}
+                      onClick={event => { event.stopPropagation(); setEmojiOpenIndex(prev => (prev === index ? null : index)) }}
+                      aria-expanded={emojiOpenIndex === index}
+                      aria-label="选择标记图案"
+                    >
+                      <span>{item.emoji || '💗'}</span>
+                      <i>▾</i>
+                    </button>
+                  </div>
+                  {emojiOpenIndex === index && (
+                    <div className="admin-meeting-emoji-palette">
+                      {MEETING_EMOJI_PRESETS.map(emoji => (
+                        <button
+                          key={emoji}
+                          type="button"
+                          className={`admin-meeting-emoji-option ${(item.emoji || '💗') === emoji ? 'is-selected' : ''}`}
+                          onClick={() => { updateMeetingPastRow(index, { emoji }); setEmojiOpenIndex(null) }}
+                          aria-label={`选择标记 ${emoji}`}
+                        >{emoji}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div className="admin-meeting-note-row">
+                  <input className="admin-meeting-note" value={item.note || ''} placeholder="备注，如：郑州·二砂文创园（可选）" onChange={event => updateMeetingPastRow(index, { note: event.target.value })} aria-label="备注" />
+                  <span className="admin-meeting-preview">{item.emoji || '💗'} {previewDate}{item.note ? ` · ${item.note}` : ''}</span>
+                </div>
+              </div>
+            )
+          })}
+          <button type="button" className="admin-meeting-add" onClick={addMeetingPastRow}>＋ 添加一段见面时间</button>
+        </div>
+
+        <div className="admin-actions admin-meeting-actions">
+          <button type="button" className="admin-save-publish" disabled={meetingSaving} onClick={saveMeetingDatesSettings}>
+            {meetingSaving ? '保存中…' : '保存见面日历'}
+          </button>
+          {meetingLoaded && !meetingSaving && <small>保存后，小琳的设备下次打开彩蛋页即可看到。</small>}
+        </div>
+      </section>
+
       {toast && <div className="wwcxrl-soft-toast admin-toast" role="status">{toast}</div>}
     </main>
   )
@@ -8491,7 +9907,10 @@ function App() {
     && ['localhost', '127.0.0.1'].includes(window.location.hostname)
     && new URLSearchParams(window.location.search).get('planet') === '1'
   const globalState = typeof window !== 'undefined' ? loadGlobalLocalState() : GLOBAL_EMPTY_STATE
+  const invitationViewRequested = typeof window !== 'undefined'
+    && sessionStorage.getItem('wwcxrl-invitation-view-requested') === 'yes'
   const initiallyOpen = typeof window !== 'undefined'
+    && !invitationViewRequested
     && (localDevBypass || localStorage.getItem('wwcxrl-camouflage-opened') === 'yes' || localStorage.getItem('wwcxrl-planet-unlocked') === 'yes' || globalState.planetUnlocked || globalState.invitationOpened)
   const [open, setOpen] = useState(initiallyOpen)
   React.useEffect(() => {
@@ -8499,6 +9918,8 @@ function App() {
     let alive = true
     hydrateGlobalCloudState().then(next => {
       if (!alive) return
+      // 用户主动点击「邀请信」回看时，停留在邀请信界面，不自动跳回主页。
+      if (sessionStorage.getItem('wwcxrl-invitation-view-requested') === 'yes') return
       if (next?.planetUnlocked || next?.invitationOpened) setOpen(true)
     })
     return () => { alive = false }

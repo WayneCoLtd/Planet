@@ -45,6 +45,7 @@ photo_rename_*manifest*.csv
 
 # local release archives
 releases/
+backups/
 
 # 本地运行残留（不提交）
 dev.pid
