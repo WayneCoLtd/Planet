@@ -9238,10 +9238,10 @@ async function saveMeetingDates(data) {
   }
   saveMeetingDatesLocal(normalized)
   if (cloudEnabled) {
-    const ok = await saveCloudMeetingDates(normalized)
-    return { ok, saved: normalized }
+    const result = await saveCloudMeetingDates(normalized)
+    return { ok: Boolean(result?.ok), saved: normalized, error: result?.error || '' }
   }
-  return { ok: true, saved: normalized }
+  return { ok: true, saved: normalized, error: '' }
 }
 
 function meetingDaysLeft(dateStr) {
@@ -9403,7 +9403,7 @@ function AdminTaskPage() {
     setMeetingSaving(false)
     setToast(result?.ok
       ? (cloudEnabled ? '见面日历已保存并同步到云端，两台设备都能看到。' : '见面日历已保存（本地模式，未连接云端）。')
-      : '保存失败，请稍后再试。')
+      : `保存失败：${result?.error || '请稍后再试。'}（若提示表/列不存在，请在 Supabase 执行见面日历建表 SQL）`)
   }
 
   const refresh = React.useCallback(async () => {

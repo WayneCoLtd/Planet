@@ -523,9 +523,16 @@ export async function loadCloudMeetingDates() {
 export async function saveCloudMeetingDates({ next = '', past = [] }) {
   try {
     const { supabase, identity } = await ensureProfile()
-    if (!supabase || !identity) return false
+    if (!supabase || !identity) return { ok: false, error: '未连接云端' }
     // 小数据集：整组重写，避免逐行 upsert 的冲突逻辑
-    await supabase.from('wwcxrl_meeting_dates').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    const { error: deleteError } = await supabase
+      .from('wwcxrl_meeting_dates')
+      .delete()
+      .neq('id', '00000000-0000-0000-0000-000000000000')
+    if (deleteError) {
+      console.warn('[wwcxrl cloud] meeting dates delete failed', deleteError.message)
+      return { ok: false, error: deleteError.message }
+    }
     const rows = []
     if (next) {
       rows.push({ kind: 'next', date: String(next), note: '', emoji: '💕', created_by: identity.role })
@@ -540,15 +547,15 @@ export async function saveCloudMeetingDates({ next = '', past = [] }) {
         created_by: identity.role
       })
     })
-    if (!rows.length) return true
+    if (!rows.length) return { ok: true, error: '' }
     const { error } = await supabase.from('wwcxrl_meeting_dates').insert(rows)
     if (error) {
       console.warn('[wwcxrl cloud] meeting dates save failed', error.message)
-      return false
+      return { ok: false, error: error.message }
     }
-    return true
+    return { ok: true, error: '' }
   } catch (error) {
     console.warn('[wwcxrl cloud] meeting dates save exception', error)
-    return false
+    return { ok: false, error: error.message || '未知错误' }
   }
 }
