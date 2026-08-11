@@ -500,7 +500,7 @@ export async function loadCloudMeetingDates() {
     if (!supabase) return null
     const { data, error } = await supabase
       .from('wwcxrl_meeting_dates')
-      .select('kind,date,note,emoji')
+      .select('kind,date,end_date,note,emoji')
     if (error) {
       console.warn('[wwcxrl cloud] meeting dates load failed', error.message)
       return null
