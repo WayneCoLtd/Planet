@@ -50,6 +50,13 @@
 
 > 已上线的老库需要先执行一次建表 SQL（见 `supabase_wwcxrl_schema.sql` 末尾「异地见面日历」段落）；若之前已建过单日版本的表，需补执行：
 > `alter table public.wwcxrl_meeting_dates add column if not exists end_date text not null default '';`
+
+## 5. 留言板与能量管理
+
+- **留言板**：站点导航新增「💬 留言板」，小琛和小琳都可以发文字 + 图片，带详细时间，自动同步到 Supabase（表 `wwcxrl_messages`，图片存 `wwcxrl-photos` 存储桶的 `message-images/` 目录）；未连接云端时回退本地存储。每个人只能删除自己的留言。
+- **能量管理**：管理页底部新增「⚡ 能量管理」，当剩余抽奖次数异常偏多时，可一键清零（能量与印章保留，历史已计过的日子不会重复发放）。
+
+> 已上线的老库需要先执行一次建表 SQL（见 `supabase_wwcxrl_schema.sql` 末尾「留言板」段落）才能使用留言板云端同步。
   - 想长期保留的「内置」任务留在代码里即可；想随时改的任务放管理页。
 - 配图上传：管理页上传的图片会压缩到 1200px 后存入 Supabase 存储桶 `wwcxrl-photos`，URL 写入任务记录的 image 字段。
 

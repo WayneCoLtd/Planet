@@ -559,3 +559,99 @@ export async function saveCloudMeetingDates({ next = '', past = [] }) {
     return { ok: false, error: error.message || '未知错误' }
   }
 }
+
+// ============ 留言板（wwcxrl_messages）：异地想对对方说的话 ============
+function normalizeMessageRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    role: row.role,
+    displayName: row.display_name,
+    content: row.content,
+    imageUrl: row.image_url,
+    createdAt: row.created_at
+  }
+}
+
+export async function loadCloudMessages() {
+  try {
+    const { supabase } = await ensureProfile()
+    if (!supabase) return null
+    const { data, error } = await supabase
+      .from('wwcxrl_messages')
+      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (error) {
+      console.warn('[wwcxrl cloud] messages load failed', error.message)
+      return null
+    }
+    return (data || []).map(normalizeMessageRow)
+  } catch (error) {
+    console.warn('[wwcxrl cloud] messages load exception', error)
+    return null
+  }
+}
+
+export async function saveCloudMessage({ content = '', imageUrl = '' }) {
+  try {
+    const { supabase, identity } = await ensureProfile()
+    if (!supabase || !identity) return null
+    const { data, error } = await supabase
+      .from('wwcxrl_messages')
+      .insert({
+        user_id: identity.id,
+        role: identity.role,
+        display_name: String(identity.displayName || ''),
+        content: String(content || '').trim(),
+        image_url: String(imageUrl || '')
+      })
+      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .single()
+    if (error) {
+      console.warn('[wwcxrl cloud] message save failed', error.message)
+      return null
+    }
+    return normalizeMessageRow(data)
+  } catch (error) {
+    console.warn('[wwcxrl cloud] message save exception', error)
+    return null
+  }
+}
+
+export async function deleteCloudMessage(id) {
+  try {
+    const { supabase } = await ensureProfile()
+    if (!supabase || !id) return false
+    const { error } = await supabase.from('wwcxrl_messages').delete().eq('id', id)
+    if (error) {
+      console.warn('[wwcxrl cloud] message delete failed', error.message)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.warn('[wwcxrl cloud] message delete exception', error)
+    return false
+  }
+}
+
+export async function uploadMessageImage(file) {
+  try {
+    const { supabase, identity } = await ensureProfile()
+    if (!supabase || !identity) return null
+    const dataUrl = await resizeImageFile(file)
+    const blob = dataUrlToBlob(dataUrl)
+    const safeName = String(file.name || 'message.jpg').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-40)
+    const path = `message-images/${identity.role}-${Date.now()}-${safeName}.jpg`
+    const { error: uploadError } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
+      contentType: 'image/jpeg',
+      upsert: true
+    })
+    if (uploadError) throw uploadError
+    const { data: publicData } = supabase.storage.from('wwcxrl-photos').getPublicUrl(path)
+    return publicData.publicUrl
+  } catch (error) {
+    console.warn('[wwcxrl cloud] message image upload failed', error)
+    return null
+  }
+}

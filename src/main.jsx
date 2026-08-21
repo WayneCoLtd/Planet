@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, deleteCloudMessage, uploadMessageImage } from './cloud'
 import './styles.css'
 
 const PASSWORD = '5201013'
@@ -1041,6 +1041,7 @@ function Nav({ current, setCurrent }) {
     ['album', '相册', '📷'],
     ...(observatoryNavOpen ? [['telescope', '星空观测站', '🔭']] : []),
     ['backpack', '小背包', '🎒'],
+    ['messages', '留言板', '💬'],
     ['capsule', '彩蛋', '🎁']
   ]
   return (
@@ -8329,11 +8330,12 @@ const ENERGY_PROGRESS_DAY = 1
 const ENERGY_SHARED_USER_ID = 'wwcxrl-pomelo-main'
 const ENERGY_STATE_KEY = 'wwcxrl-capsule-energy-state'
 const ENERGY_AUTO_REFRESH_MS = 7000
+const ENERGY_MAX = 669
 const ENERGY_EMPTY_STATE = { energy: 0, drawChances: 0, claimedSignedDays: [], claimedPhotoDays: [], draws: [] }
 const ENERGY_MILESTONES = [
   { at: 100, icon: '🥛', name: '第一杯气泡' },
-  { at: 260, icon: '🧸', name: '软软的小熊' },
-  { at: 520, icon: '🪐', name: '小星球点亮' }
+  { at: 459, icon: '🧸', name: '软软的小熊' },
+  { at: 669, icon: '🪐', name: '小星球点亮' }
 ]
 
 function normalizeEnergyState(progress = {}) {
@@ -8344,7 +8346,7 @@ function normalizeEnergyState(progress = {}) {
   const draws = Array.isArray(progress.draws) ? progress.draws.slice(-80) : []
   return {
     ...ENERGY_EMPTY_STATE,
-    energy: Math.max(0, Math.min(520, Number(progress.energy || 0))),
+    energy: Math.max(0, Math.min(ENERGY_MAX, Number(progress.energy || 0))),
     drawChances: Math.max(0, Number(progress.drawChances || 0)),
     claimedSignedDays: Array.from(new Set(claimed)).sort((a, b) => a - b),
     claimedPhotoDays: Array.from(claimedPhotoDays).sort(),
@@ -8426,7 +8428,7 @@ async function loadLatestEnergyStateWithSignins() {
     const legacy = getEnergyProgressOnly(legacyOrangeProgress.progress)
     if (legacy.drawChances > 0 || legacy.energy > 0 || legacy.draws.length) {
       remoteState = normalizeEnergyState({
-        energy: Math.min(520, Number(remoteState.energy || 0) + Number(legacy.energy || 0)),
+        energy: Math.min(ENERGY_MAX, Number(remoteState.energy || 0) + Number(legacy.energy || 0)),
         drawChances: Number(remoteState.drawChances || 0) + Number(legacy.drawChances || 0),
         claimedSignedDays: [...remoteState.claimedSignedDays, ...legacy.claimedSignedDays],
         claimedPhotoDays: [...remoteState.claimedPhotoDays, ...legacy.claimedPhotoDays],
@@ -8447,8 +8449,18 @@ async function loadLatestEnergyStateWithSignins() {
   const claimed = new Set(remoteState.claimedSignedDays)
   const newSignedDays = signedDays.filter(day => !claimed.has(day))
   const uploadedPhotoDays = Array.from(new Set([...(cloudPhotoDays || []), ...getLocalUploadedPhotoDays()])).sort()
-  const claimedPhotoDays = new Set(remoteState.claimedPhotoDays)
-  const newPhotoDays = uploadedPhotoDays.filter(key => !claimedPhotoDays.has(key))
+  // 旧版按“天”记录的已领次数（纯数字）视为当天双方都已领过，避免历史数据重复补发
+  const coveredPhotoClaims = new Set()
+  ;(remoteState.claimedPhotoDays || []).forEach(item => {
+    const raw = String(item)
+    coveredPhotoClaims.add(raw)
+    const day = Number(raw.split('-')[0])
+    if (day > 0) {
+      coveredPhotoClaims.add(`${day}-orange`)
+      coveredPhotoClaims.add(`${day}-pomelo`)
+    }
+  })
+  const newPhotoDays = uploadedPhotoDays.filter(key => !coveredPhotoClaims.has(key))
   const next = normalizeEnergyState({
     ...remoteState,
     drawChances: Number(remoteState.drawChances || 0) + newSignedDays.length + newPhotoDays.length,
@@ -8858,6 +8870,164 @@ function MeetingCountdownCalendar() {
   )
 }
 
+// ---- 异地留言板：文字 + 图片，同步到双方设备 ----
+function MessageBoard() {
+  const [messages, setMessages] = useState([])
+  const [content, setContent] = useState('')
+  const [imageData, setImageData] = useState(null)
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState('')
+  const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
+  const myRole = identity?.role || 'pomelo'
+  const myName = identity?.displayName || (myRole === 'orange' ? '小琛' : '小琳')
+
+  const refresh = React.useCallback(() => {
+    if (cloudEnabled) {
+      loadCloudMessages().then(list => {
+        if (list) {
+          setMessages(list)
+          saveMessagesLocal(list)
+        }
+      }).catch(() => {})
+    } else {
+      setMessages(loadMessagesLocal())
+    }
+  }, [])
+
+  React.useEffect(() => {
+    refresh()
+    const onFocus = () => { if (!document.hidden) refresh() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    const timer = window.setInterval(refresh, 12000)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+      window.clearInterval(timer)
+    }
+  }, [refresh])
+
+  function handleFile(file) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setImageData({ file, dataUrl: reader.result, name: file.name })
+    reader.readAsDataURL(file)
+  }
+
+  async function sendMessage() {
+    const text = content.trim()
+    if (!text && !imageData) {
+      setStatus('写点想说的话，或选一张照片吧 💌')
+      return
+    }
+    setSending(true)
+    setStatus('正在寄出…')
+    try {
+      if (cloudEnabled) {
+        let imageUrl = ''
+        if (imageData?.file) imageUrl = (await uploadMessageImage(imageData.file)) || ''
+        const saved = await saveCloudMessage({ content: text, imageUrl })
+        if (!saved) {
+          setStatus('寄出失败，网络打了个盹，再试一次吧。')
+          return
+        }
+        setMessages(prev => [saved, ...prev.filter(item => item.id !== saved.id)])
+      } else {
+        const localMessage = {
+          id: `local-${Date.now()}`,
+          userId: identity?.id || 'local',
+          role: myRole,
+          displayName: myName,
+          content: text,
+          imageUrl: imageData?.dataUrl || '',
+          createdAt: new Date().toISOString()
+        }
+        const next = [localMessage, ...loadMessagesLocal()]
+        saveMessagesLocal(next)
+        setMessages(next)
+      }
+      setContent('')
+      setImageData(null)
+      setStatus('已放进小信箱啦 💌')
+    } catch (error) {
+      console.warn('[wwcxrl messages] send failed', error.message)
+      setStatus('寄出失败，请稍后再试。')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function removeMessage(message) {
+    const mine = message.userId === identity?.id || !cloudEnabled
+    if (!mine) return
+    if (cloudEnabled) {
+      const ok = await deleteCloudMessage(message.id)
+      if (ok) setMessages(prev => prev.filter(item => item.id !== message.id))
+    } else {
+      const next = loadMessagesLocal().filter(item => item.id !== message.id)
+      saveMessagesLocal(next)
+      setMessages(next)
+    }
+  }
+
+  return (
+    <section className="content-section message-board-section">
+      <header className="section-heading playful-heading">
+        <span>Message Board</span>
+        <h2>💬 异地留言板</h2>
+        <p>开心的、难过的、想又怕打扰你的——都写在这里。像放在门口的小信箱，打开就能看见。</p>
+      </header>
+
+      <div className="message-compose sticker-card">
+        <textarea
+          value={content}
+          onChange={event => setContent(event.target.value)}
+          rows={3}
+          maxLength={500}
+          placeholder="写下此刻想对 TA 说的话…（想念的话、路上的云、今天的饭，都可以）"
+          aria-label="留言内容"
+        />
+        <div className="message-compose-bar">
+          <label className="message-image-button">
+            📷 {imageData ? '换一张' : '加一张照片'}
+            <input type="file" accept="image/*" hidden onChange={event => { const file = event.target.files?.[0]; if (file) handleFile(file); event.target.value = '' }} />
+          </label>
+          {imageData && (
+            <span className="message-image-preview">
+              <img src={imageData.dataUrl} alt="留言图片预览" />
+              <button type="button" onClick={() => setImageData(null)} aria-label="移除图片">✕</button>
+            </span>
+          )}
+          <span className="message-compose-count">{content.length}/500</span>
+          <button type="button" className="message-send" disabled={sending} onClick={sendMessage}>
+            {sending ? '寄出中…' : '💌 寄出'}
+          </button>
+        </div>
+        {status && <p className="message-status">{status}</p>}
+      </div>
+
+      <div className="message-list">
+        {messages.length === 0 ? (
+          <div className="message-empty sticker-card"><span>🕊️</span><p>还没有留言，写第一句吧。</p></div>
+        ) : messages.map(message => (
+          <article key={message.id} className={`message-card sticker-card ${message.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
+            <header className="message-card-head">
+              <span className="message-avatar">{message.role === 'orange' ? '🍊' : '🍑'}</span>
+              <strong>{message.displayName || (message.role === 'orange' ? '小琛' : '小琳')}</strong>
+              <time>{formatMessageTime(message.createdAt)}</time>
+              {(message.userId === identity?.id || !cloudEnabled) && (
+                <button type="button" className="message-delete" onClick={() => removeMessage(message)} aria-label="删除这条留言">🗑</button>
+              )}
+            </header>
+            {message.content && <p className="message-content">{message.content}</p>}
+            {message.imageUrl && <img className="message-image" src={message.imageUrl} alt="留言图片" loading="lazy" />}
+          </article>
+        ))}
+      </div>
+    </section>
+  )
+}
+
 function EnergyCapsule() {
   const [energyState, setEnergyState] = useState(loadEnergyLocalState)
   const [status, setStatus] = useState('正在准备今天的抽奖…')
@@ -8865,15 +9035,15 @@ function EnergyCapsule() {
   const [burst, setBurst] = useState(null)
   const refreshInFlightRef = React.useRef(false)
   const rollingRef = React.useRef(false)
-  const energy = Math.min(520, Number(energyState.energy || 0))
-  const percent = Math.round((energy / 520) * 100)
+  const energy = Math.min(ENERGY_MAX, Number(energyState.energy || 0))
+  const percent = Math.round((energy / ENERGY_MAX) * 100)
   const drawChances = Math.max(0, Number(energyState.drawChances || 0))
   const signedCount = energyState.claimedSignedDays.length
   const photoCount = energyState.claimedPhotoDays.length
   const reachedCount = ENERGY_MILESTONES.filter(milestone => energy >= milestone.at).length
-  const sealCopy = energy >= 520
+  const sealCopy = energy >= ENERGY_MAX
     ? '小星球已经点亮，封存的内容随时可以开启。'
-    : energy >= 260
+    : energy >= 459
       ? '第二枚印章亮了，离完全点亮只差最后一段光。'
       : energy >= 100
         ? '第一枚印章亮了，能量还在慢慢积攒。'
@@ -8955,11 +9125,11 @@ function EnergyCapsule() {
         }
         const gain = Math.floor(Math.random() * 11) + 5
         const previousEnergy = Number(latest.energy || 0)
-        const nextEnergy = Math.min(520, previousEnergy + gain)
+        const nextEnergy = Math.min(ENERGY_MAX, previousEnergy + gain)
         const crossedMilestones = ENERGY_MILESTONES.filter(milestone => previousEnergy < milestone.at && nextEnergy >= milestone.at)
         const next = normalizeEnergyState({
           ...latest,
-          energy: Math.min(520, Number(latest.energy || 0) + gain),
+          energy: Math.min(ENERGY_MAX, Number(latest.energy || 0) + gain),
           drawChances: Math.max(0, Number(latest.drawChances || 0) - 1),
           draws: [...(latest.draws || []), { gain, at: new Date().toISOString() }]
         })
@@ -9001,9 +9171,9 @@ function EnergyCapsule() {
           <h3>彩蛋内容暂时封存中</h3>
           <p className="capsule-seal-copy">{sealCopy}</p>
           <p>抽奖次数、抽到的能量和历史记录都会自动同步。下次打开，进度不会丢。</p>
-          <div className="capsule-energy-meter" aria-label={`小星球能量 ${energy} / 520`}>
-            <div><strong>小星球能量</strong><span>{energy}/520</span></div>
-            <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} /><em style={{ left: '19.2%' }} /><em style={{ left: '50%' }} /><em style={{ left: '100%' }} /></b>
+          <div className="capsule-energy-meter" aria-label={`小星球能量 ${energy} / ${ENERGY_MAX}`}>
+            <div><strong>小星球能量</strong><span>{energy}/{ENERGY_MAX}</span></div>
+            <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} /><em style={{ left: '14.9%' }} /><em style={{ left: '68.6%' }} /><em style={{ left: '100%' }} /></b>
             <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '完成每日签到或上传当天相册照片后，会先获得抽能量次数。'}</small>
           </div>
           <div className="capsule-milestones" aria-label={`能量印章 ${reachedCount} / ${ENERGY_MILESTONES.length}`}>
@@ -9236,6 +9406,7 @@ function PlanetApp() {
       {(current === 'album' || current === 'gallery') && <PhotoWall />}
       {current === 'telescope' && <TelescopeWorkshop />}
       {current === 'backpack' && <BackpackView />}
+      {current === 'messages' && <MessageBoard />}
       {(current === 'capsule' || current === 'secret') && <EnergyCapsule />}
       {firstGuideOpen && <div className="first-run-guide-backdrop" role="presentation">
         <div className="first-run-guide-modal" role="dialog" aria-modal="true" aria-labelledby="first-run-guide-title">
@@ -9326,6 +9497,32 @@ function meetingDaysLeft(dateStr) {
 
 // 管理端可选的可爱情侣标记图案
 const MEETING_EMOJI_PRESETS = ['💗', '💕', '❤️', '🧡', '🌷', '🌸', '🍑', '🦄', '🐻', '🐰', '🍓', '🍰', '🎀', '⭐', '🌈', '🫧', '🥰', '💌']
+
+// ---- 异地留言板：本地兜底 + 时间格式化 ----
+const MESSAGE_LOCAL_KEY = 'wwcxrl-messages-local'
+
+function loadMessagesLocal() {
+  try {
+    return JSON.parse(localStorage.getItem(MESSAGE_LOCAL_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveMessagesLocal(list) {
+  localStorage.setItem(MESSAGE_LOCAL_KEY, JSON.stringify(list))
+}
+
+function formatMessageTime(iso) {
+  const date = new Date(iso)
+  if (Number.isNaN(date.getTime())) return ''
+  const yyyy = date.getFullYear()
+  const mm = String(date.getMonth() + 1).padStart(2, '0')
+  const dd = String(date.getDate()).padStart(2, '0')
+  const hh = String(date.getHours()).padStart(2, '0')
+  const mi = String(date.getMinutes()).padStart(2, '0')
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
+}
 
 // 按 Day 自动推算解锁日期：Day 300 = 2026-08-09，之后每天顺延。
 function adminDayToDate(day) {
@@ -9432,6 +9629,7 @@ function AdminTaskPage() {
   const [meetingLoaded, setMeetingLoaded] = useState(false)
   const [meetingSaving, setMeetingSaving] = useState(false)
   const [emojiOpenIndex, setEmojiOpenIndex] = useState(null)
+  const [energySaving, setEnergySaving] = useState(false)
   const todayKey = getTodayKey()
 
   // 异地见面日历：载入云端/本地已有设置
@@ -9475,6 +9673,21 @@ function AdminTaskPage() {
     setToast(result?.ok
       ? (cloudEnabled ? '见面日历已保存并同步到云端，两台设备都能看到。' : '见面日历已保存（本地模式，未连接云端）。')
       : `保存失败：${result?.error || '请稍后再试。'}（若提示表/列不存在，请在 Supabase 执行见面日历建表 SQL）`)
+  }
+
+  async function handleResetEnergyChances() {
+    if (!window.confirm('确定把剩余抽奖次数清零吗？已获得的能量和印章会保留，历史已计过的日子不会重复发放。')) return
+    setEnergySaving(true)
+    try {
+      const remote = await loadCloudDayProgress(ENERGY_PROGRESS_DAY, ENERGY_SHARED_USER_ID)
+      const current = getEnergyProgressOnly(remote?.progress || loadEnergyLocalState())
+      const cleared = await persistEnergyState({ ...current, drawChances: 0 }, 'energy_chances_reset_by_admin')
+      setToast(`剩余抽奖次数已清零（当前 ${cleared.drawChances} 次）。`)
+    } catch (error) {
+      console.warn('[wwcxrl admin] energy reset failed', error)
+      setToast('清零失败，请稍后再试。')
+    }
+    setEnergySaving(false)
   }
 
   const refresh = React.useCallback(async () => {
@@ -9943,6 +10156,16 @@ function AdminTaskPage() {
             {meetingSaving ? '保存中…' : '保存见面日历'}
           </button>
           {meetingLoaded && !meetingSaving && <small>保存后，小琳的设备下次打开彩蛋页即可看到。</small>}
+        </div>
+      </section>
+
+      <section className="admin-meeting-dates sticker-card">
+        <h2>⚡ 能量管理</h2>
+        <p className="admin-meeting-desc">如果发现剩余抽奖次数异常偏多（例如历史数据重复补发），可以一键清零；能量与印章保留，已计过的日子不会重复发放。</p>
+        <div className="admin-actions admin-meeting-actions">
+          <button type="button" className="admin-save-draft" disabled={energySaving} onClick={handleResetEnergyChances}>
+            {energySaving ? '处理中…' : '清零剩余抽奖次数'}
+          </button>
         </div>
       </section>
 

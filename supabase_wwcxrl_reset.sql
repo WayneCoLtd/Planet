@@ -263,6 +263,26 @@ create policy "wwcxrl_meeting_dates_public_update" on public.wwcxrl_meeting_date
 drop policy if exists "wwcxrl_meeting_dates_public_delete" on public.wwcxrl_meeting_dates;
 create policy "wwcxrl_meeting_dates_public_delete" on public.wwcxrl_meeting_dates for delete using (true);
 
+-- ============ 留言板（wwcxrl_messages）：异地想对对方说的话 ============
+create table if not exists public.wwcxrl_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public.wwcxrl_profiles(id) on delete cascade,
+  role text not null default 'pomelo' check (role in ('orange', 'pomelo', 'guest')),
+  display_name text not null default '',
+  content text not null default '',
+  image_url text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.wwcxrl_messages enable row level security;
+
+drop policy if exists "wwcxrl_messages_public_read" on public.wwcxrl_messages;
+create policy "wwcxrl_messages_public_read" on public.wwcxrl_messages for select using (true);
+drop policy if exists "wwcxrl_messages_public_insert" on public.wwcxrl_messages;
+create policy "wwcxrl_messages_public_insert" on public.wwcxrl_messages for insert with check (true);
+drop policy if exists "wwcxrl_messages_public_delete" on public.wwcxrl_messages;
+create policy "wwcxrl_messages_public_delete" on public.wwcxrl_messages for delete using (true);
+
 -- 已建表的老库执行下面两条即可（新库建表已包含）：
 -- alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
 -- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'letter', 'fortune', 'sticker', 'game'));

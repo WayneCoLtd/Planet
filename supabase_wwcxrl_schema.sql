@@ -247,6 +247,27 @@ create policy "wwcxrl_meeting_dates_public_delete" on public.wwcxrl_meeting_date
 -- 已上线的老库只需执行上面这一段（建表 + RLS + 策略）即可，无需重建其他表。
 -- 若此前已建过该表（单日版本），补执行：
 -- alter table public.wwcxrl_meeting_dates add column if not exists end_date text not null default '';
+
+-- ============ 留言板（wwcxrl_messages）：异地想对对方说的话 ============
+-- 支持文字 + 图片，记录发送人与时间；图片存到 wwcxrl-photos 存储桶。
+create table if not exists public.wwcxrl_messages (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null references public.wwcxrl_profiles(id) on delete cascade,
+  role text not null default 'pomelo' check (role in ('orange', 'pomelo', 'guest')),
+  display_name text not null default '',
+  content text not null default '',
+  image_url text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.wwcxrl_messages enable row level security;
+
+drop policy if exists "wwcxrl_messages_public_read" on public.wwcxrl_messages;
+create policy "wwcxrl_messages_public_read" on public.wwcxrl_messages for select using (true);
+drop policy if exists "wwcxrl_messages_public_insert" on public.wwcxrl_messages;
+create policy "wwcxrl_messages_public_insert" on public.wwcxrl_messages for insert with check (true);
+drop policy if exists "wwcxrl_messages_public_delete" on public.wwcxrl_messages;
+create policy "wwcxrl_messages_public_delete" on public.wwcxrl_messages for delete using (true);
 -- 已建表的老库执行下面两条即可（新库建表已包含）：
 -- alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
 -- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'letter', 'fortune', 'sticker', 'game'));
