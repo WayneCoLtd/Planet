@@ -8994,6 +8994,7 @@ function MessageBoard() {
           return
         }
         setMessages(prev => [saved.message, ...prev.filter(item => item.id !== saved.message.id)])
+        setStatus('已寄出，两台设备都能看到 💌')
       } else {
         const localMessage = {
           id: `local-${Date.now()}`,
