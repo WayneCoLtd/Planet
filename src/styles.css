@@ -12769,6 +12769,65 @@ html { overflow-x: hidden; }
   border: 1px dashed rgba(255, 111, 145, .32);
   box-shadow: 0 8px 18px rgba(112, 70, 36, .08);
 }
+.message-confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(60, 34, 20, .36);
+  backdrop-filter: blur(3px);
+}
+.message-confirm-modal {
+  width: min(340px, 100%);
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 26px 22px 22px;
+  border-radius: 26px;
+  text-align: center;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(255, 226, 109, .22), transparent 30%),
+    radial-gradient(circle at 90% 20%, rgba(255, 159, 189, .28), transparent 30%),
+    linear-gradient(160deg, #fffdf6, #fff0f6 55%, #edfaff);
+  border: 2px solid rgba(255, 255, 255, .92);
+  box-shadow: 0 30px 70px rgba(60, 34, 20, .35);
+}
+.message-confirm-icon {
+  font-size: 2.2rem;
+}
+.message-confirm-modal h3 {
+  margin: 0;
+  color: var(--ink);
+}
+.message-confirm-modal p {
+  margin: 0 0 8px;
+  color: var(--soft-ink);
+  font-size: .9rem;
+  line-height: 1.6;
+}
+.message-confirm-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+.message-confirm-cancel {
+  padding: 9px 18px;
+  border-radius: 999px;
+  color: var(--soft-ink);
+  background: rgba(255, 255, 255, .8);
+  box-shadow: none;
+  font-size: .9rem;
+}
+.message-confirm-ok {
+  padding: 9px 18px;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #ff8f9e, #ff5f8b);
+  box-shadow: 0 8px 18px rgba(255, 95, 139, .28);
+  font-size: .9rem;
+}
 @media (max-width: 640px) {
   .message-compose-count {
     margin-left: 0;

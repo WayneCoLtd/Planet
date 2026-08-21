@@ -8886,6 +8886,7 @@ function MessageBoard() {
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
+  const [deleteTarget, setDeleteTarget] = useState(null)
   const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
   const [senderRole, setSenderRole] = useState(() => {
     try {
@@ -8896,6 +8897,13 @@ function MessageBoard() {
   })
   const senderName = senderRole === 'orange' ? '小琛' : '小琳'
   const senderUserId = `wwcxrl-${senderRole}-main`
+
+  // 云端请求偶尔会很慢：超过 18 秒就换一条提示，避免一直卡在“正在寄出…”，但不会中断请求造成重复发送
+  function awaitWithSlowHint(promise, slowText) {
+    let settled = false
+    const timer = window.setTimeout(() => { if (!settled) setStatus(slowText) }, 18000)
+    return Promise.resolve(promise).finally(() => { settled = true; window.clearTimeout(timer) })
+  }
 
   function changeSenderRole(role) {
     setSenderRole(role)
@@ -8963,7 +8971,7 @@ function MessageBoard() {
         if (cloudEnabled) {
           let imageUrl = ''
           if (imageData?.file) {
-            const upload = await uploadMessageImage(imageData.file, senderRole)
+            const upload = await awaitWithSlowHint(uploadMessageImage(imageData.file, senderRole), '照片上传有点慢，再稍等一下…')
             if (!upload?.ok) {
               setStatus(`照片保存失败：${upload?.error || '请稍后再试。'}`)
               return
@@ -8972,7 +8980,7 @@ function MessageBoard() {
           } else if (imageData?.dataUrl) {
             imageUrl = editing.imageUrl || ''
           }
-          const res = await updateCloudMessage(editing.id, { content: text, imageUrl })
+          const res = await awaitWithSlowHint(updateCloudMessage(editing.id, { content: text, imageUrl }), '保存有点慢，如果已经改好会自动刷新…')
           if (!res?.ok) {
             setStatus(`保存失败：${res?.error || '请稍后再试。'}`)
             return
@@ -8989,14 +8997,14 @@ function MessageBoard() {
       } else if (cloudEnabled) {
         let imageUrl = ''
         if (imageData?.file) {
-          const upload = await uploadMessageImage(imageData.file, senderRole)
+          const upload = await awaitWithSlowHint(uploadMessageImage(imageData.file, senderRole), '照片上传有点慢，再稍等一下…')
           if (!upload?.ok) {
             setStatus(`照片寄出失败：${upload?.error || '请稍后再试。'}`)
             return
           }
           imageUrl = upload.url
         }
-        const saved = await saveCloudMessage({ content: text, imageUrl }, { role: senderRole, userId: senderUserId, displayName: senderName })
+        const saved = await awaitWithSlowHint(saveCloudMessage({ content: text, imageUrl }, { role: senderRole, userId: senderUserId, displayName: senderName }), '寄出有点慢，如果列表里已经出现，说明成功了，稍后会自动刷新。')
         if (!saved?.ok) {
           setStatus(`寄出失败：${saved?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行留言板建表 SQL）`)
           return
@@ -9105,7 +9113,7 @@ function MessageBoard() {
               {(message.userId === senderUserId || !cloudEnabled) && (
                 <>
                   <button type="button" className="message-edit" onClick={() => startEdit(message)} aria-label="编辑这条留言">✏️</button>
-                  <button type="button" className="message-delete" onClick={() => removeMessage(message)} aria-label="删除这条留言">🗑</button>
+                  <button type="button" className="message-delete" onClick={() => setDeleteTarget(message)} aria-label="删除这条留言">🗑</button>
                 </>
               )}
             </header>
@@ -9118,6 +9126,20 @@ function MessageBoard() {
           </article>
         ))}
       </div>
+
+      {deleteTarget && (
+        <div className="message-confirm-backdrop" role="presentation" onClick={() => setDeleteTarget(null)}>
+          <div className="message-confirm-modal sticker-card" role="alertdialog" aria-modal="true" aria-labelledby="message-confirm-title" onClick={event => event.stopPropagation()}>
+            <span className="message-confirm-icon">🗑</span>
+            <h3 id="message-confirm-title">删除这条留言？</h3>
+            <p>删掉之后就没有啦，确定要删除吗？</p>
+            <div className="message-confirm-actions">
+              <button type="button" className="message-confirm-cancel" onClick={() => setDeleteTarget(null)}>再想想</button>
+              <button type="button" className="message-confirm-ok" onClick={() => { removeMessage(deleteTarget); setDeleteTarget(null) }}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   )
 }
