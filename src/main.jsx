@@ -1042,7 +1042,7 @@ function Nav({ current, setCurrent }) {
     ['album', '相册', '📷'],
     ...(observatoryNavOpen ? [['telescope', '星空观测站', '🔭']] : []),
     ['backpack', '小背包', '🎒'],
-    ['messages', '留言板', '💬'],
+    ['messages', '小信箱', '💬'],
     ['capsule', '彩蛋', '🎁']
   ]
   return (
@@ -8878,8 +8878,20 @@ function MessageBoard() {
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState('')
   const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
-  const myRole = identity?.role || 'pomelo'
-  const myName = identity?.displayName || (myRole === 'orange' ? '小琛' : '小琳')
+  const [senderRole, setSenderRole] = useState(() => {
+    try {
+      return localStorage.getItem('wwcxrl-message-sender-role') || identity?.role || 'pomelo'
+    } catch {
+      return 'pomelo'
+    }
+  })
+  const senderName = senderRole === 'orange' ? '小琛' : '小琳'
+  const senderUserId = `wwcxrl-${senderRole}-main`
+
+  function changeSenderRole(role) {
+    setSenderRole(role)
+    try { localStorage.setItem('wwcxrl-message-sender-role', role) } catch {}
+  }
 
   const refresh = React.useCallback(() => {
     if (cloudEnabled) {
@@ -8926,14 +8938,14 @@ function MessageBoard() {
       if (cloudEnabled) {
         let imageUrl = ''
         if (imageData?.file) {
-          const upload = await uploadMessageImage(imageData.file)
+          const upload = await uploadMessageImage(imageData.file, senderRole)
           if (!upload?.ok) {
             setStatus(`照片寄出失败：${upload?.error || '请稍后再试。'}`)
             return
           }
           imageUrl = upload.url
         }
-        const saved = await saveCloudMessage({ content: text, imageUrl })
+        const saved = await saveCloudMessage({ content: text, imageUrl }, { role: senderRole, userId: senderUserId, displayName: senderName })
         if (!saved?.ok) {
           setStatus(`寄出失败：${saved?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行留言板建表 SQL）`)
           return
@@ -8942,9 +8954,9 @@ function MessageBoard() {
       } else {
         const localMessage = {
           id: `local-${Date.now()}`,
-          userId: identity?.id || 'local',
-          role: myRole,
-          displayName: myName,
+          userId: senderUserId,
+          role: senderRole,
+          displayName: senderName,
           content: text,
           imageUrl: imageData?.dataUrl || '',
           createdAt: new Date().toISOString()
@@ -8965,7 +8977,7 @@ function MessageBoard() {
   }
 
   async function removeMessage(message) {
-    const mine = message.userId === identity?.id || !cloudEnabled
+    const mine = message.userId === senderUserId || !cloudEnabled
     if (!mine) return
     if (cloudEnabled) {
       const ok = await deleteCloudMessage(message.id)
@@ -8980,12 +8992,19 @@ function MessageBoard() {
   return (
     <section className="content-section message-board-section">
       <header className="section-heading playful-heading">
-        <span>Message Board</span>
-        <h2>💬 异地留言板</h2>
-        <p>异地的时候，想说的话、怕打扰到你的思念，都写在这里。等你有空了打开，就能看见。</p>
+        <span>Little Mailbox</span>
+        <h2>💌 小信箱</h2>
+        <p>想说的话、开心或是烦恼、怕打扰到你的思念，都写在这里。等你有空了打开，就能看见。</p>
       </header>
 
       <div className="message-compose sticker-card">
+        <div className="message-sender-row">
+          <span className="message-sender-label">我是</span>
+          <div className="message-sender-toggle" role="group" aria-label="发送身份">
+            <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🍊 小琛</button>
+            <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🍑 小琳</button>
+          </div>
+        </div>
         <textarea
           value={content}
           onChange={event => setContent(event.target.value)}
@@ -9022,12 +9041,16 @@ function MessageBoard() {
               <span className="message-avatar">{message.role === 'orange' ? '🍊' : '🍑'}</span>
               <strong>{message.displayName || (message.role === 'orange' ? '小琛' : '小琳')}</strong>
               <time>{formatMessageTime(message.createdAt)}</time>
-              {(message.userId === identity?.id || !cloudEnabled) && (
+              {(message.userId === senderUserId || !cloudEnabled) && (
                 <button type="button" className="message-delete" onClick={() => removeMessage(message)} aria-label="删除这条留言">🗑</button>
               )}
             </header>
-            {message.content && <p className="message-content">{message.content}</p>}
-            {message.imageUrl && <img className="message-image" src={message.imageUrl} alt="留言图片" loading="lazy" />}
+            {(message.content || message.imageUrl) && (
+              <div className={`message-body ${message.content && message.imageUrl ? 'has-both' : ''}`}>
+                {message.imageUrl && <img className="message-image" src={message.imageUrl} alt="留言图片" loading="lazy" />}
+                {message.content && <p className="message-content">{message.content}</p>}
+              </div>
+            )}
           </article>
         ))}
       </div>

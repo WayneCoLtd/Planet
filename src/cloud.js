@@ -593,16 +593,19 @@ export async function loadCloudMessages() {
   }
 }
 
-export async function saveCloudMessage({ content = '', imageUrl = '' }) {
+export async function saveCloudMessage({ content = '', imageUrl = '' }, sender = null) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return { ok: false, error: '未连接云端' }
+    const role = sender?.role || identity.role
+    const userId = sender?.userId || identity.id
+    const displayName = sender?.displayName || identity.displayName
     const { data, error } = await supabase
       .from('wwcxrl_messages')
       .insert({
-        user_id: identity.id,
-        role: identity.role,
-        display_name: String(identity.displayName || ''),
+        user_id: userId,
+        role,
+        display_name: String(displayName || ''),
         content: String(content || '').trim(),
         image_url: String(imageUrl || '')
       })
@@ -635,14 +638,14 @@ export async function deleteCloudMessage(id) {
   }
 }
 
-export async function uploadMessageImage(file) {
+export async function uploadMessageImage(file, role = null) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return { ok: false, error: '未连接云端' }
     const dataUrl = await resizeImageFile(file)
     const blob = dataUrlToBlob(dataUrl)
     const safeName = String(file.name || 'message.jpg').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-40)
-    const path = `message-images/${identity.role}-${Date.now()}-${safeName}.jpg`
+    const path = `message-images/${role || identity.role}-${Date.now()}-${safeName}.jpg`
     const { error: uploadError } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
       contentType: 'image/jpeg',
       upsert: true
