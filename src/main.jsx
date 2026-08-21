@@ -37,7 +37,7 @@ const ADMIN_TASK_TYPES = [
   { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
   { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
   { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
-  { id: 'game', label: '小游戏', hint: '选择一款内置小游戏（迷宫/接爱心/戳泡泡/翻牌/拼图/三消/喂食/打地鼠/樱花拼图，以及鱼了个鱼/人生重开模拟器/五子棋/换装/矿工/气球/馅饼/砌砖/贪吃蛇/笑脸/弹力球等嵌入小游戏），玩完即可签到' }
+  { id: 'game', label: '小游戏', hint: '选择一款内置小游戏（迷宫/接爱心/戳泡泡/翻牌/拼图/三消/喂食/打地鼠/成语填空/星星记忆/井字棋/4×4数独/樱花拼图，以及鱼了个鱼/人生重开模拟器/五子棋/换装/矿工/气球/馅饼/砌砖/贪吃蛇/笑脸/弹力球等嵌入小游戏），玩完即可签到' }
 ]
 
 const ADMIN_SECTIONS = [
@@ -4933,6 +4933,54 @@ const MINI_GAMES = [
     ]
   },
   {
+    id: 'idiomFill',
+    label: '成语填空',
+    icon: '📖',
+    hint: '补上成语里缺的那个字，答对几题即可完成签到',
+    defaults: { rounds: 3 },
+    fields: [
+      { key: 'rounds', label: '需要答对几题', type: 'select', options: [
+        { value: '3', label: '3 题' },
+        { value: '5', label: '5 题' }
+      ] }
+    ]
+  },
+  {
+    id: 'starMemory',
+    label: '星星记忆',
+    icon: '🌟',
+    hint: '记住小星星亮起的顺序并按顺序点亮，闯过几轮即可完成签到',
+    defaults: { rounds: 4 },
+    fields: [
+      { key: 'rounds', label: '需要闯过几轮', type: 'select', options: [
+        { value: '3', label: '3 轮' },
+        { value: '4', label: '4 轮' },
+        { value: '5', label: '5 轮' }
+      ] }
+    ]
+  },
+  {
+    id: 'ticTacToe',
+    label: '井字棋·星空对战',
+    icon: '🎯',
+    hint: '和月亮下一盘井字棋，赢或平局都能完成签到',
+    defaults: {},
+    fields: []
+  },
+  {
+    id: 'sudokuMini',
+    label: '4×4 数独',
+    icon: '🔢',
+    hint: '把 1-4 填进空格，让每行每列每个小方块都不重复，填完即可完成签到',
+    defaults: { difficulty: 'easy' },
+    fields: [
+      { key: 'difficulty', label: '难度', type: 'select', options: [
+        { value: 'easy', label: '轻松（空格少）' },
+        { value: 'normal', label: '普通（空格多）' }
+      ] }
+    ]
+  },
+  {
     id: 'yulegeyu',
     label: '鱼了个鱼·羊了个羊',
     icon: '🐟',
@@ -6057,6 +6105,309 @@ function WhackAMoleGame({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
+// ---- 小游戏：成语填空 ----
+const IDIOM_QUESTIONS = [
+  { text: '一心一__', answer: '意', options: ['意', '爱', '念', '心'] },
+  { text: '别__生面', answer: '开', options: ['开', '出', '创', '展'] },
+  { text: '画蛇添__', answer: '足', options: ['足', '脚', '尾', '爪'] },
+  { text: '对牛弹__', answer: '琴', options: ['琴', '曲', '歌', '弦'] },
+  { text: '望梅止__', answer: '渴', options: ['渴', '饿', '馋', '酸'] },
+  { text: '亡羊补__', answer: '牢', options: ['牢', '圈', '栏', '笼'] },
+  { text: '守株待__', answer: '兔', options: ['兔', '猫', '鸟', '犬'] },
+  { text: '掩耳盗__', answer: '铃', options: ['铃', '钟', '锣', '鼓'] },
+  { text: '一石二__', answer: '鸟', options: ['鸟', '雕', '雀', '鹅'] },
+  { text: '胸有成__', answer: '竹', options: ['竹', '略', '谋', '局'] }
+]
+
+function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
+  const target = clampNumber(item.gameConfig?.rounds, 2, 6, 3)
+  const [questions] = React.useState(() => shuffleArray(IDIOM_QUESTIONS).slice(0, target))
+  const [round, setRound] = React.useState(0)
+  const [wrong, setWrong] = React.useState(false)
+  const [done, setDone] = React.useState(taskCompleted)
+  const current = questions[round]
+
+  function choose(option) {
+    if (done || !current) return
+    if (option === current.answer) {
+      if (round + 1 >= questions.length) {
+        setDone(true)
+        onTaskComplete(item.day)
+      } else {
+        setRound(value => value + 1)
+      }
+      setWrong(false)
+    } else {
+      setWrong(true)
+    }
+  }
+
+  return (
+    <div className="mini-game idiom-game">
+      <p className="idiom-hint">补上成语里缺的那个字，连对 {target} 题就算闯关成功！</p>
+      <div className="idiom-progress">第 <strong>{Math.min(round + 1, questions.length)}</strong> / {questions.length} 题</div>
+      {!done && current && (
+        <>
+          <div className="idiom-question" key={current.text}>{current.text}</div>
+          <div className="idiom-options">
+            {shuffleArray(current.options).map(option => (
+              <button key={option} type="button" className="idiom-option" onClick={() => choose(option)}>{option}</button>
+            ))}
+          </div>
+          {wrong && <p className="idiom-wrong">差一点点，再想想这个成语～</p>}
+        </>
+      )}
+      {done && <div className="game-done-panel"><p>{item.secret || '成语都接上啦，今天的签到可以点亮了！'}</p></div>}
+    </div>
+  )
+}
+
+// ---- 小游戏：星星记忆 ----
+const STAR_MEMORY_ICONS = ['🌟', '🌙', '🍀', '🐰']
+
+function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
+  const target = clampNumber(item.gameConfig?.rounds, 3, 6, 4)
+  const [seq, setSeq] = React.useState(() => [Math.floor(Math.random() * STAR_MEMORY_ICONS.length)])
+  const [round, setRound] = React.useState(1)
+  const [playing, setPlaying] = React.useState(true)
+  const [flash, setFlash] = React.useState(-1)
+  const [inputStep, setInputStep] = React.useState(0)
+  const [wrong, setWrong] = React.useState(false)
+  const [done, setDone] = React.useState(taskCompleted)
+  const timersRef = React.useRef([])
+  const aliveRef = React.useRef(true)
+
+  React.useEffect(() => {
+    aliveRef.current = true
+    return () => {
+      aliveRef.current = false
+      timersRef.current.forEach(window.clearTimeout)
+    }
+  }, [])
+
+  function playSequence(nextSeq) {
+    timersRef.current.forEach(window.clearTimeout)
+    timersRef.current = []
+    setPlaying(true)
+    setInputStep(0)
+    setWrong(false)
+    let i = 0
+    const tick = () => {
+      if (!aliveRef.current) return
+      setFlash(nextSeq[i])
+      timersRef.current.push(window.setTimeout(() => {
+        if (!aliveRef.current) return
+        setFlash(-1)
+        i += 1
+        if (i < nextSeq.length) {
+          timersRef.current.push(window.setTimeout(tick, 320))
+        } else {
+          setPlaying(false)
+        }
+      }, 540))
+    }
+    timersRef.current.push(window.setTimeout(tick, 700))
+  }
+
+  React.useEffect(() => {
+    playSequence(seq)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  function press(index) {
+    if (playing || done) return
+    setFlash(index)
+    timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) setFlash(-1) }, 260))
+    if (index === seq[inputStep]) {
+      const nextStep = inputStep + 1
+      if (nextStep >= seq.length) {
+        if (round >= target) {
+          setDone(true)
+          onTaskComplete(item.day)
+        } else {
+          const nextSeq = [...seq, Math.floor(Math.random() * STAR_MEMORY_ICONS.length)]
+          setSeq(nextSeq)
+          setRound(value => value + 1)
+          playSequence(nextSeq)
+        }
+      } else {
+        setInputStep(nextStep)
+      }
+    } else {
+      setWrong(true)
+      timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) { setWrong(false); playSequence(seq) } }, 800))
+    }
+  }
+
+  return (
+    <div className="mini-game star-memory-game">
+      <p className="star-memory-hint">先看小星星亮起的顺序，再按顺序点亮它们～</p>
+      <div className="star-memory-progress">第 <strong>{Math.min(round, target)}</strong> / {target} 轮{playing ? ' · 正在播放' : ' · 轮到你了'}</div>
+      <div className="star-memory-board">
+        {STAR_MEMORY_ICONS.map((icon, index) => (
+          <button
+            key={icon}
+            type="button"
+            className={`star-memory-cell ${flash === index ? 'is-lit' : ''} ${wrong && flash === index ? 'is-wrong' : ''}`}
+            onClick={() => press(index)}
+            disabled={playing || done}
+            aria-label={`第 ${index + 1} 颗星`}
+          >{icon}</button>
+        ))}
+      </div>
+      {wrong && <p className="star-memory-wrong">顺序记岔啦，再看一次～</p>}
+      {done && <div className="game-done-panel"><p>{item.secret || '小星星都被你记住啦，可以签到啦！'}</p></div>}
+    </div>
+  )
+}
+
+// ---- 小游戏：井字棋·星空对战 ----
+function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
+  const [board, setBoard] = React.useState(Array(9).fill(null))
+  const [busy, setBusy] = React.useState(false)
+  const [result, setResult] = React.useState(null)
+  const [done, setDone] = React.useState(taskCompleted)
+  const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]]
+
+  function winnerOf(b) {
+    for (const [a, c, d] of lines) {
+      if (b[a] && b[a] === b[c] && b[a] === b[d]) return b[a]
+    }
+    return null
+  }
+
+  function finish(b) {
+    const w = winnerOf(b)
+    const isDraw = !w && b.every(Boolean)
+    if (w === 'star') setResult('win')
+    else if (w === 'moon') setResult('lose')
+    else if (isDraw) setResult('draw')
+    if (w || isDraw) {
+      setDone(true)
+      onTaskComplete(item.day)
+    }
+  }
+
+  function aiMove(b) {
+    const empty = b.map((value, index) => (value ? -1 : index)).filter(index => index >= 0)
+    const findWin = mark => {
+      for (const index of empty) {
+        const next = [...b]
+        next[index] = mark
+        if (winnerOf(next) === mark) return index
+      }
+      return -1
+    }
+    let move = findWin('moon')
+    if (move >= 0) return move
+    move = findWin('star')
+    if (move >= 0) return move
+    if (b[4] === null) return 4
+    const corners = [0, 2, 6, 8].filter(index => b[index] === null)
+    if (corners.length) return corners[Math.floor(Math.random() * corners.length)]
+    return empty[Math.floor(Math.random() * empty.length)]
+  }
+
+  function play(index) {
+    if (board[index] || busy || done) return
+    const next = [...board]
+    next[index] = 'star'
+    setBoard(next)
+    if (winnerOf(next) || next.every(Boolean)) {
+      finish(next)
+      return
+    }
+    setBusy(true)
+    window.setTimeout(() => {
+      const move = aiMove(next)
+      const after = [...next]
+      after[move] = 'moon'
+      setBoard(after)
+      setBusy(false)
+      finish(after)
+    }, 480)
+  }
+
+  const resultText = result === 'win' ? '你赢啦！' : result === 'draw' ? '和月亮打了个平手！' : result === 'lose' ? '月亮抢先一步～' : ''
+
+  return (
+    <div className="mini-game tictactoe-game">
+      <p className="tictactoe-hint">你是 🌟，月亮是 🌙，三颗连成一线就赢啦（平局也算通关）</p>
+      <div className="tictactoe-board">
+        {board.map((cell, index) => (
+          <button key={index} type="button" className="tictactoe-cell" onClick={() => play(index)} disabled={!!cell || busy || done} aria-label={`第 ${index + 1} 格`}>
+            {cell === 'star' ? '🌟' : cell === 'moon' ? '🌙' : ''}
+          </button>
+        ))}
+      </div>
+      {done && <div className="game-done-panel"><p>{item.secret || `${resultText} 这盘棋下完啦，可以签到！`}</p></div>}
+    </div>
+  )
+}
+
+// ---- 小游戏：4×4 数独 ----
+const SUDOKU_BASE = [1, 2, 3, 4, 3, 4, 1, 2, 2, 1, 4, 3, 4, 3, 2, 1]
+const SUDOKU_PUZZLES = {
+  easy: [
+    [1, 0, 3, 4, 3, 4, 0, 2, 0, 1, 4, 3, 4, 3, 2, 0],
+    [0, 2, 3, 4, 3, 4, 1, 0, 2, 1, 0, 3, 4, 3, 2, 1]
+  ],
+  normal: [
+    [0, 2, 0, 4, 0, 4, 1, 2, 2, 0, 4, 0, 4, 3, 0, 1],
+    [1, 0, 0, 0, 3, 4, 1, 2, 2, 1, 0, 3, 0, 3, 2, 1]
+  ]
+}
+
+function SudokuMiniGame({ item, taskCompleted, onTaskComplete }) {
+  const difficulty = item.gameConfig?.difficulty === 'normal' ? 'normal' : 'easy'
+  const [puzzle] = React.useState(() => SUDOKU_PUZZLES[difficulty][Math.floor(Math.random() * SUDOKU_PUZZLES[difficulty].length)])
+  const [board, setBoard] = React.useState(() => [...puzzle])
+  const [selected, setSelected] = React.useState(-1)
+  const [wrong, setWrong] = React.useState(false)
+  const [done, setDone] = React.useState(taskCompleted)
+
+  function pickNumber(number) {
+    if (selected < 0 || done) return
+    if (SUDOKU_BASE[selected] !== number) {
+      setWrong(true)
+      window.setTimeout(() => setWrong(false), 550)
+      return
+    }
+    const next = [...board]
+    next[selected] = number
+    setBoard(next)
+    if (next.every((value, index) => value === SUDOKU_BASE[index])) {
+      setDone(true)
+      onTaskComplete(item.day)
+    }
+  }
+
+  return (
+    <div className="mini-game sudoku-game">
+      <p className="sudoku-hint">先点一个空格，再选数字 1-4，让每行每列每个小方块都不重复</p>
+      <div className="sudoku-board">
+        {board.map((value, index) => (
+          <button
+            key={index}
+            type="button"
+            className={`sudoku-cell ${selected === index ? 'is-selected' : ''} ${puzzle[index] === 0 ? 'is-blank' : 'is-given'}`}
+            onClick={() => { if (puzzle[index] === 0 && !done) setSelected(index) }}
+            disabled={done}
+            aria-label={`第 ${index + 1} 格`}
+          >{value || ''}</button>
+        ))}
+      </div>
+      <div className="sudoku-pad">
+        {[1, 2, 3, 4].map(number => (
+          <button key={number} type="button" className="sudoku-number" onClick={() => pickNumber(number)} disabled={done}>{number}</button>
+        ))}
+      </div>
+      {wrong && <p className="sudoku-wrong">这个数字不对哦，再想想～</p>}
+      {done && <div className="game-done-panel"><p>{item.secret || '数独填好啦，可以签到啦！'}</p></div>}
+    </div>
+  )
+}
+
 // ---- 小游戏 8：外部嵌入小游戏（玩满秒数即可签到） ----
 function EmbeddedGame({ item, taskCompleted, onTaskComplete, source = '', title = '', aspect = 0 }) {
   const seconds = clampNumber(item.gameConfig?.seconds, 10, 300, 150)
@@ -6752,6 +7103,10 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     if (gameId === 'matchThree') return <MatchThreeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
     if (gameId === 'feedDog') return <FeedDogGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
     if (gameId === 'whackAMole') return <WhackAMoleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'idiomFill') return <IdiomFillGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'starMemory') return <StarMemoryGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'ticTacToe') return <TicTacToeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'sudokuMini') return <SudokuMiniGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
     const embeddedGame = EMBEDDED_GAME_SOURCES[gameId]
     if (embeddedGame) return <EmbeddedGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} source={embeddedGame.source} title={embeddedGame.title} aspect={embeddedGame.aspect} />
     if (gameId === 'sakuraPuzzle') return <SakuraPuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />

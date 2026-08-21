@@ -12533,6 +12533,181 @@ html { overflow-x: hidden; }
   }
 }
 
+/* ===== 新内置小游戏：成语填空 / 星星记忆 / 井字棋 / 4×4 数独 ===== */
+.idiom-game,
+.star-memory-game,
+.tictactoe-game,
+.sudoku-game {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .72), rgba(255, 240, 246, .6));
+  border: 2px dashed rgba(255, 159, 189, .3);
+}
+.idiom-hint,
+.star-memory-hint,
+.tictactoe-hint,
+.sudoku-hint {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: .92rem;
+  line-height: 1.7;
+  text-align: center;
+}
+.idiom-progress,
+.star-memory-progress {
+  color: var(--soft-ink);
+  font-size: .86rem;
+}
+.idiom-progress strong,
+.star-memory-progress strong {
+  color: var(--rose);
+}
+.idiom-question {
+  font-size: clamp(1.6rem, 4vw, 2.2rem);
+  letter-spacing: .18em;
+  color: var(--ink);
+  font-weight: 900;
+}
+.idiom-options {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.idiom-option {
+  min-width: 56px;
+  padding: 10px 16px;
+  border-radius: 14px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  box-shadow: 0 8px 16px rgba(255, 111, 145, .14);
+  font-size: 1.15rem;
+}
+.idiom-wrong,
+.star-memory-wrong,
+.sudoku-wrong {
+  margin: 0;
+  color: #d94b56;
+  font-size: .9rem;
+}
+.star-memory-board {
+  display: grid;
+  grid-template-columns: repeat(4, 64px);
+  gap: 10px;
+}
+.star-memory-cell {
+  width: 64px;
+  height: 64px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .8);
+  border: 2px solid rgba(155, 217, 255, .45);
+  box-shadow: none;
+  font-size: 1.8rem;
+  transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+}
+.star-memory-cell.is-lit {
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2 60%, #bdeaff);
+  box-shadow: 0 0 0 4px rgba(255, 159, 189, .25), 0 10px 22px rgba(255, 111, 145, .28);
+  transform: scale(1.08);
+}
+.star-memory-cell.is-wrong {
+  animation: starMemoryShake .4s ease-in-out;
+}
+@keyframes starMemoryShake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-5px); }
+  75% { transform: translateX(5px); }
+}
+.tictactoe-board {
+  display: grid;
+  grid-template-columns: repeat(3, 84px);
+  gap: 8px;
+}
+.tictactoe-cell {
+  width: 84px;
+  height: 84px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .85);
+  border: 2px solid rgba(185, 167, 255, .4);
+  box-shadow: none;
+  font-size: 2rem;
+}
+.sudoku-board {
+  display: grid;
+  grid-template-columns: repeat(4, 58px);
+  gap: 6px;
+}
+.sudoku-cell {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .88);
+  border: 2px solid rgba(155, 217, 255, .4);
+  box-shadow: none;
+  font-size: 1.3rem;
+}
+.sudoku-cell.is-given {
+  color: var(--ink);
+  background: linear-gradient(135deg, #fff7dd, #ffe8ee);
+}
+.sudoku-cell.is-blank {
+  color: var(--rose);
+}
+.sudoku-cell.is-selected {
+  box-shadow: 0 0 0 3px rgba(255, 159, 189, .4);
+  transform: scale(1.05);
+}
+.sudoku-pad {
+  display: flex;
+  gap: 10px;
+}
+.sudoku-number {
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border-radius: 12px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  box-shadow: 0 6px 12px rgba(255, 111, 145, .14);
+  font-size: 1.15rem;
+}
+@media (max-width: 560px) {
+  .star-memory-board {
+    grid-template-columns: repeat(4, 56px);
+  }
+  .star-memory-cell {
+    width: 56px;
+    height: 56px;
+  }
+  .tictactoe-board {
+    grid-template-columns: repeat(3, 72px);
+  }
+  .tictactoe-cell {
+    width: 72px;
+    height: 72px;
+  }
+  .sudoku-board {
+    grid-template-columns: repeat(4, 52px);
+  }
+  .sudoku-cell {
+    width: 52px;
+    height: 52px;
+  }
+}
+
 /* ===== 异地留言板 ===== */
 .message-board-section {
   display: grid;
