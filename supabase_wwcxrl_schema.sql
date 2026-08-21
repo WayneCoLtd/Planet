@@ -252,7 +252,7 @@ create policy "wwcxrl_meeting_dates_public_delete" on public.wwcxrl_meeting_date
 -- 支持文字 + 图片，记录发送人与时间；图片存到 wwcxrl-photos 存储桶。
 create table if not exists public.wwcxrl_messages (
   id uuid primary key default gen_random_uuid(),
-  user_id text not null references public.wwcxrl_profiles(id) on delete cascade,
+  user_id text not null,
   role text not null default 'pomelo' check (role in ('orange', 'pomelo', 'guest')),
   display_name text not null default '',
   content text not null default '',
@@ -268,6 +268,8 @@ drop policy if exists "wwcxrl_messages_public_insert" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_insert" on public.wwcxrl_messages for insert with check (true);
 drop policy if exists "wwcxrl_messages_public_delete" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_delete" on public.wwcxrl_messages for delete using (true);
+-- 已上线的老库补执行（去掉对 profiles 的外键依赖，发送方不再要求档案存在）：
+-- alter table public.wwcxrl_messages drop constraint if exists wwcxrl_messages_user_id_fkey;
 
 -- ============ 更新日志（wwcxrl_changelog）：管理端可编辑 ============
 create table if not exists public.wwcxrl_changelog (

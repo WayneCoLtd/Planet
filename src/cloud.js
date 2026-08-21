@@ -600,17 +600,6 @@ export async function saveCloudMessage({ content = '', imageUrl = '' }, sender =
     const role = sender?.role || identity.role
     const userId = sender?.userId || identity.id
     const displayName = sender?.displayName || identity.displayName
-    // 若发送方档案在云端还不存在（例如小琛的档案从未创建过），先补建，避免外键报错
-    if (sender) {
-      const { error: profileError } = await supabase.from('wwcxrl_profiles').upsert({
-        id: userId,
-        display_name: String(displayName || (role === 'orange' ? '小琛' : '小琳')),
-        role: role === 'orange' || role === 'pomelo' ? role : 'guest',
-        device_label: 'message-board',
-        last_seen_at: new Date().toISOString()
-      }, { onConflict: 'id' })
-      if (profileError) console.warn('[wwcxrl cloud] message sender profile upsert failed', profileError.message)
-    }
     const { data, error } = await supabase
       .from('wwcxrl_messages')
       .insert({
