@@ -40,6 +40,14 @@ const ADMIN_TASK_TYPES = [
   { id: 'game', label: '小游戏', hint: '选择一款内置小游戏（迷宫/接爱心/戳泡泡/翻牌/拼图/三消/喂食/打地鼠/樱花拼图，以及鱼了个鱼/人生重开模拟器/五子棋/换装/矿工/气球/馅饼/砌砖/贪吃蛇/笑脸/弹力球等嵌入小游戏），玩完即可签到' }
 ]
 
+const ADMIN_SECTIONS = [
+  { id: 'form', icon: '✏️', label: '布置任务' },
+  { id: 'tasks', icon: '📋', label: '任务列表' },
+  { id: 'meeting', icon: '💌', label: '见面日历' },
+  { id: 'energy', icon: '⚡', label: '能量管理' },
+  { id: 'changelog', icon: '📜', label: '更新日志' }
+]
+
 // 云端任务优先、代码 dailyAdventures 兜底的合并任务列表（按 day 去重排序）。
 let mergedDailyAdventures = null
 
@@ -9801,6 +9809,7 @@ function AdminTaskPage() {
   const [energySaving, setEnergySaving] = useState(false)
   const [changelogDraft, setChangelogDraft] = useState([])
   const [changelogSaving, setChangelogSaving] = useState(false)
+  const [adminSection, setAdminSection] = useState('form')
   const todayKey = getTodayKey()
 
   // 异地见面日历：载入云端/本地已有设置
@@ -10062,6 +10071,7 @@ function AdminTaskPage() {
   }
 
   function editTask(row) {
+    setAdminSection('form')
     setEditingDay(row.day)
     setDraft({
       day: row.day,
@@ -10118,27 +10128,41 @@ function AdminTaskPage() {
 
   return (
     <main className="admin-page">
-      <header className="admin-header">
-        <div>
-          <h1>🍊 小星球任务管理</h1>
-          <p>发布后她打开网站即可看到；任务按日期自动解锁，不用重新部署。</p>
-        </div>
-        <div className="admin-header-right">
-          {cloudEnabled
-            ? <span className="admin-cloud-note is-cloud">☁️ 云端已连接</span>
-            : <span className="admin-cloud-note">本地预览模式</span>}
-          <a className="admin-preview-link" href="/?planet=1&preview=1" target="_blank" rel="noreferrer">👀 打开站点预览</a>
-          <button type="button" className="admin-logout" onClick={() => { sessionStorage.removeItem('wwcxrl-admin-ok'); setOk(false) }}>退出管理</button>
-        </div>
-        <nav className="admin-quicknav" aria-label="管理端快捷入口">
-          <a href="#admin-task-form">✏️ 布置任务</a>
-          <a href="#admin-task-list">📋 任务列表</a>
-          <a href="#admin-meeting">💌 见面日历</a>
-          <a href="#admin-energy">⚡ 能量</a>
-          <a href="#admin-changelog">📜 更新日志</a>
-        </nav>
-      </header>
-
+      <div className="admin-layout">
+        <aside className="admin-sidebar">
+          <div className="admin-sidebar-brand">
+            <strong>🍊 琛琳星球</strong>
+            <small>管理端</small>
+          </div>
+          <div className="admin-sidebar-status">
+            {cloudEnabled
+              ? <span className="admin-cloud-note is-cloud">☁️ 云端已连接</span>
+              : <span className="admin-cloud-note">本地预览模式</span>}
+          </div>
+          <nav className="admin-sidebar-nav" aria-label="管理端导航">
+            {ADMIN_SECTIONS.map(section => (
+              <button
+                key={section.id}
+                type="button"
+                className={adminSection === section.id ? 'is-active' : ''}
+                onClick={() => setAdminSection(section.id)}
+              >
+                <span>{section.icon}</span>
+                {section.label}
+              </button>
+            ))}
+          </nav>
+          <div className="admin-sidebar-foot">
+            <a className="admin-preview-link" href="/?planet=1&preview=1" target="_blank" rel="noreferrer">👀 打开站点预览</a>
+            <button type="button" className="admin-logout" onClick={() => { sessionStorage.removeItem('wwcxrl-admin-ok'); setOk(false) }}>退出管理</button>
+          </div>
+        </aside>
+        <div className="admin-main">
+          <div className="admin-main-head">
+            <h1>🍊 小星球任务管理</h1>
+            <p>发布后她打开网站即可看到；任务按日期自动解锁，不用重新部署。</p>
+          </div>
+          {adminSection === 'form' && (<>
       <section id="admin-task-form" className="admin-task-form sticker-card">
         <h2>{editingDay ? `编辑 Day ${editingDay}` : '新建任务'}</h2>
         <div className="admin-form-grid">
@@ -10146,7 +10170,11 @@ function AdminTaskPage() {
             <input type="number" min="1" max="999" value={draft.day} onChange={event => {
               const day = Number(event.target.value)
               const next = { ...draft, day }
-              if (dateAuto) next.date = adminDayToDate(day)
+              // 天数改动后日期始终自动回正（删删减减也不会错位）
+              if (Number.isFinite(day) && day >= 1) {
+                next.date = adminDayToDate(day)
+                setDateAuto(true)
+              }
               setDraft(next)
               setMissingFields([])
             }} />
@@ -10271,8 +10299,13 @@ function AdminTaskPage() {
         </div>
       </section>
 
+          </>)}
+          {adminSection === 'tasks' && (
       <section id="admin-task-list" className="admin-task-list sticker-card">
-        <h2>任务列表（{allRows.length}）</h2>
+        <div className="admin-section-head">
+          <h2>任务列表（{allRows.length}）</h2>
+          <button type="button" className="admin-meeting-add" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day)))); setDateAuto(true); setAdminSection('form') }}>＋ 新建任务</button>
+        </div>
         {loading ? <p>加载中…</p> : allRows.length === 0 ? <p>还没有任务。</p> : (
           <div className="admin-table-wrap">
             <table className="admin-task-table">
@@ -10299,6 +10332,8 @@ function AdminTaskPage() {
         )}
       </section>
 
+          )}
+          {adminSection === 'meeting' && (
       <section id="admin-meeting" className="admin-meeting-dates sticker-card">
         <h2>💌 异地见面日历</h2>
         <p className="admin-meeting-desc">设置下次见面的日子，以及过去已经见面的浪漫时间段。小琳打开彩蛋页就能看到倒计时和带标记的小日历。</p>
@@ -10375,6 +10410,8 @@ function AdminTaskPage() {
         </div>
       </section>
 
+          )}
+          {adminSection === 'energy' && (
       <section id="admin-energy" className="admin-meeting-dates sticker-card">
         <h2>⚡ 能量管理</h2>
         <p className="admin-meeting-desc">如果发现剩余抽奖次数异常偏多（例如历史数据重复补发），可以一键清零；能量与印章保留，已计过的日子不会重复发放。</p>
@@ -10385,6 +10422,8 @@ function AdminTaskPage() {
         </div>
       </section>
 
+          )}
+          {adminSection === 'changelog' && (
       <section id="admin-changelog" className="admin-meeting-dates sticker-card">
         <h2>📜 更新日志管理</h2>
         <p className="admin-meeting-desc">按时间倒序写版本记录，小琳在页脚「更新日志」里就能看到。每行一条，写得短一点更像人话。</p>
@@ -10418,6 +10457,9 @@ function AdminTaskPage() {
           </button>
         </div>
       </section>
+          )}
+        </div>
+      </div>
 
       {toast && <div className="wwcxrl-soft-toast admin-toast" role="status">{toast}</div>}
     </main>

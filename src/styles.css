@@ -12369,6 +12369,128 @@ html { overflow-x: hidden; }
   line-height: 1.6;
   outline: none;
 }
+/* ===== 管理端：左侧导航布局 ===== */
+.admin-layout {
+  display: grid;
+  grid-template-columns: 232px 1fr;
+  gap: 20px;
+  align-items: start;
+}
+.admin-sidebar {
+  position: sticky;
+  top: 16px;
+  display: grid;
+  gap: 12px;
+  padding: 18px 14px;
+  border-radius: 24px;
+  background: linear-gradient(160deg, #fffdf6, #fff0f6 55%, #edfaff);
+  border: 2px solid rgba(255, 255, 255, .9);
+  box-shadow: 0 16px 34px rgba(160, 93, 52, .1);
+}
+.admin-sidebar-brand {
+  display: grid;
+  gap: 2px;
+  padding: 0 6px 10px;
+  border-bottom: 2px dashed rgba(255, 159, 189, .3);
+}
+.admin-sidebar-brand strong {
+  color: var(--ink);
+  font-size: 1.08rem;
+}
+.admin-sidebar-brand small {
+  color: var(--soft-ink);
+  font-size: .8rem;
+}
+.admin-sidebar-status .admin-cloud-note {
+  margin: 0;
+  padding: 6px 10px;
+  font-size: .78rem;
+}
+.admin-sidebar-nav {
+  display: grid;
+  gap: 6px;
+}
+.admin-sidebar-nav button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  color: var(--soft-ink);
+  background: transparent;
+  box-shadow: none;
+  font-size: .95rem;
+  font-weight: 700;
+  text-align: left;
+}
+.admin-sidebar-nav button:hover {
+  background: rgba(255, 255, 255, .72);
+}
+.admin-sidebar-nav button.is-active {
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  box-shadow: 0 6px 14px rgba(255, 111, 145, .16);
+}
+.admin-sidebar-nav button span {
+  font-size: 1.1rem;
+}
+.admin-sidebar-foot {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 2px dashed rgba(255, 159, 189, .3);
+}
+.admin-sidebar-foot .admin-preview-link,
+.admin-sidebar-foot .admin-logout {
+  text-align: center;
+}
+.admin-main {
+  display: grid;
+  gap: 18px;
+  min-width: 0;
+}
+.admin-main-head {
+  padding: 4px 6px 0;
+}
+.admin-main-head h1 {
+  margin: 0 0 4px;
+  font-size: 26px;
+}
+.admin-main-head p {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: 13px;
+}
+.admin-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.admin-section-head h2 {
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .admin-layout {
+    grid-template-columns: 1fr;
+  }
+  .admin-sidebar {
+    position: static;
+  }
+  .admin-sidebar-nav {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  .admin-sidebar-nav button {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+  .admin-sidebar-foot {
+    grid-template-columns: 1fr 1fr;
+  }
+}
 @media (max-width: 760px) {
   .admin-header {
     grid-template-columns: 1fr;
