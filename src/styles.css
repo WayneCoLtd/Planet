@@ -5228,7 +5228,7 @@ body:has(.interstellar-voyage-theme)::after { display: none !important; }
   box-shadow: inset 0 0 0 3px #8d5a24, inset 0 0 0 7px rgba(255,255,255,.55), 0 16px 34px rgba(116, 71, 31, .26) !important;
 }
 .frame-cream::after {
-  content: 'POLAROID';
+  content: '';
   right: 8px;
   bottom: 6px;
   top: auto;
@@ -7269,7 +7269,7 @@ body:has(.interstellar-voyage-theme)::after { display: none !important; }
 }
 .frame-cream::after,
 .interstellar-voyage-theme .frame-cream::after {
-  content: 'POLAROID' !important;
+  content: '' !important;
   right: 12px !important;
   bottom: -28px !important;
   top: auto !important;

@@ -98,7 +98,16 @@ function isAlbumUploadOpen(item) {
 
 function filterGateInvalidSignedDays(days = []) {
   const validDays = new Set(getDailyAdventures().map(item => Number(item.day)))
-  return Array.from(new Set(days.map(Number).filter(day => validDays.has(day)))).sort((a, b) => a - b)
+  return Array.from(new Set(days.map(Number).filter(day => validDays.has(day) || isStarMapDay(day)))).sort((a, b) => a - b)
+}
+
+// 签到星图覆盖 Day 300 → 365：即使云端任务还没布置，这些天也是有效的签到日
+const STAR_MAP_FIRST_DAY = 300
+const STAR_MAP_LAST_DAY = 365
+
+function isStarMapDay(day) {
+  const number = Number(day)
+  return Number.isFinite(number) && number >= STAR_MAP_FIRST_DAY && number <= STAR_MAP_LAST_DAY
 }
 
 // 合并本地/云端签到进度：已存本地的天数一律保留，避免任务表尚未合并完成时把管理员新建 Day 的进度误删。
@@ -106,7 +115,7 @@ function mergeCheckinDayLists(localList = [], remoteList = []) {
   const localDays = new Set(localList.map(Number))
   const validDays = new Set(getDailyAdventures().map(item => Number(item.day)))
   const union = new Set([...localList, ...remoteList].map(Number))
-  return Array.from(union).filter(day => validDays.has(day) || localDays.has(day)).sort((a, b) => a - b)
+  return Array.from(union).filter(day => validDays.has(day) || isStarMapDay(day) || localDays.has(day)).sort((a, b) => a - b)
 }
 
 function roleStorageKey(key) {
@@ -1051,9 +1060,42 @@ function Nav({ current, setCurrent }) {
 }
 
 function Hero({ setCurrent }) {
-  const signedCount = (() => {
+  const computeSignedCount = () => {
     try { return filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', [])).length } catch { return 0 }
-  })()
+  }
+  const [signedCount, setSignedCount] = useState(computeSignedCount)
+
+  React.useEffect(() => {
+    let alive = true
+    const refresh = () => {
+      if (!alive) return
+      const local = computeSignedCount()
+      setSignedCount(local)
+      if (cloudEnabled) {
+        loadCloudCheckins().then(remote => {
+          if (!alive || !remote) return
+          const merged = mergeCheckinDayLists(getRoleJson('wwcxrl-signed-days', []), remote.signed || [])
+          setSignedCount(merged.length)
+        }).catch(() => {})
+      }
+    }
+    refresh()
+    const refreshVisible = () => { if (!document.hidden) refresh() }
+    window.addEventListener('wwcxrl-signed-updated', refresh)
+    window.addEventListener('wwcxrl-tasks-updated', refresh)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refreshVisible)
+    const intervalId = window.setInterval(refresh, 8000)
+    return () => {
+      alive = false
+      window.removeEventListener('wwcxrl-signed-updated', refresh)
+      window.removeEventListener('wwcxrl-tasks-updated', refresh)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refreshVisible)
+      window.clearInterval(intervalId)
+    }
+  }, [])
+
   const progressPercent = Math.max(0, Math.min(100, (signedCount / 65) * 100))
   const { dayCount, daysToYearOne, yearOneReached } = getAnniversaryCounts()
   const orbitAngle = Math.max(0, Math.min(360, (dayCount / 365) * 360 - 90))
@@ -7004,27 +7046,27 @@ async function loadCloudPhotoWallRows() {
 
 async function loadCloudUploadedPhotoDays(targetUserId = null) {
   const supabase = await getSupabase()
-  const identity = getCloudIdentity()
-  if (!supabase || !identity) return []
-  const userId = targetUserId || identity.id
+  if (!supabase) return []
+  // 上传相册由双方各自进行：按「天-角色」返回，一天里双方各上传一张 => 两个抽能量机会
+  const userIds = ['wwcxrl-orange-main', 'wwcxrl-pomelo-main']
   const { data, error } = await supabase
     .from('wwcxrl_photo_wall')
-    .select('day,source')
-    .eq('user_id', userId)
+    .select('day,owner,source')
+    .in('user_id', userIds)
     .not('image_url', 'is', null)
   if (error) throw error
   return Array.from(new Set((data || [])
-    .filter(row => row.source !== 'static')
-    .map(row => Number(row.day))
-    .filter(Boolean)
-  )).sort((a, b) => a - b)
+    .filter(row => row.source !== 'static' && row.owner)
+    .map(row => `${Number(row.day)}-${row.owner}`)
+    .filter(key => /^\d+-(orange|pomelo)$/.test(key))
+  )).sort()
 }
 
-async function grantEnergyChanceForPhotoDay(dayNumber) {
+async function grantEnergyChanceForPhotoDay(dayNumber, ownerId = '') {
   const day = Number(dayNumber)
   if (!day) return null
   const { next, newPhotoDays } = await loadLatestEnergyStateWithSignins()
-  const grantedNow = (newPhotoDays || []).includes(day)
+  const grantedNow = (newPhotoDays || []).includes(`${day}-${ownerId}`)
   if (newPhotoDays?.length) {
     const saved = await persistEnergyState(next, 'energy_chance_granted_from_photo_upload')
     return { state: saved, granted: grantedNow }
@@ -7470,7 +7512,7 @@ function PhotoWall() {
       // 无论云端是否可用，当天上传照片都记一次抽能量机会（本机计数、云端可同步）
       let grantResult = null
       try {
-        grantResult = await grantEnergyChanceForPhotoDay(day.day)
+        grantResult = await grantEnergyChanceForPhotoDay(day.day, owner.id)
         window.dispatchEvent(new CustomEvent('wwcxrl-photo-uploaded', { detail: { day: day.day, owner: owner.id, granted: Boolean(grantResult?.granted) } }))
       } catch (energyError) {
         console.warn('[wwcxrl energy] photo chance grant failed', energyError.message)
@@ -8284,6 +8326,7 @@ function StargazingQuest({ item, taskCompleted = false, onTaskComplete = () => {
 
 
 const ENERGY_PROGRESS_DAY = 1
+const ENERGY_SHARED_USER_ID = 'wwcxrl-pomelo-main'
 const ENERGY_STATE_KEY = 'wwcxrl-capsule-energy-state'
 const ENERGY_AUTO_REFRESH_MS = 7000
 const ENERGY_EMPTY_STATE = { energy: 0, drawChances: 0, claimedSignedDays: [], claimedPhotoDays: [], draws: [] }
@@ -8295,14 +8338,16 @@ const ENERGY_MILESTONES = [
 
 function normalizeEnergyState(progress = {}) {
   const claimed = Array.isArray(progress.claimedSignedDays) ? progress.claimedSignedDays.map(Number).filter(Boolean) : []
-  const claimedPhotoDays = Array.isArray(progress.claimedPhotoDays) ? progress.claimedPhotoDays.map(Number).filter(Boolean) : []
+  const claimedPhotoDays = Array.isArray(progress.claimedPhotoDays)
+    ? Array.from(new Set(progress.claimedPhotoDays.map(String).filter(value => /^\d+(-(orange|pomelo))?$/.test(value))))
+    : []
   const draws = Array.isArray(progress.draws) ? progress.draws.slice(-80) : []
   return {
     ...ENERGY_EMPTY_STATE,
     energy: Math.max(0, Math.min(520, Number(progress.energy || 0))),
     drawChances: Math.max(0, Number(progress.drawChances || 0)),
     claimedSignedDays: Array.from(new Set(claimed)).sort((a, b) => a - b),
-    claimedPhotoDays: Array.from(new Set(claimedPhotoDays)).sort((a, b) => a - b),
+    claimedPhotoDays: Array.from(claimedPhotoDays).sort(),
     draws
   }
 }
@@ -8332,7 +8377,7 @@ async function persistEnergyState(next, eventType = 'energy_state_saved') {
   const normalized = saveEnergyLocalState(next)
   let remoteProgress = {}
   try {
-    const remote = await loadCloudDayProgress(ENERGY_PROGRESS_DAY)
+    const remote = await loadCloudDayProgress(ENERGY_PROGRESS_DAY, ENERGY_SHARED_USER_ID)
     remoteProgress = remote?.progress || {}
   } catch (error) {
     console.warn('[wwcxrl cloud] energy merge load failed', error.message)
@@ -8342,7 +8387,7 @@ async function persistEnergyState(next, eventType = 'energy_state_saved') {
     ...normalized,
     global: remoteProgress.global || loadGlobalLocalState()
   }
-  await saveCloudDayProgress(ENERGY_PROGRESS_DAY, merged)
+  await saveCloudDayProgress(ENERGY_PROGRESS_DAY, merged, ENERGY_SHARED_USER_ID)
   logCloudEvent(eventType, { energy: normalized.energy, drawChances: normalized.drawChances, claimedSignedDays: normalized.claimedSignedDays, claimedPhotoDays: normalized.claimedPhotoDays, draws: normalized.draws?.length || 0 }, ENERGY_PROGRESS_DAY)
   return normalized
 }
@@ -8356,33 +8401,59 @@ function syncEnergyState(next, eventType = 'energy_state_saved') {
 function getLocalUploadedPhotoDays() {
   try {
     const wall = loadPhotoWallLocal()
-    return Array.from(new Set(Object.keys(wall || {})
-      .map(key => Number(String(key).split('-')[0]))
-      .filter(Boolean)))
-      .sort((a, b) => a - b)
+    // 本地照片墙 key 形如 `${day}-${owner}`：按「天-角色」计数，双方各算一次
+    return Object.keys(wall || {})
+      .filter(key => /^\d+-(orange|pomelo)$/.test(String(key)))
+      .sort()
   } catch {
     return []
   }
 }
 
 async function loadLatestEnergyStateWithSignins() {
-  const [remoteProgress, remoteCheckins, cloudPhotoDays] = await Promise.all([
-    loadCloudDayProgress(ENERGY_PROGRESS_DAY),
-    loadCloudCheckins(),
-    loadCloudUploadedPhotoDays()
+  const [remoteProgress, orangeCheckins, pomeloCheckins, cloudPhotoDays, legacyOrangeProgress] = await Promise.all([
+    loadCloudDayProgress(ENERGY_PROGRESS_DAY, ENERGY_SHARED_USER_ID),
+    loadCloudCheckins('wwcxrl-orange-main'),
+    loadCloudCheckins('wwcxrl-pomelo-main'),
+    loadCloudUploadedPhotoDays(),
+    loadCloudDayProgress(ENERGY_PROGRESS_DAY, 'wwcxrl-orange-main')
   ])
-  const remoteState = getEnergyProgressOnly(remoteProgress?.progress || loadEnergyLocalState())
-  const signedDays = Array.from(new Set([...(remoteCheckins?.signed || []), ...getRoleJson('wwcxrl-signed-days', [])].map(Number).filter(Boolean))).sort((a, b) => a - b)
+  let remoteState = getEnergyProgressOnly(remoteProgress?.progress || loadEnergyLocalState())
+
+  // 旧版能量状态按角色分开保存：把「小琛」的旧状态并入共享状态一次（幂等，合并后清零其抽奖次数/能量）
+  // 只在「小琛」的设备上执行，避免两台设备同时合并造成重复计数
+  if (cloudEnabled && getCloudIdentity().role === 'orange' && legacyOrangeProgress?.progress) {
+    const legacy = getEnergyProgressOnly(legacyOrangeProgress.progress)
+    if (legacy.drawChances > 0 || legacy.energy > 0 || legacy.draws.length) {
+      remoteState = normalizeEnergyState({
+        energy: Math.min(520, Number(remoteState.energy || 0) + Number(legacy.energy || 0)),
+        drawChances: Number(remoteState.drawChances || 0) + Number(legacy.drawChances || 0),
+        claimedSignedDays: [...remoteState.claimedSignedDays, ...legacy.claimedSignedDays],
+        claimedPhotoDays: [...remoteState.claimedPhotoDays, ...legacy.claimedPhotoDays],
+        draws: [...remoteState.draws, ...legacy.draws]
+      })
+      saveCloudDayProgress(ENERGY_PROGRESS_DAY, {
+        energy: 0,
+        drawChances: 0,
+        claimedSignedDays: legacy.claimedSignedDays,
+        claimedPhotoDays: legacy.claimedPhotoDays,
+        draws: []
+      }, 'wwcxrl-orange-main').catch(error => console.warn('[wwcxrl cloud] legacy energy clear failed', error.message))
+    }
+  }
+
+  const cloudSignedDays = Array.from(new Set([...(orangeCheckins?.signed || []), ...(pomeloCheckins?.signed || [])]))
+  const signedDays = Array.from(new Set([...cloudSignedDays, ...getRoleJson('wwcxrl-signed-days', [])].map(Number).filter(Boolean))).sort((a, b) => a - b)
   const claimed = new Set(remoteState.claimedSignedDays)
   const newSignedDays = signedDays.filter(day => !claimed.has(day))
-  const uploadedPhotoDays = Array.from(new Set([...(cloudPhotoDays || []), ...getLocalUploadedPhotoDays()])).sort((a, b) => a - b)
+  const uploadedPhotoDays = Array.from(new Set([...(cloudPhotoDays || []), ...getLocalUploadedPhotoDays()])).sort()
   const claimedPhotoDays = new Set(remoteState.claimedPhotoDays)
-  const newPhotoDays = uploadedPhotoDays.filter(day => !claimedPhotoDays.has(day))
+  const newPhotoDays = uploadedPhotoDays.filter(key => !claimedPhotoDays.has(key))
   const next = normalizeEnergyState({
     ...remoteState,
     drawChances: Number(remoteState.drawChances || 0) + newSignedDays.length + newPhotoDays.length,
     claimedSignedDays: Array.from(new Set([...remoteState.claimedSignedDays, ...newSignedDays])).sort((a, b) => a - b),
-    claimedPhotoDays: Array.from(new Set([...(remoteState.claimedPhotoDays || []), ...newPhotoDays])).sort((a, b) => a - b)
+    claimedPhotoDays: Array.from(new Set([...(remoteState.claimedPhotoDays || []), ...newPhotoDays])).sort()
   })
   return { next, newSignedDays, newPhotoDays }
 }
@@ -8827,7 +8898,7 @@ function EnergyCapsule() {
           setEnergyState(saved)
           const parts = []
           if (newSignedDays.length) parts.push(`签到 ${newSignedDays.length} 次`)
-          if (newPhotoDays.length) parts.push(`相册上传 ${newPhotoDays.length} 天`)
+          if (newPhotoDays.length) parts.push(`相册上传 ${newPhotoDays.length} 次`)
           setStatus(`新增 ${grantedCount} 次抽能量机会（${parts.join(' + ')}），两台设备都已记下。`)
         } else {
           const local = saveEnergyLocalState(next)
@@ -8933,7 +9004,7 @@ function EnergyCapsule() {
           <div className="capsule-energy-meter" aria-label={`小星球能量 ${energy} / 520`}>
             <div><strong>小星球能量</strong><span>{energy}/520</span></div>
             <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} /><em style={{ left: '19.2%' }} /><em style={{ left: '50%' }} /><em style={{ left: '100%' }} /></b>
-            <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 天相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '完成每日签到或上传当天相册照片后，会先获得抽能量次数。'}</small>
+            <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '完成每日签到或上传当天相册照片后，会先获得抽能量次数。'}</small>
           </div>
           <div className="capsule-milestones" aria-label={`能量印章 ${reachedCount} / ${ENERGY_MILESTONES.length}`}>
             {ENERGY_MILESTONES.map(milestone => {
