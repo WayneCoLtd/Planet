@@ -596,7 +596,7 @@ export async function loadCloudMessages() {
 export async function saveCloudMessage({ content = '', imageUrl = '' }) {
   try {
     const { supabase, identity } = await ensureProfile()
-    if (!supabase || !identity) return null
+    if (!supabase || !identity) return { ok: false, error: '未连接云端' }
     const { data, error } = await supabase
       .from('wwcxrl_messages')
       .insert({
@@ -610,12 +610,12 @@ export async function saveCloudMessage({ content = '', imageUrl = '' }) {
       .single()
     if (error) {
       console.warn('[wwcxrl cloud] message save failed', error.message)
-      return null
+      return { ok: false, error: error.message }
     }
-    return normalizeMessageRow(data)
+    return { ok: true, message: normalizeMessageRow(data) }
   } catch (error) {
     console.warn('[wwcxrl cloud] message save exception', error)
-    return null
+    return { ok: false, error: error.message || '未知错误' }
   }
 }
 
@@ -638,7 +638,7 @@ export async function deleteCloudMessage(id) {
 export async function uploadMessageImage(file) {
   try {
     const { supabase, identity } = await ensureProfile()
-    if (!supabase || !identity) return null
+    if (!supabase || !identity) return { ok: false, error: '未连接云端' }
     const dataUrl = await resizeImageFile(file)
     const blob = dataUrlToBlob(dataUrl)
     const safeName = String(file.name || 'message.jpg').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-40)
@@ -649,9 +649,65 @@ export async function uploadMessageImage(file) {
     })
     if (uploadError) throw uploadError
     const { data: publicData } = supabase.storage.from('wwcxrl-photos').getPublicUrl(path)
-    return publicData.publicUrl
+    return { ok: true, url: publicData.publicUrl }
   } catch (error) {
     console.warn('[wwcxrl cloud] message image upload failed', error)
+    return { ok: false, error: error.message || '图片上传失败' }
+  }
+}
+
+// ============ 更新日志（wwcxrl_changelog）：管理端可编辑 ============
+function normalizeChangelogRow(row) {
+  return {
+    id: row.id,
+    version: row.version,
+    date: row.date || '',
+    title: row.title || '',
+    notes: Array.isArray(row.notes) ? row.notes.map(String) : [],
+    sort: Number(row.sort || 0)
+  }
+}
+
+export async function loadCloudChangelog() {
+  try {
+    const { supabase } = await ensureProfile()
+    if (!supabase) return null
+    const { data, error } = await supabase
+      .from('wwcxrl_changelog')
+      .select('id,version,date,title,notes,sort')
+      .order('sort', { ascending: true })
+    if (error) {
+      console.warn('[wwcxrl cloud] changelog load failed', error.message)
+      return null
+    }
+    return (data || []).map(normalizeChangelogRow)
+  } catch (error) {
+    console.warn('[wwcxrl cloud] changelog load exception', error)
     return null
+  }
+}
+
+export async function saveCloudChangelog(entries) {
+  try {
+    const { supabase, identity } = await ensureProfile()
+    if (!supabase || !identity) return { ok: false, error: '未连接云端' }
+    await supabase.from('wwcxrl_changelog').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    const rows = (entries || []).filter(item => item && String(item.version || '').trim()).map((item, index) => ({
+      version: String(item.version || '').trim(),
+      date: String(item.date || '').trim(),
+      title: String(item.title || '').trim(),
+      notes: Array.isArray(item.notes) ? item.notes.map(String).filter(Boolean) : [],
+      sort: index
+    }))
+    if (!rows.length) return { ok: true, error: '' }
+    const { error } = await supabase.from('wwcxrl_changelog').insert(rows)
+    if (error) {
+      console.warn('[wwcxrl cloud] changelog save failed', error.message)
+      return { ok: false, error: error.message }
+    }
+    return { ok: true, error: '' }
+  } catch (error) {
+    console.warn('[wwcxrl cloud] changelog save exception', error)
+    return { ok: false, error: error.message || '未知错误' }
   }
 }

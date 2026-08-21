@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
 import { changelog } from './data/changelog'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, deleteCloudMessage, uploadMessageImage } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudChangelog, saveCloudChangelog } from './cloud'
 import './styles.css'
 
 const PASSWORD = '5201013'
@@ -6759,7 +6759,6 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
           <div className="memory-copy minimal-memory-copy">
             <div className="riddle-minimal-hint">
               <span>{item.date.replace(/-/g, '.')} · 猜谜语签到</span>
-              <strong>{item.theme ? `谜底：${item.theme}` : '谜底是我们一起走过的地方'}</strong>
             </div>
             <label className="riddle-answer">
               <input
@@ -8926,13 +8925,20 @@ function MessageBoard() {
     try {
       if (cloudEnabled) {
         let imageUrl = ''
-        if (imageData?.file) imageUrl = (await uploadMessageImage(imageData.file)) || ''
+        if (imageData?.file) {
+          const upload = await uploadMessageImage(imageData.file)
+          if (!upload?.ok) {
+            setStatus(`照片寄出失败：${upload?.error || '请稍后再试。'}`)
+            return
+          }
+          imageUrl = upload.url
+        }
         const saved = await saveCloudMessage({ content: text, imageUrl })
-        if (!saved) {
-          setStatus('寄出失败，网络打了个盹，再试一次吧。')
+        if (!saved?.ok) {
+          setStatus(`寄出失败：${saved?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行留言板建表 SQL）`)
           return
         }
-        setMessages(prev => [saved, ...prev.filter(item => item.id !== saved.id)])
+        setMessages(prev => [saved.message, ...prev.filter(item => item.id !== saved.message.id)])
       } else {
         const localMessage = {
           id: `local-${Date.now()}`,
@@ -8976,7 +8982,7 @@ function MessageBoard() {
       <header className="section-heading playful-heading">
         <span>Message Board</span>
         <h2>💬 异地留言板</h2>
-        <p>开心的、难过的、想又怕打扰你的——都写在这里。像放在门口的小信箱，打开就能看见。</p>
+        <p>异地的时候，想说的话、怕打扰到你的思念，都写在这里。等你有空了打开，就能看见。</p>
       </header>
 
       <div className="message-compose sticker-card">
@@ -9391,11 +9397,18 @@ function PlanetApp() {
     return false
   })
   const [changelogOpen, setChangelogOpen] = useState(false)
+  const [changelogEntries, setChangelogEntries] = useState(changelog)
   React.useEffect(() => {
     if (!changelogOpen) return
     const onKey = event => { if (event.key === 'Escape') setChangelogOpen(false) }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
+  }, [changelogOpen])
+  React.useEffect(() => {
+    if (!changelogOpen) return
+    let alive = true
+    loadChangelog().then(list => { if (alive && list) setChangelogEntries(list) })
+    return () => { alive = false }
   }, [changelogOpen])
   function dismissFirstGuide() {
     localStorage.setItem('wwcxrl-template-first-guide-seen-v1', 'yes')
@@ -9439,7 +9452,7 @@ function PlanetApp() {
               <button type="button" className="changelog-close" onClick={() => setChangelogOpen(false)} aria-label="关闭更新日志">✕</button>
             </header>
             <div className="changelog-list">
-              {changelog.map(item => (
+              {changelogEntries.map(item => (
                 <section key={item.version} className="changelog-entry">
                   <div className="changelog-entry-head">
                     <span className="changelog-version">{item.version}</span>
@@ -9561,6 +9574,46 @@ function formatMessageTime(iso) {
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
 }
 
+// ---- 更新日志：管理端可编辑（云端优先，本地兜底，内置数据兜底） ----
+const CHANGELOG_LOCAL_KEY = 'wwcxrl-changelog-local'
+
+function loadChangelogLocal() {
+  try {
+    return JSON.parse(localStorage.getItem(CHANGELOG_LOCAL_KEY) || 'null')
+  } catch {
+    return null
+  }
+}
+
+function saveChangelogLocal(entries) {
+  localStorage.setItem(CHANGELOG_LOCAL_KEY, JSON.stringify(entries))
+}
+
+async function loadChangelog() {
+  const cloud = cloudEnabled ? await loadCloudChangelog() : null
+  if (Array.isArray(cloud) && cloud.length) {
+    saveChangelogLocal(cloud)
+    return cloud
+  }
+  return loadChangelogLocal() || changelog
+}
+
+async function saveChangelog(entries) {
+  const normalized = (entries || []).filter(item => item && String(item.version || '').trim()).map((item, index) => ({
+    version: String(item.version || '').trim(),
+    date: String(item.date || '').trim(),
+    title: String(item.title || '').trim(),
+    notes: Array.isArray(item.notes) ? item.notes.map(String).filter(Boolean) : [],
+    sort: index
+  }))
+  saveChangelogLocal(normalized)
+  if (cloudEnabled) {
+    const result = await saveCloudChangelog(normalized)
+    return { ok: Boolean(result?.ok), error: result?.error || '', saved: normalized }
+  }
+  return { ok: true, error: '', saved: normalized }
+}
+
 // 按 Day 自动推算解锁日期：Day 300 = 2026-08-09，之后每天顺延。
 function adminDayToDate(day) {
   const base = new Date('2026-08-09T00:00:00')
@@ -9667,6 +9720,8 @@ function AdminTaskPage() {
   const [meetingSaving, setMeetingSaving] = useState(false)
   const [emojiOpenIndex, setEmojiOpenIndex] = useState(null)
   const [energySaving, setEnergySaving] = useState(false)
+  const [changelogDraft, setChangelogDraft] = useState([])
+  const [changelogSaving, setChangelogSaving] = useState(false)
   const todayKey = getTodayKey()
 
   // 异地见面日历：载入云端/本地已有设置
@@ -9677,6 +9732,20 @@ function AdminTaskPage() {
       setMeetingNext(value.next || '')
       setMeetingPast(Array.isArray(value.past) ? value.past : [])
       setMeetingLoaded(true)
+    })
+    return () => { alive = false }
+  }, [])
+
+  React.useEffect(() => {
+    let alive = true
+    loadChangelog().then(list => {
+      if (!alive || !list) return
+      setChangelogDraft(list.map(item => ({
+        version: item.version,
+        date: item.date,
+        title: item.title,
+        notes: Array.isArray(item.notes) ? item.notes : []
+      })))
     })
     return () => { alive = false }
   }, [])
@@ -9725,6 +9794,27 @@ function AdminTaskPage() {
       setToast('清零失败，请稍后再试。')
     }
     setEnergySaving(false)
+  }
+
+  function addChangelogEntry() {
+    setChangelogDraft(prev => [...prev, { version: '', date: '', title: '', notes: [] }])
+  }
+
+  function updateChangelogEntry(index, patch) {
+    setChangelogDraft(prev => prev.map((item, i) => (i === index ? { ...item, ...patch } : item)))
+  }
+
+  function removeChangelogEntry(index) {
+    setChangelogDraft(prev => prev.filter((_, i) => i !== index))
+  }
+
+  async function saveChangelogSettings() {
+    setChangelogSaving(true)
+    const result = await saveChangelog(changelogDraft)
+    setChangelogSaving(false)
+    setToast(result?.ok
+      ? (cloudEnabled ? '更新日志已保存并同步到云端。' : '更新日志已保存（本地模式）。')
+      : `保存失败：${result?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行更新日志建表 SQL）`)
   }
 
   const refresh = React.useCallback(async () => {
@@ -9954,13 +10044,23 @@ function AdminTaskPage() {
           <h1>🍊 小星球任务管理</h1>
           <p>发布后她打开网站即可看到；任务按日期自动解锁，不用重新部署。</p>
         </div>
-        {cloudEnabled
-          ? <p className="admin-cloud-note is-cloud">☁️ 云端已连接，任务、签到与见面日历会自动同步。</p>
-          : <p className="admin-cloud-note">本地预览模式：数据仅保存在本机，配置 Supabase 环境变量后自动切换为云端同步。</p>}
-        <button type="button" className="admin-logout" onClick={() => { sessionStorage.removeItem('wwcxrl-admin-ok'); setOk(false) }}>退出管理</button>
+        <div className="admin-header-right">
+          {cloudEnabled
+            ? <span className="admin-cloud-note is-cloud">☁️ 云端已连接</span>
+            : <span className="admin-cloud-note">本地预览模式</span>}
+          <a className="admin-preview-link" href="/?planet=1&preview=1" target="_blank" rel="noreferrer">👀 打开站点预览</a>
+          <button type="button" className="admin-logout" onClick={() => { sessionStorage.removeItem('wwcxrl-admin-ok'); setOk(false) }}>退出管理</button>
+        </div>
+        <nav className="admin-quicknav" aria-label="管理端快捷入口">
+          <a href="#admin-task-form">✏️ 布置任务</a>
+          <a href="#admin-task-list">📋 任务列表</a>
+          <a href="#admin-meeting">💌 见面日历</a>
+          <a href="#admin-energy">⚡ 能量</a>
+          <a href="#admin-changelog">📜 更新日志</a>
+        </nav>
       </header>
 
-      <section className="admin-task-form sticker-card">
+      <section id="admin-task-form" className="admin-task-form sticker-card">
         <h2>{editingDay ? `编辑 Day ${editingDay}` : '新建任务'}</h2>
         <div className="admin-form-grid">
           <label className={missingFields.includes('天数') || missingFields.includes('日期') ? 'admin-field-missing' : ''}>天数 Day
@@ -10092,7 +10192,7 @@ function AdminTaskPage() {
         </div>
       </section>
 
-      <section className="admin-task-list sticker-card">
+      <section id="admin-task-list" className="admin-task-list sticker-card">
         <h2>任务列表（{allRows.length}）</h2>
         {loading ? <p>加载中…</p> : allRows.length === 0 ? <p>还没有任务。</p> : (
           <div className="admin-table-wrap">
@@ -10120,7 +10220,7 @@ function AdminTaskPage() {
         )}
       </section>
 
-      <section className="admin-meeting-dates sticker-card">
+      <section id="admin-meeting" className="admin-meeting-dates sticker-card">
         <h2>💌 异地见面日历</h2>
         <p className="admin-meeting-desc">设置下次见面的日子，以及过去已经见面的浪漫时间段。小琳打开彩蛋页就能看到倒计时和带标记的小日历。</p>
 
@@ -10196,12 +10296,46 @@ function AdminTaskPage() {
         </div>
       </section>
 
-      <section className="admin-meeting-dates sticker-card">
+      <section id="admin-energy" className="admin-meeting-dates sticker-card">
         <h2>⚡ 能量管理</h2>
         <p className="admin-meeting-desc">如果发现剩余抽奖次数异常偏多（例如历史数据重复补发），可以一键清零；能量与印章保留，已计过的日子不会重复发放。</p>
         <div className="admin-actions admin-meeting-actions">
           <button type="button" className="admin-save-draft" disabled={energySaving} onClick={handleResetEnergyChances}>
             {energySaving ? '处理中…' : '清零剩余抽奖次数'}
+          </button>
+        </div>
+      </section>
+
+      <section id="admin-changelog" className="admin-meeting-dates sticker-card">
+        <h2>📜 更新日志管理</h2>
+        <p className="admin-meeting-desc">按时间倒序写版本记录，小琳在页脚「更新日志」里就能看到。每行一条，写得短一点更像人话。</p>
+        {changelogDraft.length === 0 && <p className="admin-meeting-empty">还没有版本记录，加一条吧。</p>}
+        {changelogDraft.map((item, index) => (
+          <div className="admin-changelog-entry" key={`${item.version || 'new'}-${index}`}>
+            <div className="admin-changelog-fields">
+              <label>版本号
+                <input value={item.version || ''} placeholder="如：v3.2" onChange={event => updateChangelogEntry(index, { version: event.target.value })} />
+              </label>
+              <label>日期
+                <input type="date" value={item.date || ''} onChange={event => updateChangelogEntry(index, { date: event.target.value })} />
+              </label>
+              <label>标题
+                <input value={item.title || ''} placeholder="一句话标题，如：留言板来了" onChange={event => updateChangelogEntry(index, { title: event.target.value })} />
+              </label>
+              <button type="button" className="admin-row-delete" onClick={() => removeChangelogEntry(index)}>删除</button>
+            </div>
+            <textarea
+              value={Array.isArray(item.notes) ? item.notes.join('\n') : ''}
+              rows={3}
+              placeholder="每行一条更新说明"
+              onChange={event => updateChangelogEntry(index, { notes: event.target.value.split('\n') })}
+            />
+          </div>
+        ))}
+        <button type="button" className="admin-meeting-add" onClick={addChangelogEntry}>＋ 添加一条版本记录</button>
+        <div className="admin-actions admin-meeting-actions">
+          <button type="button" className="admin-save-publish" disabled={changelogSaving} onClick={saveChangelogSettings}>
+            {changelogSaving ? '保存中…' : '保存更新日志'}
           </button>
         </div>
       </section>

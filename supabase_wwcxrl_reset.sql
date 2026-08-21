@@ -283,6 +283,29 @@ create policy "wwcxrl_messages_public_insert" on public.wwcxrl_messages for inse
 drop policy if exists "wwcxrl_messages_public_delete" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_delete" on public.wwcxrl_messages for delete using (true);
 
+-- ============ 更新日志（wwcxrl_changelog）：管理端可编辑 ============
+create table if not exists public.wwcxrl_changelog (
+  id uuid primary key default gen_random_uuid(),
+  version text not null,
+  date text not null default '',
+  title text not null default '',
+  notes jsonb not null default '[]'::jsonb,
+  sort int not null default 0,
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+
+alter table public.wwcxrl_changelog enable row level security;
+
+drop policy if exists "wwcxrl_changelog_public_read" on public.wwcxrl_changelog;
+create policy "wwcxrl_changelog_public_read" on public.wwcxrl_changelog for select using (true);
+drop policy if exists "wwcxrl_changelog_public_insert" on public.wwcxrl_changelog;
+create policy "wwcxrl_changelog_public_insert" on public.wwcxrl_changelog for insert with check (true);
+drop policy if exists "wwcxrl_changelog_public_update" on public.wwcxrl_changelog;
+create policy "wwcxrl_changelog_public_update" on public.wwcxrl_changelog for update using (true) with check (true);
+drop policy if exists "wwcxrl_changelog_public_delete" on public.wwcxrl_changelog;
+create policy "wwcxrl_changelog_public_delete" on public.wwcxrl_changelog for delete using (true);
+
 -- 已建表的老库执行下面两条即可（新库建表已包含）：
 -- alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
 -- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'letter', 'fortune', 'sticker', 'game'));
