@@ -9052,8 +9052,8 @@ function MessageBoard() {
           <div className="message-sender-row">
             <span className="message-sender-label">我是</span>
             <div className="message-sender-toggle" role="group" aria-label="发送身份">
-              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🍊 小琛</button>
-              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🍑 小琳</button>
+              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🌞 小琛</button>
+              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🌟 小琳</button>
             </div>
           </div>
         )}
@@ -9090,7 +9090,7 @@ function MessageBoard() {
         ) : messages.map(message => (
           <article key={message.id} className={`message-card sticker-card ${message.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
             <header className="message-card-head">
-              <span className="message-avatar">{message.role === 'orange' ? '🍊' : '🍑'}</span>
+              <span className="message-avatar">{message.role === 'orange' ? '🌞' : '🌟'}</span>
               <strong>{message.displayName || (message.role === 'orange' ? '小琛' : '小琳')}</strong>
               <time>{formatMessageTime(message.createdAt)}</time>
               {(message.userId === senderUserId || !cloudEnabled) && (
@@ -9496,7 +9496,7 @@ function PlanetApp() {
     <main className={voyageTheme ? 'interstellar-voyage-theme' : ''}>
       <StarField />
       <header className="top-bar">
-        <button className="brand" onClick={() => setCurrent('home')}><span>🍊</span> 小星球</button>
+        <button className="brand" onClick={() => setCurrent('home')}><span>琛❤️琳</span></button>
         <Nav current={current} setCurrent={setCurrent} />
       </header>
       {current === 'home' && <Hero setCurrent={setCurrent} />}
