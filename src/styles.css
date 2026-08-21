@@ -12479,3 +12479,113 @@ html { overflow-x: hidden; }
     margin-left: 0;
   }
 }
+
+/* ===== 更新日志 ===== */
+.changelog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(60, 34, 20, .38);
+  backdrop-filter: blur(3px);
+}
+.changelog-modal {
+  width: min(560px, 100%);
+  max-height: min(82vh, 640px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 22px 24px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 10% 8%, rgba(255, 226, 109, .25), transparent 24%),
+    radial-gradient(circle at 94% 12%, rgba(255, 159, 189, .3), transparent 26%),
+    linear-gradient(160deg, #fffdf6, #fff0f6 55%, #edfaff);
+  border: 2px solid rgba(255, 255, 255, .92);
+  box-shadow: 0 30px 70px rgba(60, 34, 20, .35);
+}
+.changelog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 12px;
+  border-bottom: 2px dashed rgba(255, 111, 145, .28);
+}
+.changelog-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.35rem;
+}
+.changelog-head p {
+  margin: 4px 0 0;
+  color: var(--soft-ink);
+  font-size: .86rem;
+}
+.changelog-close {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border-radius: 999px;
+  color: var(--rose);
+  background: linear-gradient(135deg, #fff2d7, #ffe4ee);
+  box-shadow: 0 6px 14px rgba(255, 111, 145, .16);
+  font-size: 1rem;
+  line-height: 1;
+}
+.changelog-list {
+  overflow-y: auto;
+  display: grid;
+  gap: 16px;
+  padding: 16px 4px 8px 0;
+}
+.changelog-entry {
+  padding: 14px 16px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .62);
+  border: 1px solid rgba(255, 159, 189, .2);
+}
+.changelog-entry-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.changelog-version {
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  font-size: .78rem;
+  font-weight: 900;
+}
+.changelog-date {
+  color: var(--soft-ink);
+  font-size: .78rem;
+}
+.changelog-entry-head strong {
+  color: var(--ink);
+  font-size: .98rem;
+}
+.changelog-entry ul {
+  margin: 0;
+  padding-left: 1.1em;
+  display: grid;
+  gap: 5px;
+}
+.changelog-entry li {
+  color: #5c4231;
+  font-size: .9rem;
+  line-height: 1.65;
+}
+.changelog-foot {
+  margin: 8px 0 0;
+  padding-top: 10px;
+  border-top: 2px dashed rgba(255, 111, 145, .28);
+  color: var(--soft-ink);
+  font-size: .82rem;
+  text-align: center;
+}

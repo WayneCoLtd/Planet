@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
+import { changelog } from './data/changelog'
 import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, deleteCloudMessage, uploadMessageImage } from './cloud'
 import './styles.css'
 
@@ -9389,6 +9390,13 @@ function PlanetApp() {
     if (new URLSearchParams(window.location.search).get('showGuide') === '1') return true
     return false
   })
+  const [changelogOpen, setChangelogOpen] = useState(false)
+  React.useEffect(() => {
+    if (!changelogOpen) return
+    const onKey = event => { if (event.key === 'Escape') setChangelogOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [changelogOpen])
   function dismissFirstGuide() {
     localStorage.setItem('wwcxrl-template-first-guide-seen-v1', 'yes')
     setFirstGuideOpen(false)
@@ -9418,7 +9426,36 @@ function PlanetApp() {
       {toast && <div className="wwcxrl-soft-toast" role="status">{toast}</div>}
       <footer className="site-footer">
         {themeSwitchAvailable && <button type="button" className="theme-toggle-button subtle" onClick={() => setThemeMode(!voyageTheme)}>{voyageTheme ? '🍊 切回旧皮肤' : '🚀 切到新皮肤'}</button>}
+        <button type="button" className="theme-toggle-button subtle" onClick={() => setChangelogOpen(true)}>📜 更新日志</button>
         <button onClick={returnToInvitationLayer}>回到 8月9日邀请信</button></footer>
+      {changelogOpen && (
+        <div className="changelog-backdrop" role="presentation" onClick={() => setChangelogOpen(false)}>
+          <div className="changelog-modal sticker-card" role="dialog" aria-modal="true" aria-labelledby="changelog-title" onClick={event => event.stopPropagation()}>
+            <header className="changelog-head">
+              <div>
+                <h2 id="changelog-title">📜 更新日志</h2>
+                <p>琛琳星球的一点一滴，都记在这里。</p>
+              </div>
+              <button type="button" className="changelog-close" onClick={() => setChangelogOpen(false)} aria-label="关闭更新日志">✕</button>
+            </header>
+            <div className="changelog-list">
+              {changelog.map(item => (
+                <section key={item.version} className="changelog-entry">
+                  <div className="changelog-entry-head">
+                    <span className="changelog-version">{item.version}</span>
+                    <span className="changelog-date">{item.date}</span>
+                    <strong>{item.title}</strong>
+                  </div>
+                  <ul>
+                    {item.notes.map(note => <li key={note}>{note}</li>)}
+                  </ul>
+                </section>
+              ))}
+            </div>
+            <p className="changelog-foot">下次更新，也会写在这里。</p>
+          </div>
+        </div>
+      )}
     </main>
   )
 }
