@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
 import { changelog } from './data/changelog'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudChangelog, saveCloudChangelog } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudChangelog, saveCloudChangelog } from './cloud'
 import './styles.css'
 
 const PASSWORD = '5201013'
@@ -8877,6 +8877,7 @@ function MessageBoard() {
   const [imageData, setImageData] = useState(null)
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState('')
+  const [editingId, setEditingId] = useState(null)
   const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
   const [senderRole, setSenderRole] = useState(() => {
     try {
@@ -8926,16 +8927,58 @@ function MessageBoard() {
     reader.readAsDataURL(file)
   }
 
+  function startEdit(message) {
+    setEditingId(message.id)
+    setContent(message.content || '')
+    setImageData(message.imageUrl ? { file: null, dataUrl: message.imageUrl, name: '' } : null)
+    setStatus('')
+  }
+
+  function cancelEdit() {
+    setEditingId(null)
+    setContent('')
+    setImageData(null)
+    setStatus('')
+  }
+
   async function sendMessage() {
     const text = content.trim()
+    const editing = editingId ? messages.find(item => item.id === editingId) : null
     if (!text && !imageData) {
       setStatus('写点想说的话，或选一张照片吧 💌')
       return
     }
     setSending(true)
-    setStatus('正在寄出…')
+    setStatus(editing ? '正在保存修改…' : '正在寄出…')
     try {
-      if (cloudEnabled) {
+      if (editing) {
+        if (cloudEnabled) {
+          let imageUrl = ''
+          if (imageData?.file) {
+            const upload = await uploadMessageImage(imageData.file, senderRole)
+            if (!upload?.ok) {
+              setStatus(`照片保存失败：${upload?.error || '请稍后再试。'}`)
+              return
+            }
+            imageUrl = upload.url
+          } else if (imageData?.dataUrl) {
+            imageUrl = editing.imageUrl || ''
+          }
+          const res = await updateCloudMessage(editing.id, { content: text, imageUrl })
+          if (!res?.ok) {
+            setStatus(`保存失败：${res?.error || '请稍后再试。'}`)
+            return
+          }
+          const updated = messages.map(item => (item.id === editing.id ? { ...item, content: text, imageUrl } : item))
+          setMessages(updated)
+          saveMessagesLocal(updated)
+        } else {
+          const updated = loadMessagesLocal().map(item => (item.id === editing.id ? { ...item, content: text, imageUrl: imageData?.dataUrl || '' } : item))
+          saveMessagesLocal(updated)
+          setMessages(updated)
+        }
+        setStatus('修改已保存 💌')
+      } else if (cloudEnabled) {
         let imageUrl = ''
         if (imageData?.file) {
           const upload = await uploadMessageImage(imageData.file, senderRole)
@@ -8964,10 +9007,11 @@ function MessageBoard() {
         const next = [localMessage, ...loadMessagesLocal()]
         saveMessagesLocal(next)
         setMessages(next)
+        setStatus('已放进小信箱啦 💌')
       }
+      setEditingId(null)
       setContent('')
       setImageData(null)
-      setStatus('已放进小信箱啦 💌')
     } catch (error) {
       console.warn('[wwcxrl messages] send failed', error.message)
       setStatus('寄出失败，请稍后再试。')
@@ -8998,13 +9042,21 @@ function MessageBoard() {
       </header>
 
       <div className="message-compose sticker-card">
-        <div className="message-sender-row">
-          <span className="message-sender-label">我是</span>
-          <div className="message-sender-toggle" role="group" aria-label="发送身份">
-            <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🍊 小琛</button>
-            <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🍑 小琳</button>
+        {editingId && (
+          <div className="message-editing-banner">
+            <span>✏️ 正在编辑这条留言</span>
+            <button type="button" onClick={cancelEdit}>取消</button>
           </div>
-        </div>
+        )}
+        {!editingId && (
+          <div className="message-sender-row">
+            <span className="message-sender-label">我是</span>
+            <div className="message-sender-toggle" role="group" aria-label="发送身份">
+              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🍊 小琛</button>
+              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🍑 小琳</button>
+            </div>
+          </div>
+        )}
         <textarea
           value={content}
           onChange={event => setContent(event.target.value)}
@@ -9026,7 +9078,7 @@ function MessageBoard() {
           )}
           <span className="message-compose-count">{content.length}/500</span>
           <button type="button" className="message-send" disabled={sending} onClick={sendMessage}>
-            {sending ? '寄出中…' : '💌 寄出'}
+            {sending ? (editingId ? '保存中…' : '寄出中…') : (editingId ? '💾 保存修改' : '💌 寄出')}
           </button>
         </div>
         {status && <p className="message-status">{status}</p>}
@@ -9042,7 +9094,10 @@ function MessageBoard() {
               <strong>{message.displayName || (message.role === 'orange' ? '小琛' : '小琳')}</strong>
               <time>{formatMessageTime(message.createdAt)}</time>
               {(message.userId === senderUserId || !cloudEnabled) && (
-                <button type="button" className="message-delete" onClick={() => removeMessage(message)} aria-label="删除这条留言">🗑</button>
+                <>
+                  <button type="button" className="message-edit" onClick={() => startEdit(message)} aria-label="编辑这条留言">✏️</button>
+                  <button type="button" className="message-delete" onClick={() => removeMessage(message)} aria-label="删除这条留言">🗑</button>
+                </>
               )}
             </header>
             {(message.content || message.imageUrl) && (
