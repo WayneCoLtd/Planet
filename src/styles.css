@@ -12596,12 +12596,22 @@ html { overflow-x: hidden; }
 }
 .star-memory-board {
   display: grid;
-  grid-template-columns: repeat(4, 64px);
-  gap: 10px;
+  grid-template-columns: repeat(3, 72px);
+  gap: 12px;
+  justify-content: center;
+  transition: transform .18s ease;
+}
+.star-memory-board.is-cheering {
+  animation: starMemoryCheer .6s ease-in-out;
+}
+@keyframes starMemoryCheer {
+  0%, 100% { transform: scale(1); }
+  40% { transform: scale(1.06) rotate(-2deg); }
+  70% { transform: scale(1.03) rotate(2deg); }
 }
 .star-memory-cell {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   display: grid;
   place-items: center;
   padding: 0;
@@ -12624,6 +12634,58 @@ html { overflow-x: hidden; }
   0%, 100% { transform: translateX(0); }
   25% { transform: translateX(-5px); }
   75% { transform: translateX(5px); }
+}
+.star-memory-intro {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  max-width: 360px;
+  text-align: center;
+}
+.star-memory-intro-icon {
+  font-size: 2.6rem;
+}
+.star-memory-intro p {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: .95rem;
+  line-height: 1.8;
+}
+.star-memory-start {
+  margin-top: 6px;
+  padding: 12px 26px;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #ffe26d, #ffad49 55%, #ff92b1);
+  box-shadow: 0 10px #ffb14954, 0 18px 30px #ff875038;
+  font-size: 1.05rem;
+}
+.star-memory-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+  color: var(--soft-ink);
+  font-size: .86rem;
+}
+.star-memory-meta strong {
+  color: var(--rose);
+}
+.star-memory-meta span.is-hot {
+  color: #d94b56;
+  font-weight: 900;
+}
+.star-memory-cheer {
+  margin: 0;
+  color: #ff8f4d;
+  font-size: .95rem;
+  font-weight: 900;
+  animation: starMemoryCheerText .9s ease-in-out both;
+}
+@keyframes starMemoryCheerText {
+  0% { opacity: 0; transform: scale(.6); }
+  35% { opacity: 1; transform: scale(1.15); }
+  100% { opacity: 1; transform: scale(1); }
 }
 .tictactoe-board {
   display: grid;
@@ -12686,11 +12748,12 @@ html { overflow-x: hidden; }
 }
 @media (max-width: 560px) {
   .star-memory-board {
-    grid-template-columns: repeat(4, 56px);
+    grid-template-columns: repeat(3, 58px);
+    gap: 8px;
   }
   .star-memory-cell {
-    width: 56px;
-    height: 56px;
+    width: 58px;
+    height: 58px;
   }
   .tictactoe-board {
     grid-template-columns: repeat(3, 72px);
