@@ -6188,6 +6188,7 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   function playSequence(nextSeq) {
     timersRef.current.forEach(window.clearTimeout)
     timersRef.current = []
+    setFlash(-1)
     setPlaying(true)
     setInputStep(0)
     setWrong(false)
@@ -6217,25 +6218,31 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   function press(index) {
     if (playing || done) return
     setFlash(index)
-    timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) setFlash(-1) }, 260))
+    const flashTimer = window.setTimeout(() => { if (aliveRef.current) setFlash(-1) }, 260)
     if (index === seq[inputStep]) {
       const nextStep = inputStep + 1
       if (nextStep >= seq.length) {
         if (round >= target) {
+          timersRef.current.push(flashTimer)
           setDone(true)
           onTaskComplete(item.day)
         } else {
           const nextSeq = [...seq, Math.floor(Math.random() * STAR_MEMORY_ICONS.length)]
           setSeq(nextSeq)
           setRound(value => value + 1)
+          timersRef.current.push(flashTimer)
           playSequence(nextSeq)
         }
       } else {
+        timersRef.current.push(flashTimer)
         setInputStep(nextStep)
       }
     } else {
+      // 点错：立刻锁定输入，重播同一串后再放开，避免窗口期内乱点导致状态错乱
+      setPlaying(true)
       setWrong(true)
-      timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) { setWrong(false); playSequence(seq) } }, 800))
+      timersRef.current.push(flashTimer)
+      timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) playSequence(seq) }, 900))
     }
   }
 
