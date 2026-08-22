@@ -12675,6 +12675,25 @@ html { overflow-x: hidden; }
   color: #d94b56;
   font-weight: 900;
 }
+.star-memory-best {
+  color: var(--rose);
+  font-size: .86rem;
+}
+.star-memory-timer {
+  width: min(100%, 320px);
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(155, 217, 255, .25);
+  border: 1px solid rgba(155, 217, 255, .4);
+  overflow: hidden;
+}
+.star-memory-timer i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #ffe26d, #ff8f4d 60%, #ff5f8b);
+  transition: width .1s linear;
+}
 .star-memory-cheer {
   margin: 0;
   color: #ff8f4d;
@@ -12686,6 +12705,18 @@ html { overflow-x: hidden; }
   0% { opacity: 0; transform: scale(.6); }
   35% { opacity: 1; transform: scale(1.15); }
   100% { opacity: 1; transform: scale(1); }
+}
+.star-memory-milestone {
+  margin: 0;
+  color: #ff8f4d;
+  font-size: .9rem;
+  font-weight: 900;
+  animation: starMemoryCheerText .9s ease-in-out both;
+}
+.star-memory-done .star-memory-stars {
+  margin: 0 0 4px;
+  font-size: 1.8rem;
+  letter-spacing: .12em;
 }
 .tictactoe-board {
   display: grid;

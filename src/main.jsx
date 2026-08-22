@@ -4949,13 +4949,18 @@ const MINI_GAMES = [
     id: 'starMemory',
     label: '星星记忆',
     icon: '🌟',
-    hint: '点开始播放记住小星星亮起的顺序，再按顺序点亮；每轮多一颗、越来越快，闯过几轮即可完成签到',
-    defaults: { rounds: 4 },
+    hint: '点开始播放记住小星星亮起的顺序，再按顺序点亮；难度越高星星越多、速度越快，挑战模式还有倒计时和换位',
+    defaults: { rounds: 4, difficulty: 'normal' },
     fields: [
       { key: 'rounds', label: '需要闯过几轮', type: 'select', options: [
         { value: '3', label: '3 轮' },
         { value: '4', label: '4 轮' },
         { value: '5', label: '5 轮' }
+      ] },
+      { key: 'difficulty', label: '难度', type: 'select', options: [
+        { value: 'easy', label: '轻松（4 颗星）' },
+        { value: 'normal', label: '普通（6 颗星）' },
+        { value: 'challenge', label: '挑战（6 颗星+倒计时+换位）' }
       ] }
     ]
   },
@@ -6164,10 +6169,29 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
 
 // ---- 小游戏：星星记忆 ----
 const STAR_MEMORY_ICONS = ['🌟', '🌙', '🍀', '🐰', '💫', '🌷']
+const STAR_MEMORY_BEST_KEY = 'wwcxrl-star-memory-best'
+
+function loadStarMemoryBest() {
+  try {
+    return JSON.parse(localStorage.getItem(STAR_MEMORY_BEST_KEY) || 'null') || { bestCombo: 0, perfect: false }
+  } catch {
+    return { bestCombo: 0, perfect: false }
+  }
+}
+
+function saveStarMemoryBest(next) {
+  try { localStorage.setItem(STAR_MEMORY_BEST_KEY, JSON.stringify(next)) } catch {}
+}
 
 function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   const target = clampNumber(item.gameConfig?.rounds, 3, 6, 4)
-  const [seq, setSeq] = React.useState(() => [Math.floor(Math.random() * STAR_MEMORY_ICONS.length)])
+  const difficulty = item.gameConfig?.difficulty === 'challenge' ? 'challenge' : item.gameConfig?.difficulty === 'easy' ? 'easy' : 'normal'
+  const starCount = difficulty === 'easy' ? 4 : 6
+  const baseSpeed = difficulty === 'easy' ? 700 : difficulty === 'challenge' ? 520 : 620
+  const challenge = difficulty === 'challenge'
+  const [best] = React.useState(loadStarMemoryBest)
+  const [seq, setSeq] = React.useState(() => [Math.floor(Math.random() * starCount)])
+  const [order, setOrder] = React.useState(() => Array.from({ length: starCount }, (_, index) => index))
   const [round, setRound] = React.useState(1)
   const [started, setStarted] = React.useState(false)
   const [playing, setPlaying] = React.useState(false)
@@ -6175,70 +6199,169 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   const [inputStep, setInputStep] = React.useState(0)
   const [wrong, setWrong] = React.useState(false)
   const [combo, setCombo] = React.useState(0)
-  const [bestCombo, setBestCombo] = React.useState(0)
+  const [bestCombo, setBestCombo] = React.useState(() => loadStarMemoryBest().bestCombo)
+  const [mistakes, setMistakes] = React.useState(0)
   const [cheer, setCheer] = React.useState(null)
+  const [milestone, setMilestone] = React.useState(null)
+  const [timeLeft, setTimeLeft] = React.useState(null)
+  const [stars, setStars] = React.useState(null)
   const [done, setDone] = React.useState(taskCompleted)
   const timersRef = React.useRef([])
+  const timerRef = React.useRef(null)
+  const timeLeftRef = React.useRef(0)
   const aliveRef = React.useRef(true)
+  let audioCtx = null
 
   React.useEffect(() => {
     aliveRef.current = true
     return () => {
       aliveRef.current = false
       timersRef.current.forEach(window.clearTimeout)
+      if (timerRef.current) window.clearInterval(timerRef.current)
+      try { audioCtx?.close() } catch {}
     }
   }, [])
 
-  function playSequence(nextSeq) {
+  function ensureAudio() {
+    try {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)()
+      return audioCtx
+    } catch {
+      return null
+    }
+  }
+
+  function beep(freq, duration = 0.12, type = 'sine', volume = 0.05) {
+    try {
+      const ctx = ensureAudio()
+      if (!ctx || ctx.state === 'suspended') return
+      const osc = ctx.createOscillator()
+      const gain = ctx.createGain()
+      osc.type = type
+      osc.frequency.value = freq
+      gain.gain.setValueAtTime(volume, ctx.currentTime)
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + duration)
+      osc.connect(gain)
+      gain.connect(ctx.destination)
+      osc.start()
+      osc.stop(ctx.currentTime + duration)
+    } catch {}
+  }
+
+  function clearTimer() {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
+    }
+  }
+
+  function startTimer(seqLength) {
+    clearTimer()
+    if (!challenge || done) return
+    timeLeftRef.current = 3000 + seqLength * 450
+    setTimeLeft(timeLeftRef.current)
+    timerRef.current = window.setInterval(() => {
+      timeLeftRef.current -= 100
+      setTimeLeft(timeLeftRef.current)
+      if (timeLeftRef.current <= 0) {
+        clearTimer()
+        handleWrong('时间到啦，再看一次～', true)
+      }
+    }, 100)
+  }
+
+  function stopTimer() {
+    clearTimer()
+    setTimeLeft(null)
+  }
+
+  function playSequence(nextSeq, { reshuffle = false } = {}) {
     timersRef.current.forEach(window.clearTimeout)
     timersRef.current = []
+    clearTimer()
     setFlash(-1)
     setPlaying(true)
     setInputStep(0)
     setWrong(false)
-    // 轮次越多亮得越快
-    const speed = Math.max(300, 620 - (nextSeq.length - 1) * 40)
+    if (reshuffle && challenge) {
+      const nextOrder = shuffleArray(Array.from({ length: starCount }, (_, index) => index))
+      if (nextOrder.join() === order.join()) {
+        const a = Math.floor(Math.random() * starCount)
+        const b = (a + 1) % starCount
+        ;[nextOrder[a], nextOrder[b]] = [nextOrder[b], nextOrder[a]]
+      }
+      setOrder(nextOrder)
+    }
+    const speed = Math.max(260, baseSpeed - (nextSeq.length - 1) * 45)
     let i = 0
     const tick = () => {
       if (!aliveRef.current) return
       setFlash(nextSeq[i])
+      beep(440 + nextSeq[i] * 70, 0.12)
       timersRef.current.push(window.setTimeout(() => {
         if (!aliveRef.current) return
         setFlash(-1)
         i += 1
         if (i < nextSeq.length) {
-          timersRef.current.push(window.setTimeout(tick, Math.max(160, speed - 220)))
+          timersRef.current.push(window.setTimeout(tick, Math.max(150, speed - 220)))
         } else {
           setPlaying(false)
+          startTimer(nextSeq.length)
         }
       }, speed))
     }
-    timersRef.current.push(window.setTimeout(tick, 650))
+    timersRef.current.push(window.setTimeout(tick, 620))
   }
 
   function startGame() {
     if (done) return
+    ensureAudio()
     setStarted(true)
     setCheer(null)
     playSequence(seq)
   }
 
-  function press(index) {
+  function handleWrong(message, fromTimer = false) {
+    if (!aliveRef.current) return
+    stopTimer()
+    setCombo(0)
+    setMistakes(value => value + 1)
+    setPlaying(true)
+    setWrong(message)
+    beep(150, 0.25, 'sawtooth', 0.06)
+    timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) playSequence(seq) }, 950))
+    if (fromTimer) setTimeLeft(0)
+  }
+
+  function press(position) {
     if (!started || playing || done) return
-    setFlash(index)
-    const flashTimer = window.setTimeout(() => { if (aliveRef.current) setFlash(-1) }, 240)
-    if (index === seq[inputStep]) {
+    const iconIndex = order[position]
+    setFlash(iconIndex)
+    const flashTimer = window.setTimeout(() => { if (aliveRef.current) setFlash(-1) }, 220)
+    if (iconIndex === seq[inputStep]) {
       const nextCombo = combo + 1
       setCombo(nextCombo)
       setBestCombo(value => Math.max(value, nextCombo))
+      beep(440 + iconIndex * 70, 0.1)
+      if (nextCombo === 5 || nextCombo === 8) {
+        setMilestone(nextCombo === 5 ? '🔥 记性超棒！' : '🌟 神记忆！')
+        timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) setMilestone(null) }, 1300))
+      }
       const nextStep = inputStep + 1
       if (nextStep >= seq.length) {
+        stopTimer()
         if (round >= target) {
-          timersRef.current.push(flashTimer)
+          const starCount3 = mistakes === 0 ? 3 : mistakes <= 2 ? 2 : 1
+          setStars(starCount3)
           setDone(true)
+          const nextBest = { bestCombo: Math.max(bestCombo, nextCombo), perfect: mistakes === 0 }
+          saveStarMemoryBest(nextBest)
           onTaskComplete(item.day)
+          ;[523, 659, 784, 1047].forEach((freq, index) => {
+            window.setTimeout(() => beep(freq, 0.18), index * 130)
+          })
         } else {
-          const nextSeq = [...seq, Math.floor(Math.random() * STAR_MEMORY_ICONS.length)]
+          const nextSeq = [...seq, Math.floor(Math.random() * starCount)]
           setSeq(nextSeq)
           setRound(value => value + 1)
           setCheer({ key: Date.now() })
@@ -6247,31 +6370,37 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
           timersRef.current.push(window.setTimeout(() => {
             if (aliveRef.current) {
               setCheer(null)
-              playSequence(nextSeq)
+              beep(784, 0.12)
+              playSequence(nextSeq, { reshuffle: true })
             }
           }, 1000))
         }
       } else {
         timersRef.current.push(flashTimer)
         setInputStep(nextStep)
+        startTimer(seq.length)
       }
     } else {
-      // 点错：立刻锁定输入，重播同一串后再放开，避免窗口期内乱点导致状态错乱
-      setCombo(0)
-      setPlaying(true)
-      setWrong(true)
       timersRef.current.push(flashTimer)
-      timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) playSequence(seq) }, 900))
+      handleWrong('顺序记岔啦，再看一次～')
     }
   }
+
+  const totalTimer = 3000 + seq.length * 450
+  const timerPercent = timeLeft === null ? null : Math.max(0, Math.min(100, (timeLeft / totalTimer) * 100))
+  const starCountLabel = difficulty === 'easy' ? '4 颗星星' : '6 颗星星'
+  const starMark = stars === 3 ? '⭐⭐⭐' : stars === 2 ? '⭐⭐' : stars === 1 ? '⭐' : ''
 
   return (
     <div className="mini-game star-memory-game">
       {!started && !done ? (
         <div className="star-memory-intro">
           <span className="star-memory-intro-icon">🌠</span>
-          <p>六颗小星星会按顺序亮起，记住它，再按顺序点亮它们。</p>
-          <p>每一轮会多亮一颗、速度越来越快，看看你能连对多少次！</p>
+          <p>小星星会按顺序亮起，记住它，再按顺序点亮它们。</p>
+          <p>
+            {starCountLabel} · {target} 轮 · {difficulty === 'challenge' ? '倒计时+每轮换位' : '每轮多一颗、越来越快'}
+          </p>
+          {best.bestCombo > 0 && <p className="star-memory-best">🏆 个人最佳：连对 {best.bestCombo}{best.perfect ? ' · 完美通关' : ''}</p>}
           <button type="button" className="star-memory-start" onClick={startGame}>✨ 开始播放</button>
         </div>
       ) : (
@@ -6280,23 +6409,34 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
           <div className="star-memory-meta">
             <span>第 <strong>{Math.min(round, target)}</strong> / {target} 轮</span>
             <span className={combo >= 3 ? 'is-hot' : ''}>💫 连对 {combo}</span>
-            <span>{playing ? (cheer ? '🎉 漂亮！下一轮马上开始' : '正在播放…') : '轮到你了'}</span>
+            <span>{playing ? (cheer ? '🎉 漂亮！下一轮马上开始' : '正在播放…') : challenge ? '快点！' : '轮到你了'}</span>
           </div>
+          {challenge && timeLeft !== null && (
+            <div className="star-memory-timer" aria-label={`剩余 ${Math.ceil((timeLeft || 0) / 1000)} 秒`}>
+              <i style={{ width: `${timerPercent}%` }} />
+            </div>
+          )}
           <div className={`star-memory-board ${cheer ? 'is-cheering' : ''}`}>
-            {STAR_MEMORY_ICONS.map((icon, index) => (
+            {order.map((iconIndex, position) => (
               <button
-                key={icon}
+                key={`${round}-${position}`}
                 type="button"
-                className={`star-memory-cell ${flash === index ? 'is-lit' : ''} ${wrong && flash === index ? 'is-wrong' : ''}`}
-                onClick={() => press(index)}
+                className={`star-memory-cell ${flash === iconIndex ? 'is-lit' : ''} ${wrong && flash === iconIndex ? 'is-wrong' : ''}`}
+                onClick={() => press(position)}
                 disabled={!started || playing || done}
-                aria-label={`第 ${index + 1} 颗星`}
-              >{icon}</button>
+                aria-label={`第 ${position + 1} 颗星`}
+              >{STAR_MEMORY_ICONS[iconIndex]}</button>
             ))}
           </div>
           {cheer && <p key={cheer.key} className="star-memory-cheer">✨ 漂亮！记性真好 ✨</p>}
-          {wrong && <p className="star-memory-wrong">顺序记岔啦，再看一次～</p>}
-          {done && <div className="game-done-panel"><p>{item.secret || `小星星都被你记住啦，最长连对 ${bestCombo} 次，可以签到啦！`}</p></div>}
+          {milestone && <p className="star-memory-milestone">{milestone}</p>}
+          {wrong && <p className="star-memory-wrong">{wrong}</p>}
+          {done && (
+            <div className="game-done-panel star-memory-done">
+              <p className="star-memory-stars">{starMark}</p>
+              <p>{item.secret || (stars === 3 ? '零失误，完美通关！' : `小星星都被你记住啦，最长连对 ${bestCombo} 次，可以签到啦！`)}</p>
+            </div>
+          )}
         </>
       )}
     </div>
