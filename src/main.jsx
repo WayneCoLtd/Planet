@@ -4934,14 +4934,15 @@ const MINI_GAMES = [
   },
   {
     id: 'idiomFill',
-    label: '成语填空',
+    label: '成语挑战',
     icon: '📖',
-    hint: '补上成语里缺的那个字，答对几题即可完成签到',
-    defaults: { rounds: 3 },
+    hint: '限时补成语、答错扣小心心，攒够得分并答满题数即可完成签到',
+    defaults: { rounds: 5 },
     fields: [
       { key: 'rounds', label: '需要答对几题', type: 'select', options: [
         { value: '3', label: '3 题' },
-        { value: '5', label: '5 题' }
+        { value: '5', label: '5 题' },
+        { value: '8', label: '8 题' }
       ] }
     ]
   },
@@ -4949,7 +4950,7 @@ const MINI_GAMES = [
     id: 'starMemory',
     label: '星星记忆',
     icon: '🌟',
-    hint: '点开始播放记住小星星亮起的顺序，再按顺序点亮；难度越高星星越多、速度越快，挑战模式还有倒计时和换位',
+    hint: '点开始播放记住星星顺序再点亮；有生命值、干扰闪光、限时和换位，按得分评级，挑战模式 9 颗星',
     defaults: { rounds: 4, difficulty: 'normal' },
     fields: [
       { key: 'rounds', label: '需要闯过几轮', type: 'select', options: [
@@ -4958,32 +4959,55 @@ const MINI_GAMES = [
         { value: '5', label: '5 轮' }
       ] },
       { key: 'difficulty', label: '难度', type: 'select', options: [
-        { value: 'easy', label: '轻松（4 颗星）' },
-        { value: 'normal', label: '普通（6 颗星）' },
-        { value: 'challenge', label: '挑战（6 颗星+倒计时+换位）' }
+        { value: 'easy', label: '轻松（6 星·慢速）' },
+        { value: 'normal', label: '普通（6 星·中速）' },
+        { value: 'challenge', label: '挑战（9 星·干扰+限时+换位）' }
       ] }
     ]
   },
   {
     id: 'ticTacToe',
-    label: '井字棋·星空对战',
+    label: '井字棋·三局两胜',
     icon: '🎯',
-    hint: '和月亮下一盘井字棋，赢或平局都能完成签到',
+    hint: '和月亮三局两胜，AI 越下越强；每局赢/平都有得分，拿下两局即可完成签到',
+    defaults: { bestOf: 2 },
+    fields: [
+      { key: 'bestOf', label: '先赢几局获胜', type: 'select', options: [
+        { value: '1', label: '1 局' },
+        { value: '2', label: '2 局（三局两胜）' },
+        { value: '3', label: '3 局（五局三胜）' }
+      ] }
+    ]
+  },
+  {
+    id: 'sudokuMini',
+    label: '数独',
+    icon: '🔢',
+    hint: '6×6 或 9×9 数独，填完即完成；支持限时计分和最佳记录',
+    defaults: { difficulty: 'easy6' },
+    fields: [
+      { key: 'difficulty', label: '难度', type: 'select', options: [
+        { value: 'easy6', label: '6×6 轻松' },
+        { value: 'normal6', label: '6×6 普通' },
+        { value: 'challenge9', label: '9×9 挑战' }
+      ] }
+    ]
+  },
+  {
+    id: 'merge2048',
+    label: '2048·小星球',
+    icon: '🔮',
+    hint: '滑动合并相同数字，合成 2048 或累计 3000 分即可完成签到',
     defaults: {},
     fields: []
   },
   {
-    id: 'sudokuMini',
-    label: '4×4 数独',
-    icon: '🔢',
-    hint: '把 1-4 填进空格，让每行每列每个小方块都不重复，填完即可完成签到',
-    defaults: { difficulty: 'easy' },
-    fields: [
-      { key: 'difficulty', label: '难度', type: 'select', options: [
-        { value: 'easy', label: '轻松（空格少）' },
-        { value: 'normal', label: '普通（空格多）' }
-      ] }
-    ]
+    id: 'othello',
+    label: '黑白翻转棋·6×6',
+    icon: '⚪',
+    hint: '和月亮下完一整盘 6×6 翻转棋，夹住并翻转对方棋子，下完即可完成签到',
+    defaults: {},
+    fields: []
   },
   {
     id: 'yulegeyu',
@@ -6110,7 +6134,7 @@ function WhackAMoleGame({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
-// ---- 小游戏：成语填空 ----
+// ---- 小游戏：成语挑战 ----
 const IDIOM_QUESTIONS = [
   { text: '一心一__', answer: '意', options: ['意', '爱', '念', '心'] },
   { text: '别__生面', answer: '开', options: ['开', '出', '创', '展'] },
@@ -6121,61 +6145,180 @@ const IDIOM_QUESTIONS = [
   { text: '守株待__', answer: '兔', options: ['兔', '猫', '鸟', '犬'] },
   { text: '掩耳盗__', answer: '铃', options: ['铃', '钟', '锣', '鼓'] },
   { text: '一石二__', answer: '鸟', options: ['鸟', '雕', '雀', '鹅'] },
-  { text: '胸有成__', answer: '竹', options: ['竹', '略', '谋', '局'] }
+  { text: '胸有成__', answer: '竹', options: ['竹', '略', '谋', '局'] },
+  { text: '一_两得', answer: '举', options: ['举', '箭', '石', '鼓'] },
+  { text: '_水摸鱼', answer: '浑', options: ['浑', '混', '搅', '清'] }
 ]
+const IDIOM_BEST_KEY = 'wwcxrl-idiom-best'
+
+function idiomRating(totalScore) {
+  if (totalScore >= 130) return { grade: 'S', title: '成语宗师' }
+  if (totalScore >= 85) return { grade: 'A', title: '成语高手' }
+  if (totalScore >= 45) return { grade: 'B', title: '成语新星' }
+  return { grade: 'C', title: '成语学徒' }
+}
 
 function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
-  const target = clampNumber(item.gameConfig?.rounds, 2, 6, 3)
-  const [questions] = React.useState(() => shuffleArray(IDIOM_QUESTIONS).slice(0, target))
-  const [round, setRound] = React.useState(0)
-  const [wrong, setWrong] = React.useState(false)
+  const target = clampNumber(item.gameConfig?.rounds, 3, 8, 5)
+  const maxLives = 3
+  const [questions] = React.useState(() => shuffleArray(IDIOM_QUESTIONS).slice(0, Math.max(target, 8)))
+  const [qIndex, setQIndex] = React.useState(0)
+  const [lives, setLives] = React.useState(maxLives)
+  const [score, setScore] = React.useState(0)
+  const [timeLeft, setTimeLeft] = React.useState(null)
+  const [wrong, setWrong] = React.useState(null)
+  const [failed, setFailed] = React.useState(false)
   const [done, setDone] = React.useState(taskCompleted)
-  const current = questions[round]
+  const [rating, setRating] = React.useState(null)
+  const [best, setBest] = React.useState(() => {
+    try { return Number(localStorage.getItem(IDIOM_BEST_KEY) || 0) } catch { return 0 }
+  })
+  const timerRef = React.useRef(null)
+  const timeLeftRef = React.useRef(0)
+  const skipTimerRef = React.useRef(null)
+  const current = questions[qIndex]
+
+  React.useEffect(() => () => {
+    if (timerRef.current) window.clearInterval(timerRef.current)
+    if (skipTimerRef.current) window.clearTimeout(skipTimerRef.current)
+  }, [])
+
+  function startTimer() {
+    if (timerRef.current) window.clearInterval(timerRef.current)
+    timeLeftRef.current = 12000
+    setTimeLeft(12000)
+    timerRef.current = window.setInterval(() => {
+      timeLeftRef.current -= 100
+      setTimeLeft(timeLeftRef.current)
+      if (timeLeftRef.current <= 0) {
+        window.clearInterval(timerRef.current)
+        handleWrong(`时间到啦，正确答案是「${current.answer}」`)
+      }
+    }, 100)
+  }
+
+  function handleWrong(message) {
+    if (done || failed) return
+    if (timerRef.current) window.clearInterval(timerRef.current)
+    const nextLives = lives - 1
+    setLives(nextLives)
+    setWrong(message)
+    if (nextLives <= 0) {
+      setFailed(true)
+      setWrong(null)
+      return
+    }
+    skipTimerRef.current = window.setTimeout(() => {
+      if (!done && !failed) {
+        const next = qIndex + 1
+        if (next >= target) {
+          finishGame(score)
+        } else {
+          setQIndex(next)
+          setWrong(null)
+          startTimer()
+        }
+      }
+    }, 1600)
+  }
+
+  function finishGame(finalScore) {
+    const r = idiomRating(finalScore)
+    setRating(r)
+    setDone(true)
+    if (finalScore > best) {
+      localStorage.setItem(IDIOM_BEST_KEY, JSON.stringify(finalScore))
+      setBest(finalScore)
+    }
+    onTaskComplete(item.day)
+  }
 
   function choose(option) {
-    if (done || !current) return
+    if (done || failed || !current) return
     if (option === current.answer) {
-      if (round + 1 >= questions.length) {
-        setDone(true)
-        onTaskComplete(item.day)
+      if (timerRef.current) window.clearInterval(timerRef.current)
+      const bonus = Math.max(0, Math.round((timeLeft || 0) / 1000)) * 2
+      const nextScore = score + 10 + bonus
+      setScore(nextScore)
+      setWrong(null)
+      const next = qIndex + 1
+      if (next >= target) {
+        finishGame(nextScore)
       } else {
-        setRound(value => value + 1)
+        setQIndex(next)
+        startTimer()
       }
-      setWrong(false)
     } else {
-      setWrong(true)
+      handleWrong(`不对哦，正确答案是「${current.answer}」`)
     }
   }
 
+  function restart() {
+    if (skipTimerRef.current) window.clearTimeout(skipTimerRef.current)
+    if (timerRef.current) window.clearInterval(timerRef.current)
+    setQIndex(0)
+    setLives(maxLives)
+    setScore(0)
+    setWrong(null)
+    setFailed(false)
+    startTimer()
+  }
+
+  React.useEffect(() => {
+    if (!taskCompleted && !done && !failed) startTimer()
+    return () => { if (timerRef.current) window.clearInterval(timerRef.current) }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qIndex])
+
+  const timerPercent = timeLeft === null ? null : Math.max(0, Math.min(100, (timeLeft / 12000) * 100))
+  const hearts = '💖'.repeat(Math.max(0, lives)) + '🤍'.repeat(Math.max(0, maxLives - lives))
+
   return (
     <div className="mini-game idiom-game">
-      <p className="idiom-hint">补上成语里缺的那个字，连对 {target} 题就算闯关成功！</p>
-      <div className="idiom-progress">第 <strong>{Math.min(round + 1, questions.length)}</strong> / {questions.length} 题</div>
-      {!done && current && (
+      <p className="idiom-hint">限时补成语：答对得分（越快分越高），答错或超时扣小心心</p>
+      <div className="idiom-meta">
+        <span>第 <strong>{Math.min(qIndex + 1, target)}</strong> / {target} 题</span>
+        <span>得分 <strong>{score}</strong></span>
+        <span>{hearts}</span>
+        {best > 0 && <span>🏆 最佳 {best}</span>}
+      </div>
+      {!done && !failed && current && (
         <>
-          <div className="idiom-question" key={current.text}>{current.text}</div>
+          <div className="idiom-timer"><i style={{ width: `${timerPercent}%` }} /></div>
+          <div className="idiom-question" key={`${qIndex}-${current.text}`}>{current.text}</div>
           <div className="idiom-options">
             {shuffleArray(current.options).map(option => (
               <button key={option} type="button" className="idiom-option" onClick={() => choose(option)}>{option}</button>
             ))}
           </div>
-          {wrong && <p className="idiom-wrong">差一点点，再想想这个成语～</p>}
+          {wrong && <p className="idiom-wrong">{wrong}</p>}
         </>
       )}
-      {done && <div className="game-done-panel"><p>{item.secret || '成语都接上啦，今天的签到可以点亮了！'}</p></div>}
+      {failed && (
+        <div className="game-fail-panel">
+          <p>小心心用完了… 得分 <strong>{score}</strong> 分，再来一次吧！</p>
+          <button type="button" className="game-restart" onClick={restart}>↺ 重新挑战</button>
+        </div>
+      )}
+      {done && rating && (
+        <div className="game-done-panel">
+          <p>评级 <strong>{rating.grade}</strong> · 称号「{rating.title}」</p>
+          <p>{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
+        </div>
+      )}
     </div>
   )
 }
 
 // ---- 小游戏：星星记忆 ----
-const STAR_MEMORY_ICONS = ['🌟', '🌙', '🍀', '🐰', '💫', '🌷']
+const STAR_MEMORY_ICONS = ['🌟', '🌙', '🍀', '🐰', '💫', '🌷', '☁️', '🌈', '❄️']
 const STAR_MEMORY_BEST_KEY = 'wwcxrl-star-memory-best'
 
 function loadStarMemoryBest() {
   try {
-    return JSON.parse(localStorage.getItem(STAR_MEMORY_BEST_KEY) || 'null') || { bestCombo: 0, perfect: false }
+    return JSON.parse(localStorage.getItem(STAR_MEMORY_BEST_KEY) || 'null') || { score: 0, title: '' }
   } catch {
-    return { bestCombo: 0, perfect: false }
+    return { score: 0, title: '' }
   }
 }
 
@@ -6183,12 +6326,21 @@ function saveStarMemoryBest(next) {
   try { localStorage.setItem(STAR_MEMORY_BEST_KEY, JSON.stringify(next)) } catch {}
 }
 
+function starMemoryRating(totalScore, lostLives) {
+  const perfect = lostLives === 0
+  if (perfect && totalScore >= 240) return { grade: 'S', title: '星辰记忆大师', stars: 3 }
+  if (perfect || totalScore >= 170) return { grade: 'A', title: '星光捕手', stars: 2 }
+  if (totalScore >= 100) return { grade: 'B', title: '星星小达人', stars: 1 }
+  return { grade: 'C', title: '追星练习生', stars: 0 }
+}
+
 function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   const target = clampNumber(item.gameConfig?.rounds, 3, 6, 4)
   const difficulty = item.gameConfig?.difficulty === 'challenge' ? 'challenge' : item.gameConfig?.difficulty === 'easy' ? 'easy' : 'normal'
-  const starCount = difficulty === 'easy' ? 4 : 6
-  const baseSpeed = difficulty === 'easy' ? 700 : difficulty === 'challenge' ? 520 : 620
+  const starCount = difficulty === 'challenge' ? 9 : 6
+  const baseSpeed = difficulty === 'easy' ? 720 : difficulty === 'challenge' ? 460 : 600
   const challenge = difficulty === 'challenge'
+  const maxLives = difficulty === 'challenge' ? 2 : difficulty === 'normal' ? 3 : 5
   const [best] = React.useState(loadStarMemoryBest)
   const [seq, setSeq] = React.useState(() => [Math.floor(Math.random() * starCount)])
   const [order, setOrder] = React.useState(() => Array.from({ length: starCount }, (_, index) => index))
@@ -6196,16 +6348,18 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   const [started, setStarted] = React.useState(false)
   const [playing, setPlaying] = React.useState(false)
   const [flash, setFlash] = React.useState(-1)
+  const [distractorFlash, setDistractorFlash] = React.useState(-1)
   const [inputStep, setInputStep] = React.useState(0)
-  const [wrong, setWrong] = React.useState(false)
+  const [wrong, setWrong] = React.useState(null)
   const [combo, setCombo] = React.useState(0)
-  const [bestCombo, setBestCombo] = React.useState(() => loadStarMemoryBest().bestCombo)
-  const [mistakes, setMistakes] = React.useState(0)
+  const [score, setScore] = React.useState(0)
+  const [lives, setLives] = React.useState(maxLives)
   const [cheer, setCheer] = React.useState(null)
   const [milestone, setMilestone] = React.useState(null)
   const [timeLeft, setTimeLeft] = React.useState(null)
-  const [stars, setStars] = React.useState(null)
+  const [failed, setFailed] = React.useState(false)
   const [done, setDone] = React.useState(taskCompleted)
+  const [rating, setRating] = React.useState(null)
   const timersRef = React.useRef([])
   const timerRef = React.useRef(null)
   const timeLeftRef = React.useRef(0)
@@ -6257,15 +6411,15 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
 
   function startTimer(seqLength) {
     clearTimer()
-    if (!challenge || done) return
-    timeLeftRef.current = 3000 + seqLength * 450
+    if (!challenge || done || failed) return
+    timeLeftRef.current = Math.max(2200, 3200 - (seqLength - 1) * 260)
     setTimeLeft(timeLeftRef.current)
     timerRef.current = window.setInterval(() => {
       timeLeftRef.current -= 100
       setTimeLeft(timeLeftRef.current)
       if (timeLeftRef.current <= 0) {
         clearTimer()
-        handleWrong('时间到啦，再看一次～', true)
+        handleWrong('时间到啦，小心心 -1', true)
       }
     }, 100)
   }
@@ -6275,14 +6429,36 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
     setTimeLeft(null)
   }
 
+  function resetGame() {
+    stopTimer()
+    timersRef.current.forEach(window.clearTimeout)
+    timersRef.current = []
+    setSeq([Math.floor(Math.random() * starCount)])
+    setOrder(Array.from({ length: starCount }, (_, index) => index))
+    setRound(1)
+    setPlaying(false)
+    setFlash(-1)
+    setDistractorFlash(-1)
+    setInputStep(0)
+    setWrong(null)
+    setCombo(0)
+    setScore(0)
+    setLives(maxLives)
+    setCheer(null)
+    setMilestone(null)
+    setFailed(false)
+    setStarted(false)
+  }
+
   function playSequence(nextSeq, { reshuffle = false } = {}) {
     timersRef.current.forEach(window.clearTimeout)
     timersRef.current = []
     clearTimer()
     setFlash(-1)
+    setDistractorFlash(-1)
     setPlaying(true)
     setInputStep(0)
-    setWrong(false)
+    setWrong(null)
     if (reshuffle && challenge) {
       const nextOrder = shuffleArray(Array.from({ length: starCount }, (_, index) => index))
       if (nextOrder.join() === order.join()) {
@@ -6292,25 +6468,41 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
       }
       setOrder(nextOrder)
     }
-    const speed = Math.max(260, baseSpeed - (nextSeq.length - 1) * 45)
+    let distract = null
+    if (challenge && nextSeq.length >= 2 && Math.random() < 0.72) {
+      const used = new Set(nextSeq)
+      const candidates = Array.from({ length: starCount }, (_, index) => index).filter(index => !used.has(index))
+      if (candidates.length) distract = candidates[Math.floor(Math.random() * candidates.length)]
+    }
+    const playList = distract === null ? nextSeq : (() => {
+      const at = 1 + Math.floor(Math.random() * (nextSeq.length - 1))
+      return [...nextSeq.slice(0, at), distract, ...nextSeq.slice(at)]
+    })()
+    const speed = Math.max(240, baseSpeed - (nextSeq.length - 1) * 48)
     let i = 0
     const tick = () => {
       if (!aliveRef.current) return
-      setFlash(nextSeq[i])
-      beep(440 + nextSeq[i] * 70, 0.12)
+      const isDistract = playList[i] === distract
+      if (isDistract) {
+        setDistractorFlash(playList[i])
+      } else {
+        setFlash(playList[i])
+        beep(440 + playList[i] * 70, 0.1)
+      }
       timersRef.current.push(window.setTimeout(() => {
         if (!aliveRef.current) return
         setFlash(-1)
+        setDistractorFlash(-1)
         i += 1
-        if (i < nextSeq.length) {
-          timersRef.current.push(window.setTimeout(tick, Math.max(150, speed - 220)))
+        if (i < playList.length) {
+          timersRef.current.push(window.setTimeout(tick, Math.max(140, speed - 230)))
         } else {
           setPlaying(false)
           startTimer(nextSeq.length)
         }
       }, speed))
     }
-    timersRef.current.push(window.setTimeout(tick, 620))
+    timersRef.current.push(window.setTimeout(tick, 600))
   }
 
   function startGame() {
@@ -6322,26 +6514,32 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   }
 
   function handleWrong(message, fromTimer = false) {
-    if (!aliveRef.current) return
+    if (!aliveRef.current || done) return
     stopTimer()
     setCombo(0)
-    setMistakes(value => value + 1)
+    const nextLives = lives - 1
+    setLives(nextLives)
     setPlaying(true)
     setWrong(message)
     beep(150, 0.25, 'sawtooth', 0.06)
+    if (nextLives <= 0) {
+      setFailed(true)
+      setWrong(null)
+      return
+    }
     timersRef.current.push(window.setTimeout(() => { if (aliveRef.current) playSequence(seq) }, 950))
     if (fromTimer) setTimeLeft(0)
   }
 
   function press(position) {
-    if (!started || playing || done) return
+    if (!started || playing || done || failed) return
     const iconIndex = order[position]
     setFlash(iconIndex)
     const flashTimer = window.setTimeout(() => { if (aliveRef.current) setFlash(-1) }, 220)
     if (iconIndex === seq[inputStep]) {
       const nextCombo = combo + 1
       setCombo(nextCombo)
-      setBestCombo(value => Math.max(value, nextCombo))
+      setScore(value => value + 10 + (challenge ? 5 : 0))
       beep(440 + iconIndex * 70, 0.1)
       if (nextCombo === 5 || nextCombo === 8) {
         setMilestone(nextCombo === 5 ? '🔥 记性超棒！' : '🌟 神记忆！')
@@ -6350,15 +6548,17 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
       const nextStep = inputStep + 1
       if (nextStep >= seq.length) {
         stopTimer()
+        setScore(value => value + round * 15)
         if (round >= target) {
-          const starCount3 = mistakes === 0 ? 3 : mistakes <= 2 ? 2 : 1
-          setStars(starCount3)
+          timersRef.current.push(flashTimer)
+          const totalScore = score + 10 + (challenge ? 5 : 0) + round * 15 + (lives === maxLives ? 50 : 0)
+          const nextRating = starMemoryRating(totalScore, maxLives - lives)
+          setRating(nextRating)
           setDone(true)
-          const nextBest = { bestCombo: Math.max(bestCombo, nextCombo), perfect: mistakes === 0 }
-          saveStarMemoryBest(nextBest)
+          if (totalScore > best.score) saveStarMemoryBest({ score: totalScore, title: nextRating.title })
           onTaskComplete(item.day)
           ;[523, 659, 784, 1047].forEach((freq, index) => {
-            window.setTimeout(() => beep(freq, 0.18), index * 130)
+            timersRef.current.push(window.setTimeout(() => beep(freq, 0.18), index * 130))
           })
         } else {
           const nextSeq = [...seq, Math.floor(Math.random() * starCount)]
@@ -6382,14 +6582,14 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
       }
     } else {
       timersRef.current.push(flashTimer)
-      handleWrong('顺序记岔啦，再看一次～')
+      handleWrong('顺序记岔啦，小心心 -1')
     }
   }
 
-  const totalTimer = 3000 + seq.length * 450
+  const totalTimer = Math.max(2200, 3200 - (seq.length - 1) * 260)
   const timerPercent = timeLeft === null ? null : Math.max(0, Math.min(100, (timeLeft / totalTimer) * 100))
-  const starCountLabel = difficulty === 'easy' ? '4 颗星星' : '6 颗星星'
-  const starMark = stars === 3 ? '⭐⭐⭐' : stars === 2 ? '⭐⭐' : stars === 1 ? '⭐' : ''
+  const starCountLabel = `${starCount} 颗星`
+  const hearts = '💖'.repeat(Math.max(0, lives)) + '🤍'.repeat(Math.max(0, maxLives - lives))
 
   return (
     <div className="mini-game star-memory-game">
@@ -6398,17 +6598,25 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
           <span className="star-memory-intro-icon">🌠</span>
           <p>小星星会按顺序亮起，记住它，再按顺序点亮它们。</p>
           <p>
-            {starCountLabel} · {target} 轮 · {difficulty === 'challenge' ? '倒计时+每轮换位' : '每轮多一颗、越来越快'}
+            {starCountLabel} · {target} 轮 · 生命 {maxLives} 颗 ·{' '}
+            {difficulty === 'challenge' ? '干扰闪光+倒计时+换位' : difficulty === 'normal' ? '每轮更快' : '慢速练手'}
           </p>
-          {best.bestCombo > 0 && <p className="star-memory-best">🏆 个人最佳：连对 {best.bestCombo}{best.perfect ? ' · 完美通关' : ''}</p>}
+          {best.score > 0 && <p className="star-memory-best">🏆 个人最佳：{best.score} 分 {best.title}</p>}
           <button type="button" className="star-memory-start" onClick={startGame}>✨ 开始播放</button>
+        </div>
+      ) : failed ? (
+        <div className="game-fail-panel">
+          <p>小心心用完了… 本轮得分 <strong>{score}</strong> 分，再来一次吧！</p>
+          <button type="button" className="game-restart" onClick={resetGame}>↺ 重新挑战</button>
         </div>
       ) : (
         <>
-          <p className="star-memory-hint">按刚才亮起的顺序点星星～</p>
+          <p className="star-memory-hint">按刚才亮起的顺序点星星～{challenge ? '（会混进干扰闪光，别被带偏）' : ''}</p>
           <div className="star-memory-meta">
             <span>第 <strong>{Math.min(round, target)}</strong> / {target} 轮</span>
             <span className={combo >= 3 ? 'is-hot' : ''}>💫 连对 {combo}</span>
+            <span>得分 <strong>{score}</strong></span>
+            <span>{hearts}</span>
             <span>{playing ? (cheer ? '🎉 漂亮！下一轮马上开始' : '正在播放…') : challenge ? '快点！' : '轮到你了'}</span>
           </div>
           {challenge && timeLeft !== null && (
@@ -6421,9 +6629,9 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
               <button
                 key={`${round}-${position}`}
                 type="button"
-                className={`star-memory-cell ${flash === iconIndex ? 'is-lit' : ''} ${wrong && flash === iconIndex ? 'is-wrong' : ''}`}
+                className={`star-memory-cell ${flash === iconIndex ? 'is-lit' : ''} ${distractorFlash === iconIndex ? 'is-distractor' : ''} ${wrong && flash === iconIndex ? 'is-wrong' : ''}`}
                 onClick={() => press(position)}
-                disabled={!started || playing || done}
+                disabled={!started || playing || done || failed}
                 aria-label={`第 ${position + 1} 颗星`}
               >{STAR_MEMORY_ICONS[iconIndex]}</button>
             ))}
@@ -6431,10 +6639,11 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
           {cheer && <p key={cheer.key} className="star-memory-cheer">✨ 漂亮！记性真好 ✨</p>}
           {milestone && <p className="star-memory-milestone">{milestone}</p>}
           {wrong && <p className="star-memory-wrong">{wrong}</p>}
-          {done && (
+          {done && rating && (
             <div className="game-done-panel star-memory-done">
-              <p className="star-memory-stars">{starMark}</p>
-              <p>{item.secret || (stars === 3 ? '零失误，完美通关！' : `小星星都被你记住啦，最长连对 ${bestCombo} 次，可以签到啦！`)}</p>
+              <p className="star-memory-stars">{'⭐'.repeat(rating.stars)}</p>
+              <p>评级 <strong>{rating.grade}</strong> · 称号「{rating.title}」</p>
+              <p>{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
             </div>
           )}
         </>
@@ -6443,11 +6652,15 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
-// ---- 小游戏：井字棋·星空对战 ----
+// ---- 小游戏：井字棋·三局两胜 ----
 function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
+  const bestOf = clampNumber(item.gameConfig?.bestOf, 1, 3, 2)
+  const [wins, setWins] = React.useState({ player: 0, moon: 0 })
   const [board, setBoard] = React.useState(Array(9).fill(null))
   const [busy, setBusy] = React.useState(false)
-  const [result, setResult] = React.useState(null)
+  const [gameResult, setGameResult] = React.useState(null)
+  const [score, setScore] = React.useState(0)
+  const [final, setFinal] = React.useState(null)
   const [done, setDone] = React.useState(taskCompleted)
   const lines = [[0, 1, 2], [3, 4, 5], [6, 7, 8], [0, 3, 6], [1, 4, 7], [2, 5, 8], [0, 4, 8], [2, 4, 6]]
 
@@ -6458,20 +6671,12 @@ function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
     return null
   }
 
-  function finish(b) {
-    const w = winnerOf(b)
-    const isDraw = !w && b.every(Boolean)
-    if (w === 'star') setResult('win')
-    else if (w === 'moon') setResult('lose')
-    else if (isDraw) setResult('draw')
-    if (w || isDraw) {
-      setDone(true)
-      onTaskComplete(item.day)
-    }
-  }
-
   function aiMove(b) {
     const empty = b.map((value, index) => (value ? -1 : index)).filter(index => index >= 0)
+    const gameNo = wins.player + wins.moon + 1
+    // AI 越下越强：第 1 局 45% 随手，第 2 局 15%，第 3 局起全强度
+    const randChance = gameNo === 1 ? 0.45 : gameNo === 2 ? 0.15 : 0
+    if (Math.random() < randChance) return empty[Math.floor(Math.random() * empty.length)]
     const findWin = mark => {
       for (const index of empty) {
         const next = [...b]
@@ -6488,6 +6693,34 @@ function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
     const corners = [0, 2, 6, 8].filter(index => b[index] === null)
     if (corners.length) return corners[Math.floor(Math.random() * corners.length)]
     return empty[Math.floor(Math.random() * empty.length)]
+  }
+
+  function finish(b) {
+    const w = winnerOf(b)
+    const isDraw = !w && b.every(Boolean)
+    const nextWins = { ...wins }
+    if (w === 'star') { nextWins.player += 1; setGameResult('win'); setScore(value => value + 10) }
+    else if (w === 'moon') { nextWins.moon += 1; setGameResult('lose') }
+    else if (isDraw) { setGameResult('draw'); setScore(value => value + 3) }
+    if (w || isDraw) {
+      if (nextWins.player >= bestOf) {
+        setFinal('win')
+        setDone(true)
+        onTaskComplete(item.day)
+      } else if (nextWins.moon >= bestOf) {
+        setFinal('lose')
+        setDone(true)
+        onTaskComplete(item.day)
+      } else {
+        setBusy(true)
+        window.setTimeout(() => {
+          setWins(nextWins)
+          setBoard(Array(9).fill(null))
+          setGameResult(null)
+          setBusy(false)
+        }, 1100)
+      }
+    }
   }
 
   function play(index) {
@@ -6507,14 +6740,19 @@ function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
       setBoard(after)
       setBusy(false)
       finish(after)
-    }, 480)
+    }, 420)
   }
 
-  const resultText = result === 'win' ? '你赢啦！' : result === 'draw' ? '和月亮打了个平手！' : result === 'lose' ? '月亮抢先一步～' : ''
+  const resultText = gameResult === 'win' ? '你赢下这一局！' : gameResult === 'draw' ? '这局平手～' : gameResult === 'lose' ? '月亮拿下这一局…' : ''
+  const gameNo = wins.player + wins.moon + 1
 
   return (
     <div className="mini-game tictactoe-game">
-      <p className="tictactoe-hint">你是 🌟，月亮是 🌙，三颗连成一线就赢啦（平局也算通关）</p>
+      <p className="tictactoe-hint">你是 🌟、月亮是 🌙；先赢 {bestOf} 局获胜，AI 会一局比一局强</p>
+      <div className="tictactoe-score">
+        <span>🌟 你 <strong>{wins.player}</strong> : <strong>{wins.moon}</strong> 🌙</span>
+        <span>第 {gameNo} 局 · 得分 <strong>{score}</strong></span>
+      </div>
       <div className="tictactoe-board">
         {board.map((cell, index) => (
           <button key={index} type="button" className="tictactoe-cell" onClick={() => play(index)} disabled={!!cell || busy || done} aria-label={`第 ${index + 1} 格`}>
@@ -6522,52 +6760,102 @@ function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
           </button>
         ))}
       </div>
-      {done && <div className="game-done-panel"><p>{item.secret || `${resultText} 这盘棋下完啦，可以签到！`}</p></div>}
+      {gameResult && !done && <p className="tictactoe-result">{resultText} 下一局马上开始…</p>}
+      {done && (
+        <div className="game-done-panel">
+          {final ? (
+            <>
+              <p>{final === 'win' ? `你以 ${bestOf}:${wins.moon} 拿下比赛！` : `月亮先拿到 ${bestOf} 局…`}</p>
+              <p>{item.secret || `最终得分 ${score} 分，可以签到啦！`}</p>
+            </>
+          ) : (
+            <p>今天的任务已经完成啦，直接去签到吧～</p>
+          )}
+        </div>
+      )}
     </div>
   )
 }
 
-// ---- 小游戏：4×4 数独 ----
-const SUDOKU_BASE = [1, 2, 3, 4, 3, 4, 1, 2, 2, 1, 4, 3, 4, 3, 2, 1]
+// ---- 小游戏：数独（6×6 / 9×9） ----
+const SUDOKU_BASE_6 = [3, 6, 2, 5, 1, 4, 5, 1, 4, 2, 6, 3, 6, 5, 3, 1, 4, 2, 4, 2, 1, 6, 3, 5, 2, 4, 6, 3, 5, 1, 1, 3, 5, 4, 2, 6]
+const SUDOKU_BASE_9 = [5, 3, 4, 6, 7, 8, 9, 1, 2, 6, 7, 2, 1, 9, 5, 3, 4, 8, 1, 9, 8, 3, 4, 2, 5, 6, 7, 8, 5, 9, 7, 6, 1, 4, 2, 3, 4, 2, 6, 8, 5, 3, 7, 9, 1, 7, 1, 3, 9, 2, 4, 8, 5, 6, 9, 6, 1, 5, 3, 7, 2, 8, 4, 2, 8, 7, 4, 1, 9, 6, 3, 5, 3, 4, 5, 2, 8, 6, 1, 7, 9]
 const SUDOKU_PUZZLES = {
-  easy: [
-    [1, 0, 3, 4, 3, 4, 0, 2, 0, 1, 4, 3, 4, 3, 2, 0],
-    [0, 2, 3, 4, 3, 4, 1, 0, 2, 1, 0, 3, 4, 3, 2, 1]
+  easy6: [
+    [3, 0, 2, 5, 1, 4, 5, 1, 4, 0, 6, 3, 6, 5, 0, 1, 4, 2, 4, 2, 1, 6, 0, 5, 2, 4, 6, 3, 5, 0, 1, 3, 5, 4, 2, 6],
+    [3, 6, 2, 0, 1, 4, 5, 1, 0, 2, 6, 3, 6, 5, 3, 1, 0, 2, 4, 2, 1, 6, 3, 5, 0, 4, 6, 3, 5, 1, 1, 3, 5, 4, 2, 0]
   ],
-  normal: [
-    [0, 2, 0, 4, 0, 4, 1, 2, 2, 0, 4, 0, 4, 3, 0, 1],
-    [1, 0, 0, 0, 3, 4, 1, 2, 2, 1, 0, 3, 0, 3, 2, 1]
+  normal6: [
+    [0, 6, 0, 5, 1, 4, 5, 1, 0, 2, 0, 3, 0, 5, 3, 0, 4, 2, 4, 2, 1, 6, 3, 0, 2, 0, 6, 0, 5, 1, 1, 3, 5, 4, 0, 6],
+    [3, 0, 2, 0, 1, 4, 0, 1, 4, 2, 0, 3, 6, 5, 0, 1, 4, 0, 4, 2, 1, 0, 3, 5, 2, 4, 0, 3, 5, 0, 0, 3, 5, 4, 2, 6]
+  ],
+  challenge9: [
+    [5, 3, 4, 6, 7, 8, 9, 1, 2, 6, 0, 0, 1, 0, 5, 3, 4, 0, 0, 9, 8, 3, 0, 0, 0, 6, 0, 8, 0, 9, 0, 6, 0, 0, 2, 0, 4, 0, 6, 8, 0, 3, 7, 9, 0, 0, 1, 0, 9, 2, 0, 8, 0, 6, 9, 6, 0, 0, 0, 7, 2, 8, 0, 2, 0, 0, 4, 1, 9, 0, 3, 5, 0, 4, 5, 2, 0, 0, 0, 7, 9]
   ]
 }
+const SUDOKU_BEST_KEY = 'wwcxrl-sudoku-best'
 
 function SudokuMiniGame({ item, taskCompleted, onTaskComplete }) {
-  const difficulty = item.gameConfig?.difficulty === 'normal' ? 'normal' : 'easy'
+  const difficulty = item.gameConfig?.difficulty === 'normal6' ? 'normal6' : item.gameConfig?.difficulty === 'challenge9' ? 'challenge9' : 'easy6'
+  const size = difficulty === 'challenge9' ? 9 : 6
+  const base = difficulty === 'challenge9' ? SUDOKU_BASE_9 : SUDOKU_BASE_6
   const [puzzle] = React.useState(() => SUDOKU_PUZZLES[difficulty][Math.floor(Math.random() * SUDOKU_PUZZLES[difficulty].length)])
   const [board, setBoard] = React.useState(() => [...puzzle])
   const [selected, setSelected] = React.useState(-1)
-  const [wrong, setWrong] = React.useState(false)
+  const [wrong, setWrong] = React.useState(null)
+  const [startedAt] = React.useState(() => Date.now())
+  const [elapsed, setElapsed] = React.useState(0)
   const [done, setDone] = React.useState(taskCompleted)
+  const [best, setBest] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem(SUDOKU_BEST_KEY) || 'null') } catch { return null }
+  })
+
+  React.useEffect(() => {
+    if (done) return
+    const timer = window.setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000)
+    return () => window.clearInterval(timer)
+  }, [done, startedAt])
+
+  function formatTime(seconds) {
+    const m = Math.floor(seconds / 60)
+    const s = seconds % 60
+    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  }
 
   function pickNumber(number) {
     if (selected < 0 || done) return
-    if (SUDOKU_BASE[selected] !== number) {
-      setWrong(true)
-      window.setTimeout(() => setWrong(false), 550)
+    if (base[selected] !== number) {
+      setWrong('这个数字不对哦，再想想～')
+      window.setTimeout(() => setWrong(null), 700)
       return
     }
     const next = [...board]
     next[selected] = number
     setBoard(next)
-    if (next.every((value, index) => value === SUDOKU_BASE[index])) {
+    setWrong(null)
+    if (next.every((value, index) => value === base[index])) {
       setDone(true)
+      const seconds = Math.floor((Date.now() - startedAt) / 1000)
+      if (!best || seconds < best.seconds) {
+        const nextBest = { seconds, difficulty }
+        localStorage.setItem(SUDOKU_BEST_KEY, JSON.stringify(nextBest))
+        setBest(nextBest)
+      }
       onTaskComplete(item.day)
     }
   }
 
+  const difficultyLabel = difficulty === 'challenge9' ? '9×9 挑战' : difficulty === 'normal6' ? '6×6 普通' : '6×6 轻松'
+
   return (
     <div className="mini-game sudoku-game">
-      <p className="sudoku-hint">先点一个空格，再选数字 1-4，让每行每列每个小方块都不重复</p>
-      <div className="sudoku-board">
+      <p className="sudoku-hint">先点空格，再选数字；让每行、每列、每个小方块都不重复（{difficultyLabel}）</p>
+      <div className="sudoku-meta">
+        <span>{difficultyLabel}</span>
+        <span>⏱ {formatTime(elapsed)}</span>
+        {best && <span>🏆 最佳 {formatTime(best.seconds)}</span>}
+      </div>
+      <div className={`sudoku-board ${size === 9 ? 'is-size9' : 'is-size6'}`}>
         {board.map((value, index) => (
           <button
             key={index}
@@ -6580,12 +6868,323 @@ function SudokuMiniGame({ item, taskCompleted, onTaskComplete }) {
         ))}
       </div>
       <div className="sudoku-pad">
-        {[1, 2, 3, 4].map(number => (
+        {Array.from({ length: size }, (_, index) => index + 1).map(number => (
           <button key={number} type="button" className="sudoku-number" onClick={() => pickNumber(number)} disabled={done}>{number}</button>
         ))}
       </div>
-      {wrong && <p className="sudoku-wrong">这个数字不对哦，再想想～</p>}
-      {done && <div className="game-done-panel"><p>{item.secret || '数独填好啦，可以签到啦！'}</p></div>}
+      {wrong && <p className="sudoku-wrong">{wrong}</p>}
+      {done && (
+        <div className="game-done-panel">
+          <p>{item.secret || `数独填好啦，用时 ${formatTime(elapsed)}，可以签到啦！`}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ---- 小游戏：2048·小星球 ----
+const MERGE_BEST_KEY = 'wwcxrl-2048-best'
+
+function Merge2048Game({ item, taskCompleted, onTaskComplete }) {
+  const SIZE = 4
+  const blankGrid = () => Array(SIZE * SIZE).fill(0)
+  const [grid, setGrid] = React.useState(() => {
+    const g = blankGrid()
+    spawn(g)
+    spawn(g)
+    return g
+  })
+  const [score, setScore] = React.useState(0)
+  const [bestScore, setBestScore] = React.useState(() => {
+    try { return Number(localStorage.getItem(MERGE_BEST_KEY) || 0) } catch { return 0 }
+  })
+  const [done, setDone] = React.useState(taskCompleted)
+  const [over, setOver] = React.useState(false)
+
+  function spawn(g) {
+    const empty = g.map((value, index) => (value ? -1 : index)).filter(index => index >= 0)
+    if (!empty.length) return g
+    g[empty[Math.floor(Math.random() * empty.length)]] = Math.random() < 0.9 ? 2 : 4
+    return g
+  }
+
+  function slideLine(line) {
+    const values = line.filter(Boolean)
+    const merged = []
+    let gained = 0
+    for (let i = 0; i < values.length; i += 1) {
+      if (i + 1 < values.length && values[i] === values[i + 1]) {
+        merged.push(values[i] * 2)
+        gained += values[i] * 2
+        i += 1
+      } else {
+        merged.push(values[i])
+      }
+    }
+    while (merged.length < SIZE) merged.push(0)
+    return { line: merged, gained }
+  }
+
+  function move(direction) {
+    if (done || over) return
+    const next = blankGrid()
+    let gained = 0
+    for (let index = 0; index < SIZE; index += 1) {
+      let line = []
+      for (let step = 0; step < SIZE; step += 1) {
+        const row = direction === 'up' ? step : direction === 'down' ? SIZE - 1 - step : index
+        const col = direction === 'left' ? step : direction === 'right' ? SIZE - 1 - step : index
+        line.push(grid[row * SIZE + col])
+      }
+      const result = slideLine(line)
+      gained += result.gained
+      for (let step = 0; step < SIZE; step += 1) {
+        const row = direction === 'up' ? step : direction === 'down' ? SIZE - 1 - step : index
+        const col = direction === 'left' ? step : direction === 'right' ? SIZE - 1 - step : index
+        next[row * SIZE + col] = result.line[step]
+      }
+    }
+    if (next.join() === grid.join()) return
+    setGrid(next)
+    const nextScore = score + gained
+    setScore(nextScore)
+    if (next.includes(2048) || nextScore >= 3000) {
+      setDone(true)
+      if (nextScore > bestScore) {
+        localStorage.setItem(MERGE_BEST_KEY, JSON.stringify(nextScore))
+        setBestScore(nextScore)
+      }
+      onTaskComplete(item.day)
+      return
+    }
+    spawn(next)
+    setGrid([...next])
+    if (!canMove(next)) setOver(true)
+  }
+
+  function canMove(g) {
+    for (let i = 0; i < g.length; i += 1) {
+      if (!g[i]) return true
+      const row = Math.floor(i / SIZE)
+      const col = i % SIZE
+      if (col + 1 < SIZE && g[i] === g[i + 1]) return true
+      if (row + 1 < SIZE && g[i] === g[i + SIZE]) return true
+    }
+    return false
+  }
+
+  function restart() {
+    const g = blankGrid()
+    spawn(g)
+    spawn(g)
+    setGrid(g)
+    setScore(0)
+    setOver(false)
+  }
+
+  React.useEffect(() => {
+    const onKey = event => {
+      const map = { ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right', w: 'up', s: 'down', a: 'left', d: 'right' }
+      const direction = map[event.key]
+      if (direction) {
+        event.preventDefault()
+        move(direction)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  })
+
+  return (
+    <div className="mini-game merge-game">
+      <p className="merge-hint">方向键 / WASD 或点按钮滑动，相同数字合并；合成 2048 或累计 3000 分完成</p>
+      <div className="merge-meta">
+        <span>得分 <strong>{score}</strong></span>
+        <span>🏆 最佳 {Math.max(bestScore, score)}</span>
+        <button type="button" className="merge-restart" onClick={restart}>↺ 重开</button>
+      </div>
+      <div className="merge-board">
+        {grid.map((value, index) => (
+          <span key={index} className={`merge-tile ${value ? `is-${value}` : ''}`}>{value || ''}</span>
+        ))}
+      </div>
+      <div className="merge-controls">
+        <button type="button" onClick={() => move('up')}>↑</button>
+        <button type="button" onClick={() => move('left')}>←</button>
+        <button type="button" onClick={() => move('down')}>↓</button>
+        <button type="button" onClick={() => move('right')}>→</button>
+      </div>
+      {over && !done && (
+        <div className="game-fail-panel">
+          <p>没有可合并的格子啦，得分 <strong>{score}</strong>。再来一局！</p>
+          <button type="button" className="game-restart" onClick={restart}>↺ 再来一局</button>
+        </div>
+      )}
+      {done && <div className="game-done-panel"><p>{item.secret || '小星球数字合并成功，可以签到啦！'}</p></div>}
+    </div>
+  )
+}
+
+// ---- 小游戏：黑白翻转棋·6×6 ----
+function OthelloGame({ item, taskCompleted, onTaskComplete }) {
+  const N = 6
+  const DIRS = [[-1, -1], [-1, 0], [-1, 1], [0, -1], [0, 1], [1, -1], [1, 0], [1, 1]]
+  const initBoard = () => {
+    const b = Array(N * N).fill(null)
+    b[2 * N + 2] = 'moon'
+    b[2 * N + 3] = 'star'
+    b[3 * N + 2] = 'star'
+    b[3 * N + 3] = 'moon'
+    return b
+  }
+  const [board, setBoard] = React.useState(initBoard)
+  const [turn, setTurn] = React.useState('player')
+  const [busy, setBusy] = React.useState(false)
+  const [over, setOver] = React.useState(false)
+  const [result, setResult] = React.useState(null)
+  const [done, setDone] = React.useState(taskCompleted)
+
+  function opponentOf(me) {
+    return me === 'star' ? 'moon' : 'star'
+  }
+
+  function flipsFor(b, row, col, me) {
+    const flips = []
+    for (const [dr, dc] of DIRS) {
+      let r = row + dr
+      let c = col + dc
+      const line = []
+      while (r >= 0 && r < N && c >= 0 && c < N && b[r * N + c] === opponentOf(me)) {
+        line.push(r * N + c)
+        r += dr
+        c += dc
+      }
+      if (line.length && r >= 0 && r < N && c >= 0 && c < N && b[r * N + c] === me) {
+        flips.push(...line)
+      }
+    }
+    return flips
+  }
+
+  function validMoves(b, me) {
+    const moves = []
+    for (let r = 0; r < N; r += 1) {
+      for (let c = 0; c < N; c += 1) {
+        if (b[r * N + c] !== null) continue
+        const flips = flipsFor(b, r, c, me)
+        if (flips.length) moves.push({ r, c, flips })
+      }
+    }
+    return moves
+  }
+
+  function countDisk(b, me) {
+    return b.filter(value => value === me).length
+  }
+
+  function aiMove(b) {
+    const moves = validMoves(b, 'moon')
+    if (!moves.length) return null
+    let best = null
+    let bestScoreValue = -1
+    for (const move of moves) {
+      let value = move.flips.length
+      if ((move.r === 0 || move.r === N - 1) && (move.c === 0 || move.c === N - 1)) value += 14
+      else if (move.r === 0 || move.r === N - 1 || move.c === 0 || move.c === N - 1) value += 3
+      value += Math.random() * 0.8
+      if (value > bestScoreValue) {
+        bestScoreValue = value
+        best = move
+      }
+    }
+    return best
+  }
+
+  function applyMove(b, move, me) {
+    const next = [...b]
+    next[move.r * N + move.c] = me
+    for (const index of move.flips) next[index] = me
+    return next
+  }
+
+  function afterMove(b, me) {
+    const opponent = opponentOf(me)
+    const nextMoves = validMoves(b, opponent)
+    if (nextMoves.length) {
+      setTurn(opponent === 'star' ? 'player' : 'ai')
+      return
+    }
+    if (!validMoves(b, me).length) {
+      const starCount = countDisk(b, 'star')
+      const moonCount = countDisk(b, 'moon')
+      setOver(true)
+      setResult(starCount > moonCount ? 'win' : starCount < moonCount ? 'lose' : 'draw')
+      setDone(true)
+      onTaskComplete(item.day)
+    } else {
+      setTurn(me === 'star' ? 'player' : 'ai')
+    }
+  }
+
+  function play(row, col) {
+    if (turn !== 'player' || busy || done || over || board[row * N + col] !== null) return
+    const moves = validMoves(board, 'star')
+    const move = moves.find(item => item.r === row && item.c === col)
+    if (!move) return
+    const next = applyMove(board, move, 'star')
+    setBoard(next)
+    setBusy(true)
+    window.setTimeout(() => {
+      afterMove(next, 'star')
+      const ai = aiMove(next)
+      if (ai) {
+        const afterAi = applyMove(next, ai, 'moon')
+        setBoard(afterAi)
+        window.setTimeout(() => {
+          afterMove(afterAi, 'moon')
+          setBusy(false)
+        }, 500)
+      } else {
+        setBusy(false)
+      }
+    }, 420)
+  }
+
+  const playerCount = countDisk(board, 'star')
+  const moonCount = countDisk(board, 'moon')
+  const resultText = result === 'win' ? '你赢了！' : result === 'lose' ? '月亮赢了…' : '平局！'
+
+  return (
+    <div className="mini-game othello-game">
+      <p className="othello-hint">你是 🌟，月亮是 🌙；落子要夹住对方棋子才能翻转，下满或无处可下即结束</p>
+      <div className="othello-score">
+        <span>🌟 你 <strong>{playerCount}</strong></span>
+        <span><strong>{moonCount}</strong> 🌙 月亮</span>
+        <span>{turn === 'player' ? '轮到你了' : '月亮思考中…'}</span>
+      </div>
+      <div className="othello-board">
+        {board.map((cell, index) => {
+          const row = Math.floor(index / N)
+          const col = index % N
+          const canPlace = turn === 'player' && !busy && !done && validMoves(board, 'star').some(move => move.r === row && move.c === col)
+          return (
+            <button
+              key={index}
+              type="button"
+              className={`othello-cell ${canPlace ? 'can-place' : ''}`}
+              onClick={() => play(row, col)}
+              disabled={!!cell || busy || done}
+              aria-label={`第 ${row + 1} 行第 ${col + 1} 列`}
+            >{cell === 'star' ? '🌟' : cell === 'moon' ? '🌙' : ''}</button>
+          )
+        })}
+      </div>
+      {done && over && (
+        <div className="game-done-panel">
+          <p>{resultText} 最终比分 {playerCount} : {moonCount}</p>
+          <p>{item.secret || '一整盘下完啦，可以签到！'}</p>
+        </div>
+      )}
     </div>
   )
 }
@@ -7289,6 +7888,8 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     if (gameId === 'starMemory') return <StarMemoryGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
     if (gameId === 'ticTacToe') return <TicTacToeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
     if (gameId === 'sudokuMini') return <SudokuMiniGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'merge2048') return <Merge2048Game key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    if (gameId === 'othello') return <OthelloGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
     const embeddedGame = EMBEDDED_GAME_SOURCES[gameId]
     if (embeddedGame) return <EmbeddedGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} source={embeddedGame.source} title={embeddedGame.title} aspect={embeddedGame.aspect} />
     if (gameId === 'sakuraPuzzle') return <SakuraPuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />

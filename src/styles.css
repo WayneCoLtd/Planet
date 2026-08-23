@@ -12572,6 +12572,40 @@ html { overflow-x: hidden; }
   color: var(--ink);
   font-weight: 900;
 }
+.idiom-meta,
+.sudoku-meta,
+.merge-meta,
+.othello-score,
+.tictactoe-score {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  justify-content: center;
+  color: var(--soft-ink);
+  font-size: .88rem;
+}
+.idiom-meta strong,
+.sudoku-meta strong,
+.merge-meta strong,
+.othello-score strong,
+.tictactoe-score strong {
+  color: var(--rose);
+}
+.idiom-timer {
+  width: min(100%, 320px);
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 159, 189, .18);
+  border: 1px solid rgba(255, 159, 189, .3);
+  overflow: hidden;
+}
+.idiom-timer i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #8de7c2, #ffd24d 60%, #ff5f8b);
+  transition: width .1s linear;
+}
 .idiom-options {
   display: flex;
   gap: 10px;
@@ -12626,6 +12660,11 @@ html { overflow-x: hidden; }
   background: linear-gradient(135deg, #fff2a8, #ffd4e2 60%, #bdeaff);
   box-shadow: 0 0 0 4px rgba(255, 159, 189, .25), 0 10px 22px rgba(255, 111, 145, .28);
   transform: scale(1.08);
+}
+.star-memory-cell.is-distractor {
+  background: linear-gradient(135deg, #f3f0ff, #dcd2ff);
+  box-shadow: 0 0 0 4px rgba(185, 167, 255, .35), 0 10px 22px rgba(150, 120, 255, .25);
+  transform: scale(1.04);
 }
 .star-memory-cell.is-wrong {
   animation: starMemoryShake .4s ease-in-out;
@@ -12734,6 +12773,179 @@ html { overflow-x: hidden; }
   border: 2px solid rgba(185, 167, 255, .4);
   box-shadow: none;
   font-size: 2rem;
+}
+.tictactoe-result {
+  margin: 0;
+  color: var(--rose);
+  font-size: .92rem;
+}
+.sudoku-board.is-size6 {
+  grid-template-columns: repeat(6, 52px);
+}
+.sudoku-board.is-size9 {
+  grid-template-columns: repeat(9, 40px);
+}
+.sudoku-board.is-size6 .sudoku-cell {
+  width: 52px;
+  height: 52px;
+}
+.sudoku-board.is-size9 .sudoku-cell {
+  width: 40px;
+  height: 40px;
+  font-size: 1rem;
+}
+/* ===== 2048 · 小星球 ===== */
+.merge-game {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .72), rgba(255, 240, 246, .6));
+  border: 2px dashed rgba(255, 159, 189, .3);
+}
+.merge-hint {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: .92rem;
+  line-height: 1.7;
+  text-align: center;
+}
+.merge-restart {
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  box-shadow: 0 6px 14px rgba(255, 111, 145, .14);
+  font-size: .86rem;
+}
+.merge-board {
+  display: grid;
+  grid-template-columns: repeat(4, 74px);
+  gap: 8px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(160, 120, 90, .14);
+}
+.merge-tile {
+  width: 74px;
+  height: 74px;
+  display: grid;
+  place-items: center;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .45);
+  color: #7b5335;
+  font-size: 1.35rem;
+  font-weight: 900;
+  transition: transform .12s ease;
+}
+.merge-tile.is-2 { background: #f5e8c8; }
+.merge-tile.is-4 { background: #f2d9a4; }
+.merge-tile.is-8 { background: #f0b27a; }
+.merge-tile.is-16 { background: #ee964b; }
+.merge-tile.is-32 { background: #f0743c; color: #fff; }
+.merge-tile.is-64 { background: #f04d2f; color: #fff; }
+.merge-tile.is-128 { background: #f3c94f; }
+.merge-tile.is-256 { background: #f2b832; }
+.merge-tile.is-512 { background: #f29f21; color: #fff; }
+.merge-tile.is-1024 { background: #f28b18; color: #fff; }
+.merge-tile.is-2048 { background: #ffd93d; box-shadow: 0 0 0 4px rgba(255, 217, 61, .35), 0 10px 24px rgba(255, 170, 0, .35); animation: mergeWin .8s ease-in-out infinite alternate; }
+@keyframes mergeWin {
+  to { transform: scale(1.06); }
+}
+.merge-controls {
+  display: grid;
+  grid-template-columns: repeat(3, 52px);
+  gap: 8px;
+}
+.merge-controls button {
+  height: 44px;
+  padding: 0;
+  border-radius: 12px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  box-shadow: 0 6px 12px rgba(255, 111, 145, .14);
+  font-size: 1.1rem;
+}
+.merge-controls button:nth-child(1) { grid-column: 2; }
+.merge-controls button:nth-child(2) { grid-column: 1; grid-row: 2; }
+.merge-controls button:nth-child(3) { grid-column: 2; grid-row: 2; }
+.merge-controls button:nth-child(4) { grid-column: 3; grid-row: 2; }
+/* ===== 黑白翻转棋 6×6 ===== */
+.othello-game {
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  margin-top: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  background: linear-gradient(160deg, rgba(255, 255, 255, .72), rgba(240, 246, 255, .62));
+  border: 2px dashed rgba(155, 217, 255, .35);
+}
+.othello-hint {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: .92rem;
+  line-height: 1.7;
+  text-align: center;
+}
+.othello-board {
+  display: grid;
+  grid-template-columns: repeat(6, 58px);
+  gap: 5px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(60, 130, 120, .22);
+}
+.othello-cell {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, .4);
+  border: 1px solid rgba(255, 255, 255, .55);
+  box-shadow: none;
+  font-size: 1.6rem;
+}
+.othello-cell.can-place {
+  background: rgba(255, 255, 255, .75);
+  box-shadow: inset 0 0 0 2px rgba(155, 217, 255, .8);
+  cursor: pointer;
+}
+@media (max-width: 560px) {
+  .merge-board {
+    grid-template-columns: repeat(4, 62px);
+  }
+  .merge-tile {
+    width: 62px;
+    height: 62px;
+  }
+  .othello-board {
+    grid-template-columns: repeat(6, 48px);
+  }
+  .othello-cell {
+    width: 48px;
+    height: 48px;
+    font-size: 1.3rem;
+  }
+  .sudoku-board.is-size6 {
+    grid-template-columns: repeat(6, 44px);
+  }
+  .sudoku-board.is-size6 .sudoku-cell {
+    width: 44px;
+    height: 44px;
+  }
+  .sudoku-board.is-size9 {
+    grid-template-columns: repeat(9, 34px);
+  }
+  .sudoku-board.is-size9 .sudoku-cell {
+    width: 34px;
+    height: 34px;
+    font-size: .86rem;
+  }
 }
 .sudoku-board {
   display: grid;
