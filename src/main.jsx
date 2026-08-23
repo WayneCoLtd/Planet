@@ -127,6 +127,26 @@ function mergeCheckinDayLists(localList = [], remoteList = []) {
   return Array.from(union).filter(day => validDays.has(day) || isStarMapDay(day) || localDays.has(day)).sort((a, b) => a - b)
 }
 
+// 管理端删除/重新发布某天任务时，把该天的“已完成/已签到”状态复位（本地 + 双方云端）
+async function resetDayCheckinStatus(day, date) {
+  const dayNumber = Number(day)
+  if (!dayNumber) return
+  for (const role of ['orange', 'pomelo']) {
+    try {
+      const signed = JSON.parse(localStorage.getItem(`wwcxrl-signed-days:${role}`) || '[]').filter(value => Number(value) !== dayNumber)
+      const completed = JSON.parse(localStorage.getItem(`wwcxrl-completed-days:${role}`) || '[]').filter(value => Number(value) !== dayNumber)
+      localStorage.setItem(`wwcxrl-signed-days:${role}`, JSON.stringify(signed))
+      localStorage.setItem(`wwcxrl-completed-days:${role}`, JSON.stringify(completed))
+    } catch {}
+  }
+  if (cloudEnabled) {
+    await clearCloudDayStatus(dayNumber, date, 'wwcxrl-orange-main').catch(() => {})
+    await clearCloudDayStatus(dayNumber, date, 'wwcxrl-pomelo-main').catch(() => {})
+  }
+  window.dispatchEvent(new Event('wwcxrl-signed-updated'))
+  window.dispatchEvent(new Event('wwcxrl-tasks-updated'))
+}
+
 function roleStorageKey(key) {
   if (typeof window === 'undefined') return key
   try {
@@ -11172,6 +11192,7 @@ function AdminTaskPage() {
       localList.push(payload)
       saveLocalAdminTasks(localList)
       setToast(status === 'published' ? `Day ${draft.day} 已发布（本地模式，未连接云端）` : `Day ${draft.day} 已存为草稿（本地）`)
+      if (status === 'published') resetDayCheckinStatus(payload.day, payload.date)
       setEditingDay(null)
       setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
       refresh()
@@ -11182,6 +11203,7 @@ function AdminTaskPage() {
       setSaving(false)
       if (okSave) {
         setToast(status === 'published' ? `Day ${draft.day} 已发布` : `Day ${draft.day} 已存为草稿`)
+        if (status === 'published') resetDayCheckinStatus(payload.day, payload.date)
         setEditingDay(null)
         setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
         refresh()
@@ -11213,18 +11235,22 @@ function AdminTaskPage() {
       const localList = loadLocalAdminTasks().filter(task => Number(task.day) !== Number(row.day))
       saveLocalAdminTasks(localList)
       setToast(`Day ${row.day} 已删除（本地）`)
+      resetDayCheckinStatus(row.day, row.date)
       if (editingDay === row.day) {
         setEditingDay(null)
-        setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+        setDraft(emptyAdminTask(nextFreeDay))
+        setDateAuto(true)
       }
       refresh()
       return
     }
     deleteCloudDailyTask(row.day).then(okDel => {
       setToast(okDel ? `Day ${row.day} 已删除` : '删除失败，请查看控制台')
+      if (okDel) resetDayCheckinStatus(row.day, row.date)
       if (okDel && editingDay === row.day) {
         setEditingDay(null)
-        setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+        setDraft(emptyAdminTask(nextFreeDay))
+        setDateAuto(true)
       }
       refresh()
     })
@@ -11439,7 +11465,7 @@ function AdminTaskPage() {
         <div className="admin-actions">
           <button type="button" className="admin-save-draft" disabled={saving} onClick={() => save('draft')}>{saving ? '保存中…' : '存为草稿'}</button>
           <button type="button" className="admin-save-publish" disabled={saving} onClick={() => save('published')}>{saving ? '保存中…' : '发布任务'}</button>
-          {editingDay && <button type="button" className="admin-cancel" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day)))) }}>取消编辑</button>}
+          {editingDay && <button type="button" className="admin-cancel" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeDay)); setDateAuto(true) }}>取消编辑</button>}
         </div>
       </section>
 
@@ -11464,7 +11490,7 @@ function AdminTaskPage() {
       <section id="admin-task-list" className="admin-task-list sticker-card">
         <div className="admin-section-head">
           <h2>任务列表（{allRows.length}）</h2>
-          <button type="button" className="admin-meeting-add" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day)))); setDateAuto(true); setAdminSection('form') }}>＋ 新建任务</button>
+          <button type="button" className="admin-meeting-add" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeDay)); setDateAuto(true); setAdminSection('form') }}>＋ 新建任务</button>
         </div>
         {loading ? <p>加载中…</p> : allRows.length === 0 ? <p>还没有任务。</p> : (
           <div className="admin-table-wrap">

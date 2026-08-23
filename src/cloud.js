@@ -154,13 +154,14 @@ export async function markCloudTaskCompleted(day, date) {
   }
 }
 
-export async function clearCloudDayStatus(day, date) {
+export async function clearCloudDayStatus(day, date, targetUserId = null) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return
     const now = new Date().toISOString()
+    const userId = targetUserId || identity.id
     const { error } = await supabase.from('wwcxrl_checkins').upsert({
-      user_id: identity.id,
+      user_id: userId,
       day,
       date,
       signed: false,
