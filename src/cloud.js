@@ -742,6 +742,83 @@ export async function uploadMessageImage(file, role = null) {
   }
 }
 
+// ============ 网站建议箱（wwcxrl_feedback）：给小琳/小琛提网站建设建议 ============
+function normalizeFeedbackRow(row) {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    role: row.role,
+    displayName: row.display_name,
+    content: row.content,
+    createdAt: row.created_at
+  }
+}
+
+export async function loadCloudFeedback() {
+  try {
+    const supabase = await getSupabase()
+    if (!supabase) return null
+    const { data, error } = await supabase
+      .from('wwcxrl_feedback')
+      .select('id,user_id,role,display_name,content,created_at')
+      .order('created_at', { ascending: false })
+      .limit(200)
+    if (error) {
+      console.warn('[wwcxrl cloud] feedback load failed', error.message)
+      return null
+    }
+    return (data || []).map(normalizeFeedbackRow)
+  } catch (error) {
+    console.warn('[wwcxrl cloud] feedback load exception', error)
+    return null
+  }
+}
+
+export async function saveCloudFeedback({ content = '' }, sender = null) {
+  try {
+    const context = await getCloudContext()
+    if (!context) return { ok: false, error: '未连接云端' }
+    const { supabase, identity } = context
+    const role = sender?.role || identity.role
+    const userId = sender?.userId || identity.id
+    const displayName = sender?.displayName || identity.displayName
+    const { data, error } = await supabase
+      .from('wwcxrl_feedback')
+      .insert({
+        user_id: userId,
+        role,
+        display_name: String(displayName || ''),
+        content: String(content || '').trim()
+      })
+      .select('id,user_id,role,display_name,content,created_at')
+      .single()
+    if (error) {
+      console.warn('[wwcxrl cloud] feedback save failed', error.message)
+      return { ok: false, error: error.message }
+    }
+    return { ok: true, message: normalizeFeedbackRow(data) }
+  } catch (error) {
+    console.warn('[wwcxrl cloud] feedback save exception', error)
+    return { ok: false, error: error.message || '未知错误' }
+  }
+}
+
+export async function deleteCloudFeedback(id) {
+  try {
+    const supabase = await getSupabase()
+    if (!supabase || !id) return false
+    const { error } = await supabase.from('wwcxrl_feedback').delete().eq('id', id)
+    if (error) {
+      console.warn('[wwcxrl cloud] feedback delete failed', error.message)
+      return false
+    }
+    return true
+  } catch (error) {
+    console.warn('[wwcxrl cloud] feedback delete exception', error)
+    return false
+  }
+}
+
 // ============ 更新日志（wwcxrl_changelog）：管理端可编辑 ============
 function normalizeChangelogRow(row) {
   return {

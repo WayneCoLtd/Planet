@@ -273,6 +273,28 @@ create policy "wwcxrl_messages_public_delete" on public.wwcxrl_messages for dele
 -- 已上线的老库补执行（去掉对 profiles 的外键依赖，发送方不再要求档案存在）：
 -- alter table public.wwcxrl_messages drop constraint if exists wwcxrl_messages_user_id_fkey;
 
+-- ============ 网站建议箱（wwcxrl_feedback）：小琳/小琛给网站建设提建议 ============
+-- 页脚「💡 网站建议」弹窗，文字建议同步到两台设备；未连接云端时回退本地存储。
+create table if not exists public.wwcxrl_feedback (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null,
+  role text not null default 'pomelo' check (role in ('orange', 'pomelo', 'guest')),
+  display_name text not null default '',
+  content text not null default '',
+  created_at timestamptz not null default now()
+);
+
+alter table public.wwcxrl_feedback enable row level security;
+
+drop policy if exists "wwcxrl_feedback_public_read" on public.wwcxrl_feedback;
+create policy "wwcxrl_feedback_public_read" on public.wwcxrl_feedback for select using (true);
+drop policy if exists "wwcxrl_feedback_public_insert" on public.wwcxrl_feedback;
+create policy "wwcxrl_feedback_public_insert" on public.wwcxrl_feedback for insert with check (true);
+drop policy if exists "wwcxrl_feedback_public_update" on public.wwcxrl_feedback;
+create policy "wwcxrl_feedback_public_update" on public.wwcxrl_feedback for update using (true) with check (true);
+drop policy if exists "wwcxrl_feedback_public_delete" on public.wwcxrl_feedback;
+create policy "wwcxrl_feedback_public_delete" on public.wwcxrl_feedback for delete using (true);
+
 -- ============ 更新日志（wwcxrl_changelog）：管理端可编辑 ============
 create table if not exists public.wwcxrl_changelog (
   id uuid primary key default gen_random_uuid(),

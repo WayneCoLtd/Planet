@@ -13528,3 +13528,130 @@ html { overflow-x: hidden; }
     transform: none;
   }
 }
+
+/* ===== 网站建议箱 ===== */
+.feedback-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 61;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(60, 34, 20, .38);
+  backdrop-filter: blur(3px);
+}
+.feedback-modal {
+  width: min(620px, 100%);
+  max-height: min(84vh, 720px);
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  padding: 22px 24px;
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 10% 8%, rgba(255, 226, 109, .25), transparent 24%),
+    radial-gradient(circle at 94% 12%, rgba(159, 199, 255, .28), transparent 26%),
+    linear-gradient(160deg, #fffdf6, #f4f8ff 55%, #edf6ff);
+  border: 2px solid rgba(255, 255, 255, .92);
+  box-shadow: 0 30px 70px rgba(60, 34, 20, .35);
+}
+.feedback-board {
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding: 14px 4px 8px 0;
+}
+.feedback-compose {
+  padding: 14px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .72);
+  border: 1px solid rgba(120, 168, 255, .24);
+  display: grid;
+  gap: 10px;
+}
+.feedback-compose textarea {
+  width: 100%;
+  min-height: 76px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 2px dashed rgba(120, 168, 255, .35);
+  background: rgba(255, 255, 255, .86);
+  color: var(--ink);
+  font-size: .92rem;
+  line-height: 1.6;
+  resize: vertical;
+}
+.feedback-compose textarea:focus {
+  outline: none;
+  border-color: rgba(111, 151, 255, .7);
+}
+.feedback-compose-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.feedback-send {
+  padding: 9px 20px;
+  border: none;
+  border-radius: 999px;
+  color: #fff;
+  font-size: .9rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, #7fb0ff, #8f6bff);
+  box-shadow: 0 5px 14px rgba(111, 151, 255, .35);
+  transition: transform .15s ease, filter .15s ease;
+}
+.feedback-send:hover {
+  transform: translateY(-1px);
+  filter: brightness(1.05);
+}
+.feedback-send:disabled {
+  opacity: .6;
+  cursor: not-allowed;
+  transform: none;
+}
+.feedback-list {
+  display: grid;
+  gap: 12px;
+}
+.feedback-content {
+  margin: 10px 0 2px;
+  color: #5c4231;
+  font-size: .92rem;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.interstellar-voyage-theme .feedback-modal {
+  background:
+    radial-gradient(circle at 10% 8%, rgba(120, 180, 255, .2), transparent 24%),
+    radial-gradient(circle at 94% 12%, rgba(160, 120, 255, .24), transparent 26%),
+    linear-gradient(160deg, #17233c, #1d1b3c 55%, #101b30);
+  border-color: rgba(150, 190, 255, .35);
+}
+.interstellar-voyage-theme .feedback-modal h2,
+.interstellar-voyage-theme .feedback-modal p,
+.interstellar-voyage-theme .feedback-content {
+  color: #dbe7ff;
+}
+.interstellar-voyage-theme .feedback-compose {
+  background: rgba(30, 43, 71, .72);
+  border-color: rgba(150, 190, 255, .3);
+}
+.interstellar-voyage-theme .feedback-compose textarea {
+  background: rgba(16, 27, 48, .7);
+  border-color: rgba(150, 190, 255, .35);
+  color: #eaf2ff;
+}
+@media (max-width: 640px) {
+  .feedback-backdrop {
+    padding: 12px;
+  }
+  .feedback-modal {
+    padding: 16px 14px;
+  }
+  .feedback-compose-bar {
+    flex-wrap: wrap;
+  }
+}

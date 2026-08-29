@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
 import { changelog } from './data/changelog'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudChangelog, saveCloudChangelog } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog } from './cloud'
 import './styles.css'
 
 const PASSWORD = '5201013'
@@ -10405,6 +10405,173 @@ function MessageBoard() {
   )
 }
 
+// ---- 网站建议箱：小琳/小琛写给网站建设的小建议（云端同步，本地兜底） ----
+function FeedbackBoard() {
+  const [items, setItems] = useState(() => loadFeedbackLocal())
+  const [content, setContent] = useState('')
+  const [sending, setSending] = useState(false)
+  const [status, setStatus] = useState('')
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  const refreshInFlightRef = React.useRef(false)
+  const [senderRole, setSenderRole] = useState(() => {
+    try {
+      return localStorage.getItem('wwcxrl-feedback-sender-role') || 'pomelo'
+    } catch {
+      return 'pomelo'
+    }
+  })
+  const senderName = senderRole === 'orange' ? '小琛' : '小琳'
+  const senderUserId = `wwcxrl-${senderRole}-main`
+
+  const refresh = React.useCallback(() => {
+    if (refreshInFlightRef.current) return
+    refreshInFlightRef.current = true
+    if (cloudEnabled) {
+      loadCloudFeedback().then(list => {
+        if (list) {
+          setItems(list)
+          saveFeedbackLocal(list)
+        }
+      }).catch(() => {}).finally(() => { refreshInFlightRef.current = false })
+    } else {
+      setItems(loadFeedbackLocal())
+      refreshInFlightRef.current = false
+    }
+  }, [])
+
+  React.useEffect(() => {
+    refresh()
+    const onFocus = () => { if (!document.hidden) refresh() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      document.removeEventListener('visibilitychange', onFocus)
+    }
+  }, [refresh])
+
+  function changeSenderRole(role) {
+    setSenderRole(role)
+    try { localStorage.setItem('wwcxrl-feedback-sender-role', role) } catch {}
+  }
+
+  async function submit() {
+    const text = content.trim()
+    if (!text) {
+      setStatus('先写一句想提的建议吧 💡')
+      return
+    }
+    setSending(true)
+    setStatus('正在寄出…')
+    try {
+      if (cloudEnabled) {
+        const saved = await saveCloudFeedback({ content: text }, { role: senderRole, userId: senderUserId, displayName: senderName })
+        if (!saved?.ok) {
+          setStatus(`寄出失败：${saved?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行建议箱建表 SQL）`)
+          return
+        }
+        setItems(previous => {
+          const next = [saved.message, ...previous.filter(item => item.id !== saved.message.id)]
+          saveFeedbackLocal(next)
+          return next
+        })
+        setStatus('已寄出，两台设备都能看到 💡')
+      } else {
+        const localItem = {
+          id: `fb-local-${Date.now()}`,
+          userId: senderUserId,
+          role: senderRole,
+          displayName: senderName,
+          content: text,
+          createdAt: new Date().toISOString()
+        }
+        const next = [localItem, ...loadFeedbackLocal()]
+        saveFeedbackLocal(next)
+        setItems(next)
+        setStatus('已放进建议箱啦 💡')
+      }
+      setContent('')
+    } catch (error) {
+      console.warn('[wwcxrl feedback] submit failed', error.message)
+      setStatus('寄出失败，请稍后再试。')
+    } finally {
+      setSending(false)
+    }
+  }
+
+  async function removeItem(item) {
+    const mine = item.userId === senderUserId || !cloudEnabled
+    if (!mine) return
+    if (cloudEnabled) {
+      const ok = await deleteCloudFeedback(item.id)
+      if (ok) setItems(prev => prev.filter(entry => entry.id !== item.id))
+    } else {
+      const next = loadFeedbackLocal().filter(entry => entry.id !== item.id)
+      saveFeedbackLocal(next)
+      setItems(next)
+    }
+  }
+
+  return (
+    <div className="feedback-board">
+      <div className="feedback-compose">
+        <div className="message-sender-row">
+          <span className="message-sender-label">我是</span>
+          <div className="message-sender-toggle" role="group" aria-label="发送身份">
+            <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🌞 小琛</button>
+            <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🌟 小琳</button>
+          </div>
+        </div>
+        <textarea
+          value={content}
+          onChange={event => setContent(event.target.value)}
+          rows={3}
+          maxLength={500}
+          placeholder="比如：这个页面加载有点慢 / 想要一个可爱的功能 / 哪里的字看不清…"
+          aria-label="网站建议内容"
+        />
+        <div className="feedback-compose-bar">
+          <span className="message-compose-count">{content.length}/500</span>
+          <button type="button" className="feedback-send" disabled={sending} onClick={submit}>
+            {sending ? '寄出中…' : '💡 提交建议'}
+          </button>
+        </div>
+        {status && <p className="message-status">{status}</p>}
+      </div>
+      <div className="feedback-list">
+        {items.length === 0 ? (
+          <div className="message-empty sticker-card"><span>💡</span><p>还没有建议，写下第一条吧。</p></div>
+        ) : items.map(item => (
+          <article key={item.id} className={`feedback-card message-card sticker-card ${item.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
+            <header className="message-card-head">
+              <span className="message-avatar">{item.role === 'orange' ? '🌞' : '🌟'}</span>
+              <strong>{item.displayName || (item.role === 'orange' ? '小琛' : '小琳')}</strong>
+              <time>{formatMessageTime(item.createdAt)}</time>
+              {(item.userId === senderUserId || !cloudEnabled) && (
+                <button type="button" className="message-delete" onClick={() => setDeleteTarget(item)} aria-label="删除这条建议">🗑</button>
+              )}
+            </header>
+            {item.content && <p className="feedback-content">{item.content}</p>}
+          </article>
+        ))}
+      </div>
+      {deleteTarget && (
+        <div className="message-confirm-backdrop" role="presentation" onClick={() => setDeleteTarget(null)}>
+          <div className="message-confirm-modal sticker-card" role="alertdialog" aria-modal="true" aria-labelledby="feedback-confirm-title" onClick={event => event.stopPropagation()}>
+            <span className="message-confirm-icon">🗑</span>
+            <h3 id="feedback-confirm-title">删除这条建议？</h3>
+            <p>删掉之后就没有啦，确定要删除吗？</p>
+            <div className="message-confirm-actions">
+              <button type="button" className="message-confirm-cancel" onClick={() => setDeleteTarget(null)}>再想想</button>
+              <button type="button" className="message-confirm-ok" onClick={() => { removeItem(deleteTarget); setDeleteTarget(null) }}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function EnergyCapsule() {
   const [energyState, setEnergyState] = useState(loadEnergyLocalState)
   const [status, setStatus] = useState('正在准备今天的抽奖…')
@@ -10768,12 +10935,19 @@ function PlanetApp() {
   })
   const [changelogOpen, setChangelogOpen] = useState(false)
   const [changelogEntries, setChangelogEntries] = useState(changelog)
+  const [feedbackOpen, setFeedbackOpen] = useState(false)
   React.useEffect(() => {
     if (!changelogOpen) return
     const onKey = event => { if (event.key === 'Escape') setChangelogOpen(false) }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [changelogOpen])
+  React.useEffect(() => {
+    if (!feedbackOpen) return
+    const onKey = event => { if (event.key === 'Escape') setFeedbackOpen(false) }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [feedbackOpen])
   React.useEffect(() => {
     if (!changelogOpen) return
     let alive = true
@@ -10810,6 +10984,7 @@ function PlanetApp() {
       <footer className="site-footer">
         {themeSwitchAvailable && <button type="button" className="theme-toggle-button subtle" onClick={() => setThemeMode(!voyageTheme)}>{voyageTheme ? '🍊 切回旧皮肤' : '🚀 切到新皮肤'}</button>}
         <button type="button" className="theme-toggle-button subtle" onClick={() => setChangelogOpen(true)}>📜 更新日志</button>
+        <button type="button" className="theme-toggle-button subtle" onClick={() => setFeedbackOpen(true)}>💡 网站建议</button>
         <button onClick={returnToInvitationLayer}>回到 8月9日邀请信</button></footer>
       {changelogOpen && (
         <div className="changelog-backdrop" role="presentation" onClick={() => setChangelogOpen(false)}>
@@ -10836,6 +11011,21 @@ function PlanetApp() {
               ))}
             </div>
             <p className="changelog-foot">下次更新，也会写在这里。</p>
+          </div>
+        </div>
+      )}
+      {feedbackOpen && (
+        <div className="feedback-backdrop" role="presentation" onClick={() => setFeedbackOpen(false)}>
+          <div className="feedback-modal sticker-card" role="dialog" aria-modal="true" aria-labelledby="feedback-title" onClick={event => event.stopPropagation()}>
+            <header className="changelog-head">
+              <div>
+                <h2 id="feedback-title">💡 网站建议</h2>
+                <p>想给我们的网站提建议？写在这里，小琛都会看到，两台设备会同步。</p>
+              </div>
+              <button type="button" className="changelog-close" onClick={() => setFeedbackOpen(false)} aria-label="关闭网站建议">✕</button>
+            </header>
+            <FeedbackBoard />
+            <p className="changelog-foot">每一条建议都会被认真收好。</p>
           </div>
         </div>
       )}
@@ -10931,6 +11121,21 @@ function loadMessagesLocal() {
 
 function saveMessagesLocal(list) {
   localStorage.setItem(MESSAGE_LOCAL_KEY, JSON.stringify(list))
+}
+
+// ---- 网站建议箱：本地兜底 + 云端同步 ----
+const FEEDBACK_LOCAL_KEY = 'wwcxrl-feedback-local'
+
+function loadFeedbackLocal() {
+  try {
+    return JSON.parse(localStorage.getItem(FEEDBACK_LOCAL_KEY) || '[]')
+  } catch {
+    return []
+  }
+}
+
+function saveFeedbackLocal(list) {
+  localStorage.setItem(FEEDBACK_LOCAL_KEY, JSON.stringify(list))
 }
 
 function formatMessageTime(iso) {
