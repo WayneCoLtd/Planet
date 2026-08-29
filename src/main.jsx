@@ -49,7 +49,26 @@ const ADMIN_SECTIONS = [
 ]
 
 // 云端任务优先、代码 dailyAdventures 兜底的合并任务列表（按 day 去重排序）。
-let mergedDailyAdventures = null
+const DAILY_TASKS_CACHE_KEY = 'wwcxrl-daily-tasks-cache-v1'
+
+function readDailyTasksCache() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(DAILY_TASKS_CACHE_KEY) || 'null')
+    return Array.isArray(parsed) && parsed.length ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function saveDailyTasksCache(list) {
+  try {
+    localStorage.setItem(DAILY_TASKS_CACHE_KEY, JSON.stringify(list))
+  } catch {}
+}
+
+// 用上次成功拉到的云端任务列表做首屏兜底：即使这次云端还没返回，
+// 星图/相册也会先显示完整天数，不再是一副“从未使用过”的样子。
+let mergedDailyAdventures = readDailyTasksCache()
 
 function getDailyAdventures() {
   return mergedDailyAdventures || dailyAdventures
@@ -69,6 +88,7 @@ async function hydrateDailyAdventures() {
   }
   const next = Array.from(merged.values()).sort((a, b) => Number(a.day) - Number(b.day))
   mergedDailyAdventures = next
+  saveDailyTasksCache(next)
   window.dispatchEvent(new CustomEvent('wwcxrl-tasks-updated'))
   return next
 }
@@ -1094,6 +1114,7 @@ function Hero({ setCurrent }) {
     try { return filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', [])).length } catch { return 0 }
   }
   const [signedCount, setSignedCount] = useState(computeSignedCount)
+  const refreshCloudInFlightRef = React.useRef(false)
 
   React.useEffect(() => {
     let alive = true
@@ -1102,11 +1123,13 @@ function Hero({ setCurrent }) {
       const local = computeSignedCount()
       setSignedCount(local)
       if (cloudEnabled) {
+        if (refreshCloudInFlightRef.current) return
+        refreshCloudInFlightRef.current = true
         loadCloudCheckins().then(remote => {
           if (!alive || !remote) return
           const merged = mergeCheckinDayLists(getRoleJson('wwcxrl-signed-days', []), remote.signed || [])
           setSignedCount(merged.length)
-        }).catch(() => {})
+        }).catch(() => {}).finally(() => { refreshCloudInFlightRef.current = false })
       }
     }
     refresh()
@@ -1250,10 +1273,14 @@ function CheckIn() {
   const futureDayTotal = futureDaySlots.length
   const totalTargetDayCount = Math.max(1, items.length)
   const percent = Math.round((Math.max(0, signed.length) / Math.max(1, totalTargetDayCount)) * 100)
+  const refreshCheckinsInFlightRef = React.useRef(false)
+  const refreshTasksInFlightRef = React.useRef(false)
 
   React.useEffect(() => {
     let alive = true
     const refreshCloudCheckins = () => {
+      if (refreshCheckinsInFlightRef.current) return
+      refreshCheckinsInFlightRef.current = true
       loadCloudCheckins().then(remote => {
         if (!alive || !remote) return
         const remoteSigned = remote.signed || []
@@ -1267,6 +1294,7 @@ function CheckIn() {
         setRoleJson('wwcxrl-signed-days', mergedSigned)
         setRoleJson('wwcxrl-completed-days', mergedCompleted)
       }).catch(error => console.warn('[wwcxrl cloud] checkins refresh failed', error.message))
+        .finally(() => { refreshCheckinsInFlightRef.current = false })
     }
     refreshCloudCheckins()
     const intervalId = window.setInterval(refreshCloudCheckins, 6000)
@@ -1293,6 +1321,8 @@ function CheckIn() {
   React.useEffect(() => {
     let alive = true
     const refreshTasks = () => {
+      if (refreshTasksInFlightRef.current) return
+      refreshTasksInFlightRef.current = true
       hydrateDailyAdventures().then(() => {
         if (!alive) return
         const next = getDailyAdventures()
@@ -1307,6 +1337,7 @@ function CheckIn() {
         setSigned(previous => sameNumberArray(previous, localSigned) ? previous : localSigned)
         setCompletedTasks(previous => sameNumberArray(previous, localCompleted) ? previous : localCompleted)
       }).catch(error => console.warn('[wwcxrl tasks] hydrate failed', error.message))
+        .finally(() => { refreshTasksInFlightRef.current = false })
     }
     refreshTasks()
     const handleTasksUpdated = () => { if (alive) setItems(getDailyAdventures()) }
@@ -1629,6 +1660,45 @@ function LockedPreview({ item }) {
       <small>未来会解锁：{item.reward}</small>
     </div>
   )
+}
+
+// 统一小游戏“开始门”：点开某一天只显示游戏说明和清晰的开始按钮，
+// 点击后才真正挂载游戏组件；计时类游戏的倒计时从点击开始后才启动。
+function GameStartGate({ item, icon = '🎮', label = '小游戏', hint = '', resumeLabel = '', children }) {
+  const [started, setStarted] = useState(false)
+  if (started) return children
+  return (
+    <div className="game-start-gate">
+      <div className="game-start-icon" aria-hidden="true">{icon}</div>
+      <h4 className="game-start-title">{label}</h4>
+      {hint && <p className="game-start-hint">{hint}</p>}
+      <button type="button" className="game-start-button" onClick={() => setStarted(true)}>
+        <span className="game-start-play-icon">▶</span>
+        {resumeLabel || '开始游戏'}
+      </button>
+      <small className="game-start-note">准备好了再开始，计时会从点击「开始」后才启动。</small>
+    </div>
+  )
+}
+
+function hasGameProgress(gameId, item) {
+  try {
+    if (gameId === 'mazeClassic') {
+      const saved = getRoleJson(`wwcxrl-maze-${item.day}`, null)
+      return Boolean(saved && saved.position)
+    }
+    const progressKeys = {
+      catchHearts: `wwcxrl-game-catch-${item.day}`,
+      popBubbles: `wwcxrl-game-pop-${item.day}`,
+      feedDog: `wwcxrl-game-feed-${item.day}`,
+      whackAMole: `wwcxrl-game-whack-${item.day}`,
+      matchThree: `wwcxrl-game-match3-${item.day}`
+    }
+    const key = progressKeys[gameId]
+    return key ? Number(getRoleJson(key, 0)) > 0 : false
+  } catch {
+    return false
+  }
 }
 
 
@@ -7896,23 +7966,41 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
 
   if (item.type === 'game') {
     const gameId = item.gameId || 'mazeClassic'
-    if (gameId === 'mazeClassic') return <MazeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'catchHearts') return <CatchHeartsGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'popBubbles') return <PopBubblesGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'memoryMatch') return <MemoryMatchGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'slidePuzzle') return <SlidePuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'matchThree') return <MatchThreeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'feedDog') return <FeedDogGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'whackAMole') return <WhackAMoleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'idiomFill') return <IdiomFillGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'starMemory') return <StarMemoryGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'ticTacToe') return <TicTacToeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'sudokuMini') return <SudokuMiniGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'merge2048') return <Merge2048Game key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
-    if (gameId === 'othello') return <OthelloGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    const registry = MINI_GAMES.find(entry => entry.id === gameId)
     const embeddedGame = EMBEDDED_GAME_SOURCES[gameId]
-    if (embeddedGame) return <EmbeddedGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} source={embeddedGame.source} title={embeddedGame.title} aspect={embeddedGame.aspect} />
-    if (gameId === 'sakuraPuzzle') return <SakuraPuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    const renderGame = () => {
+      if (gameId === 'mazeClassic') return <MazeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'catchHearts') return <CatchHeartsGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'popBubbles') return <PopBubblesGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'memoryMatch') return <MemoryMatchGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'slidePuzzle') return <SlidePuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'matchThree') return <MatchThreeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'feedDog') return <FeedDogGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'whackAMole') return <WhackAMoleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'idiomFill') return <IdiomFillGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'starMemory') return <StarMemoryGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'ticTacToe') return <TicTacToeGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'sudokuMini') return <SudokuMiniGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'merge2048') return <Merge2048Game key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (gameId === 'othello') return <OthelloGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      if (embeddedGame) return <EmbeddedGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} source={embeddedGame.source} title={embeddedGame.title} aspect={embeddedGame.aspect} />
+      if (gameId === 'sakuraPuzzle') return <SakuraPuzzleGame key={item.day} item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+      return null
+    }
+    // 已完成的一天直接展示结果；未完成的必须先点“开始游戏”才真正进入游戏。
+    if (taskCompleted) return renderGame()
+    const gameSeconds = clampNumber(item.gameConfig?.seconds, 10, 300, 150)
+    return (
+      <GameStartGate
+        item={item}
+        icon={registry?.icon || '🎮'}
+        label={registry?.label || embeddedGame?.title || '小游戏'}
+        hint={registry?.hint || (embeddedGame ? `在下方画面里玩，玩满 ${gameSeconds} 秒就能点亮签到。` : '')}
+        resumeLabel={hasGameProgress(gameId, item) ? '继续上次的进度' : ''}
+      >
+        {renderGame()}
+      </GameStartGate>
+    )
   }
 
   if (item.type === 'memoryPuzzle') {
@@ -8559,6 +8647,7 @@ function PhotoWall() {
   const [lightbox, setLightbox] = useState(null)
   const [albumDays, setAlbumDays] = useState(() => getDailyAdventures())
   const [pendingCount, setPendingCount] = useState(() => loadPhotoWallPending().length)
+  const photoRefreshInFlightRef = React.useRef(false)
   const previewMode = isPreviewMode()
   const openedDays = albumDays.filter(item => isAlbumUploadOpen(item))
   const photos = mergePhotoWallViews(cloudPhotos, localPhotos)
@@ -8589,6 +8678,8 @@ function PhotoWall() {
   }, [])
 
   async function refreshCloudPhotoWall() {
+    if (photoRefreshInFlightRef.current) return { rows: null, flushed: null }
+    photoRefreshInFlightRef.current = true
     try {
       const rows = await loadCloudPhotoWallRows()
       setCloudPhotos(rows)
@@ -8608,6 +8699,8 @@ function PhotoWall() {
       console.warn('[wwcxrl cloud] photo wall refresh failed', error.message)
       setPendingCount(loadPhotoWallPending().length)
       return { rows: null, flushed: null }
+    } finally {
+      photoRefreshInFlightRef.current = false
     }
   }
 
@@ -10038,13 +10131,16 @@ function MeetingCountdownCalendar() {
 
 // ---- 异地留言板：文字 + 图片，同步到双方设备 ----
 function MessageBoard() {
-  const [messages, setMessages] = useState([])
+  // 本地优先渲染：先显示本机缓存，云端回来后自动覆盖成最新列表，
+  // 避免云端慢/挂起时信箱看起来像“从未用过”。
+  const [messages, setMessages] = useState(() => loadMessagesLocal())
   const [content, setContent] = useState('')
   const [imageData, setImageData] = useState(null)
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const refreshInFlightRef = React.useRef(false)
   const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
   const [senderRole, setSenderRole] = useState(() => {
     try {
@@ -10069,15 +10165,18 @@ function MessageBoard() {
   }
 
   const refresh = React.useCallback(() => {
+    if (refreshInFlightRef.current) return
+    refreshInFlightRef.current = true
     if (cloudEnabled) {
       loadCloudMessages().then(list => {
         if (list) {
           setMessages(list)
           saveMessagesLocal(list)
         }
-      }).catch(() => {})
+      }).catch(() => {}).finally(() => { refreshInFlightRef.current = false })
     } else {
       setMessages(loadMessagesLocal())
+      refreshInFlightRef.current = false
     }
   }, [])
 
@@ -10143,9 +10242,13 @@ function MessageBoard() {
             setStatus(`保存失败：${res?.error || '请稍后再试。'}`)
             return
           }
-          const updated = messages.map(item => (item.id === editing.id ? { ...item, content: text, imageUrl } : item))
-          setMessages(updated)
-          saveMessagesLocal(updated)
+          setMessages(previous => {
+            const updated = res.message
+              ? [res.message, ...previous.filter(item => item.id !== editing.id)]
+              : previous.map(item => (item.id === editing.id ? { ...item, content: text, imageUrl } : item))
+            saveMessagesLocal(updated)
+            return updated
+          })
         } else {
           const updated = loadMessagesLocal().map(item => (item.id === editing.id ? { ...item, content: text, imageUrl: imageData?.dataUrl || '' } : item))
           saveMessagesLocal(updated)

@@ -13427,3 +13427,104 @@ html { overflow-x: hidden; }
   font-size: .82rem;
   text-align: center;
 }
+
+/* ===== 小游戏统一开始门 ===== */
+.game-start-gate {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 22px 16px 18px;
+  margin: 4px 0 8px;
+  text-align: center;
+  background: linear-gradient(135deg, rgba(255, 244, 217, .85), rgba(255, 225, 236, .85));
+  border: 2px dashed rgba(255, 111, 145, .38);
+  border-radius: 18px;
+}
+.interstellar-voyage-theme .game-start-gate {
+  background: linear-gradient(135deg, rgba(28, 41, 66, .9), rgba(47, 35, 75, .9));
+  border-color: rgba(145, 190, 255, .4);
+}
+.game-start-icon {
+  font-size: 2.4rem;
+  line-height: 1;
+  filter: drop-shadow(0 3px 4px rgba(0, 0, 0, .12));
+}
+.game-start-title {
+  margin: 0;
+  font-size: 1.1rem;
+  color: var(--ink, #6b4a3a);
+}
+.interstellar-voyage-theme .game-start-title {
+  color: #eaf2ff;
+}
+.game-start-hint {
+  margin: 0;
+  max-width: 34em;
+  font-size: .88rem;
+  line-height: 1.7;
+  color: var(--soft-ink, #8a6a58);
+}
+.interstellar-voyage-theme .game-start-hint {
+  color: #c7d6f2;
+}
+.game-start-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 30px;
+  margin-top: 2px;
+  border: none;
+  border-radius: 999px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, #ff8fab, #ff5d8f);
+  box-shadow: 0 5px 14px rgba(255, 93, 143, .38);
+  transition: transform .15s ease, box-shadow .15s ease, filter .15s ease;
+}
+.game-start-button:hover {
+  transform: translateY(-2px) scale(1.03);
+  box-shadow: 0 8px 20px rgba(255, 93, 143, .48);
+  filter: brightness(1.04);
+}
+.game-start-button:active {
+  transform: translateY(0) scale(.98);
+}
+.game-start-button:focus-visible {
+  outline: 3px solid rgba(255, 111, 145, .55);
+  outline-offset: 3px;
+}
+.interstellar-voyage-theme .game-start-button {
+  background: linear-gradient(135deg, #6fb1ff, #8f6bff);
+  box-shadow: 0 5px 14px rgba(111, 177, 255, .35);
+}
+.game-start-play-icon {
+  font-size: .9em;
+}
+.game-start-note {
+  font-size: .76rem;
+  color: var(--soft-ink, #8a6a58);
+  opacity: .85;
+}
+.interstellar-voyage-theme .game-start-note {
+  color: #9fb4d8;
+}
+@media (max-width: 640px) {
+  .game-start-gate {
+    padding: 18px 12px 14px;
+  }
+  .game-start-button {
+    width: 100%;
+    justify-content: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .game-start-button {
+    transition: none;
+  }
+  .game-start-button:hover {
+    transform: none;
+  }
+}

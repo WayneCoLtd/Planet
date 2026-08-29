@@ -266,6 +266,8 @@ drop policy if exists "wwcxrl_messages_public_read" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_read" on public.wwcxrl_messages for select using (true);
 drop policy if exists "wwcxrl_messages_public_insert" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_insert" on public.wwcxrl_messages for insert with check (true);
+drop policy if exists "wwcxrl_messages_public_update" on public.wwcxrl_messages;
+create policy "wwcxrl_messages_public_update" on public.wwcxrl_messages for update using (true) with check (true);
 drop policy if exists "wwcxrl_messages_public_delete" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_delete" on public.wwcxrl_messages for delete using (true);
 -- 已上线的老库补执行（去掉对 profiles 的外键依赖，发送方不再要求档案存在）：

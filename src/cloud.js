@@ -1,6 +1,9 @@
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
+// 云端请求最长等待 15 秒：网络慢或挂起时立刻回退到本地数据，不让页面一直停在“空白/未使用”状态。
+const CLOUD_REQUEST_TIMEOUT_MS = 15000
+
 const FIXED_ROLE_IDS = {
   orange: 'wwcxrl-orange-main',
   pomelo: 'wwcxrl-pomelo-main'
@@ -10,14 +13,34 @@ export const cloudEnabled = Boolean(supabaseUrl && supabaseKey)
 
 let supabasePromise = null
 
+function fetchWithTimeout(input, init = {}) {
+  if (typeof window === 'undefined' || typeof AbortController === 'undefined') {
+    return fetch(input, init)
+  }
+  const controller = new AbortController()
+  const timer = window.setTimeout(() => controller.abort(), CLOUD_REQUEST_TIMEOUT_MS)
+  const { signal, ...rest } = init
+  return fetch(input, { ...rest, signal: signal || controller.signal }).finally(() => window.clearTimeout(timer))
+}
+
 export async function getSupabase() {
   if (!cloudEnabled) return null
   if (!supabasePromise) {
     supabasePromise = import('@supabase/supabase-js').then(({ createClient }) => createClient(supabaseUrl, supabaseKey, {
-      auth: { persistSession: false, autoRefreshToken: false }
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: fetchWithTimeout }
     }))
   }
   return supabasePromise
+}
+
+// 只读操作共用的云端上下文：不再像 ensureProfile 那样每次先 upsert 档案，
+// 避免慢网络下每个查询都多一次往返（这是“加载很久才出数据”的主要原因之一）。
+export async function getCloudContext() {
+  const supabase = await getSupabase()
+  const identity = getCloudIdentity()
+  if (!supabase || !identity) return null
+  return { supabase, identity }
 }
 
 function safeJson(value, fallback) {
@@ -115,8 +138,9 @@ export async function saveCloudDayProgress(day, progress, targetUserId = null) {
 
 export async function loadCloudDayProgress(day, targetUserId = null) {
   try {
-    const { supabase, identity } = await ensureProfile()
-    if (!supabase || !identity) return { progress: null }
+    const context = await getCloudContext()
+    if (!context) return { progress: null }
+    const { supabase, identity } = context
     const userId = targetUserId || identity.id
     const { data, error } = await supabase
       .from('wwcxrl_day_progress')
@@ -178,8 +202,9 @@ export async function clearCloudDayStatus(day, date, targetUserId = null) {
 
 export async function loadCloudCheckins(targetUserId = null) {
   try {
-    const { supabase, identity } = await ensureProfile()
-    if (!supabase || !identity) return { signed: [], completed: [] }
+    const context = await getCloudContext()
+    if (!context) return { signed: [], completed: [] }
+    const { supabase, identity } = context
     const userId = targetUserId || identity.id
     const { data, error } = await supabase
       .from('wwcxrl_checkins')
@@ -220,8 +245,9 @@ export async function markCloudSigned(day, date) {
 
 export async function loadCloudBackpack(targetUserId = null) {
   try {
-    const { supabase, identity } = await ensureProfile()
-    if (!supabase || !identity) return {}
+    const context = await getCloudContext()
+    if (!context) return {}
+    const { supabase, identity } = context
     const userId = targetUserId || identity.id
     const { data, error } = await supabase
       .from('wwcxrl_backpack_items')
@@ -312,8 +338,8 @@ function normalizeCloudTask(row) {
 
 export async function loadCloudDailyTasks(status = null) {
   try {
-    const { supabase, identity } = await ensureProfile()
-    if (!supabase || !identity) return []
+    const supabase = await getSupabase()
+    if (!supabase) return []
     let query = supabase.from('wwcxrl_daily_tasks').select('*')
     if (status) query = query.eq('status', status)
     const { data, error } = await query.order('day', { ascending: true })
@@ -464,7 +490,7 @@ export async function saveCloudWish(day, wishText) {
 
 export async function loadCloudWish(day) {
   try {
-    const { supabase } = await ensureProfile()
+    const supabase = await getSupabase()
     if (!supabase) return null
     const { data, error } = await supabase
       .from('wwcxrl_wishes')
@@ -497,7 +523,7 @@ function normalizeMeetingRow(row) {
 
 export async function loadCloudMeetingDates() {
   try {
-    const { supabase } = await ensureProfile()
+    const supabase = await getSupabase()
     if (!supabase) return null
     const { data, error } = await supabase
       .from('wwcxrl_meeting_dates')
@@ -576,7 +602,7 @@ function normalizeMessageRow(row) {
 
 export async function loadCloudMessages() {
   try {
-    const { supabase } = await ensureProfile()
+    const supabase = await getSupabase()
     if (!supabase) return null
     const { data, error } = await supabase
       .from('wwcxrl_messages')
@@ -623,19 +649,56 @@ export async function saveCloudMessage({ content = '', imageUrl = '' }, sender =
   }
 }
 
+async function loadCloudMessageById(id) {
+  try {
+    const supabase = await getSupabase()
+    if (!supabase || !id) return null
+    const { data, error } = await supabase
+      .from('wwcxrl_messages')
+      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .eq('id', id)
+      .maybeSingle()
+    if (error || !data) return null
+    return normalizeMessageRow(data)
+  } catch (error) {
+    console.warn('[wwcxrl cloud] message load-by-id failed', error.message)
+    return null
+  }
+}
+
 export async function updateCloudMessage(id, { content = '', imageUrl = '' }) {
   try {
-    const { supabase } = await ensureProfile()
+    const supabase = await getSupabase()
     if (!supabase || !id) return { ok: false, error: '未连接云端' }
-    const { error } = await supabase
+    const payload = { content: String(content || '').trim(), image_url: String(imageUrl || '') }
+    const { data, error } = await supabase
       .from('wwcxrl_messages')
-      .update({ content: String(content || '').trim(), image_url: String(imageUrl || '') })
+      .update(payload)
       .eq('id', id)
-    if (error) {
-      console.warn('[wwcxrl cloud] message update failed', error.message)
-      return { ok: false, error: error.message }
-    }
-    return { ok: true, error: '' }
+      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .maybeSingle()
+    if (!error && data) return { ok: true, message: normalizeMessageRow(data) }
+    // 老库可能缺少 update 策略：改用“删除旧行 + 原样重插”兜底（保留发送人与时间），
+    // 这样即使不改 Supabase 策略，修改也能真正写进云端，而不是刷新后消失。
+    console.warn('[wwcxrl cloud] message update blocked, trying replace fallback', error?.message || 'no row matched')
+    const original = await loadCloudMessageById(id)
+    if (!original) return { ok: false, error: error?.message || '未找到这条留言' }
+    const { error: deleteError } = await supabase.from('wwcxrl_messages').delete().eq('id', id)
+    if (deleteError) return { ok: false, error: deleteError.message }
+    const { data: inserted, error: insertError } = await supabase
+      .from('wwcxrl_messages')
+      .insert({
+        user_id: original.userId,
+        role: original.role,
+        display_name: original.displayName,
+        content: String(content || '').trim(),
+        image_url: String(imageUrl || ''),
+        created_at: original.createdAt
+      })
+      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .single()
+    if (insertError) return { ok: false, error: insertError.message }
+    return { ok: true, message: normalizeMessageRow(inserted) }
   } catch (error) {
     console.warn('[wwcxrl cloud] message update exception', error)
     return { ok: false, error: error.message || '未知错误' }
@@ -693,7 +756,7 @@ function normalizeChangelogRow(row) {
 
 export async function loadCloudChangelog() {
   try {
-    const { supabase } = await ensureProfile()
+    const supabase = await getSupabase()
     if (!supabase) return null
     const { data, error } = await supabase
       .from('wwcxrl_changelog')
