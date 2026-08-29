@@ -10997,7 +10997,7 @@ function PlanetApp() {
               <button type="button" className="changelog-close" onClick={() => setChangelogOpen(false)} aria-label="关闭更新日志">✕</button>
             </header>
             <div className="changelog-list">
-              {changelogEntries.map(item => (
+              {sortChangelogEntries(changelogEntries).map(item => (
                 <section key={item.version} className="changelog-entry">
                   <div className="changelog-entry-head">
                     <span className="changelog-version">{item.version}</span>
@@ -11164,17 +11164,35 @@ function saveChangelogLocal(entries) {
   localStorage.setItem(CHANGELOG_LOCAL_KEY, JSON.stringify(entries))
 }
 
+// 更新日志统一按日期倒序（最新在前）；同一天按 sort 倒序（后添加的在前）。
+function sortChangelogEntries(entries = []) {
+  return [...entries].sort((a, b) => {
+    const dateA = String(a.date || '').trim()
+    const dateB = String(b.date || '').trim()
+    if (dateA && dateB && dateA !== dateB) {
+      return dateA < dateB ? 1 : -1
+    }
+    const sortA = Number(a.sort || 0)
+    const sortB = Number(b.sort || 0)
+    return sortB - sortA
+  })
+}
+
 async function loadChangelog() {
   const cloud = cloudEnabled ? await loadCloudChangelog() : null
   if (Array.isArray(cloud) && cloud.length) {
-    saveChangelogLocal(cloud)
-    return cloud
+    const sorted = sortChangelogEntries(cloud)
+    saveChangelogLocal(sorted)
+    return sorted
   }
-  return loadChangelogLocal() || changelog
+  const local = loadChangelogLocal()
+  return sortChangelogEntries(local || changelog)
 }
 
 async function saveChangelog(entries) {
-  const normalized = (entries || []).filter(item => item && String(item.version || '').trim()).map((item, index) => ({
+  const normalized = sortChangelogEntries(
+    (entries || []).filter(item => item && String(item.version || '').trim())
+  ).map((item, index) => ({
     version: String(item.version || '').trim(),
     date: String(item.date || '').trim(),
     title: String(item.title || '').trim(),
@@ -11373,7 +11391,8 @@ function AdminTaskPage() {
   }
 
   function addChangelogEntry() {
-    setChangelogDraft(prev => [...prev, { version: '', date: '', title: '', notes: [] }])
+    // 新版本默认加在最上面，符合“最新在上”的展示习惯
+    setChangelogDraft(prev => [{ version: '', date: '', title: '', notes: [] }, ...prev])
   }
 
   function updateChangelogEntry(index, patch) {
@@ -11388,6 +11407,14 @@ function AdminTaskPage() {
     setChangelogSaving(true)
     const result = await saveChangelog(changelogDraft)
     setChangelogSaving(false)
+    if (result?.saved) {
+      setChangelogDraft(result.saved.map(item => ({
+        version: item.version,
+        date: item.date,
+        title: item.title,
+        notes: Array.isArray(item.notes) ? item.notes : []
+      })))
+    }
     setToast(result?.ok
       ? (cloudEnabled ? '更新日志已保存并同步到云端。' : '更新日志已保存（本地模式）。')
       : `保存失败：${result?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行更新日志建表 SQL）`)
