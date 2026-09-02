@@ -1220,15 +1220,22 @@ function StarVoyageDock({ setCurrent }) {
 
 function getInitialCheckinDay() {
   try {
+    const list = getDailyAdventures()
     const signedDays = filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', []))
     const completedDays = filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', []))
-    if (!signedDays.length && !completedDays.length) return getDailyAdventures()[0]?.day || 300
-    const nextUnsignedOpen = getDailyAdventures().find(item => isUnlocked(item) && !signedDays.includes(item.day))
-    if (nextUnsignedOpen) return nextUnsignedOpen.day
-    const todayItem = getDailyAdventures().find(item => item.date === getTodayKey() && isUnlocked(item))
+    if (!list.length) return 300
+    if (!signedDays.length && !completedDays.length) return list[0].day
+    // 优先定位“最新开放的一天”（通常就是今天）：没签则做今天的任务，
+    // 已签/已完成则直接展示最新完成的那天，而不是每次回到第一天的旧记录。
+    const unsignedOpenDays = list.filter(item => isUnlocked(item) && !signedDays.includes(item.day))
+    if (unsignedOpenDays.length) return unsignedOpenDays[unsignedOpenDays.length - 1].day
+    const todayItem = list.find(item => item.date === getTodayKey() && isUnlocked(item))
     if (todayItem) return todayItem.day
+    // 全部已签且今天还没布置任务时，展示最近的一天而不是回到开头。
+    return list[list.length - 1].day
   } catch {}
-  return getDailyAdventures()[0]?.day || 300
+  const fallback = getDailyAdventures()
+  return fallback[fallback.length - 1]?.day || fallback[0]?.day || 300
 }
 
 function CheckIn() {
@@ -1279,6 +1286,8 @@ function CheckIn() {
   const percent = Math.max(0, Math.min(100, Math.round((signedGoalCount / 65) * 100)))
   const refreshCheckinsInFlightRef = React.useRef(false)
   const refreshTasksInFlightRef = React.useRef(false)
+  const initialPickDoneRef = React.useRef(false)
+  const userPickedDayRef = React.useRef(false)
 
   React.useEffect(() => {
     let alive = true
@@ -1331,6 +1340,12 @@ function CheckIn() {
         if (!alive) return
         const next = getDailyAdventures()
         setItems(next)
+        // 首次任务数据就绪后：如果用户还没手动点过某一天，自动定位到最新开放的一天，
+        // 避免“先显示代码兜底的第一天、数据到了又不切换”的问题。
+        if (!initialPickDoneRef.current && !userPickedDayRef.current) {
+          initialPickDoneRef.current = true
+          setSelectedDay(getInitialCheckinDay())
+        }
         setSelectedDay(previous => {
           if (next.some(item => item.day === previous)) return previous
           return getInitialCheckinDay()
@@ -1402,6 +1417,7 @@ function CheckIn() {
   }
 
   function selectDay(item) {
+    userPickedDayRef.current = true
     if (isChildrenSpecialPostponed(item)) {
       setSelectedDay(item.day)
       window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: CHILDREN_POSTPONED_MESSAGE }))
