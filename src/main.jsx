@@ -31,13 +31,13 @@ function getAnniversaryCounts() {
 }
 const END_DATE = new Date(`${dailyAdventures[dailyAdventures.length - 1]?.date || '2026-05-24'}T23:59:59`)
 
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wwcxrl-admin-2026'
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wwcxrl2026'
 const ADMIN_TASK_TYPES = [
   { id: 'memoryPuzzle', label: '谜语签到（推荐）', hint: '输入谜底答案，答对后自动亮起签到' },
   { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
   { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
   { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
-  { id: 'game', label: '小游戏', hint: '选择一款内置小游戏（迷宫/接爱心/戳泡泡/翻牌/拼图/三消/喂食/打地鼠/成语填空/星星记忆/井字棋/4×4数独/樱花拼图，以及鱼了个鱼/人生重开模拟器/五子棋/换装/矿工/气球/馅饼/砌砖/贪吃蛇/笑脸/弹力球等嵌入小游戏），玩完即可签到' }
+  { id: 'game', label: '小游戏', hint: '选择一款内置小游戏（迷宫/接爱心/戳泡泡/翻牌/拼图/三消/喂食/打地鼠/成语填空/星星记忆/井字棋/数独/2048/翻转棋/樱花拼图，以及鱼了个鱼/人生重开模拟器/五子棋/换装/矿工/砌砖/贪吃蛇/麻将连台/霓虹叠塔/点球热浪/菜摊敲敲乐等嵌入小游戏），玩完即可签到' }
 ]
 
 const ADMIN_SECTIONS = [
@@ -4926,14 +4926,23 @@ const EMBEDDED_GAME_SOURCES = {
   gobang: { source: 'gobang', title: '五子棋·人机对战', aspect: 3 / 2 },
   dressUp: { source: 'dress-up', title: '给小琳换装' },
   goldMiner: { source: 'gold-miner', title: '黄金矿工' },
-  balloonParadise: { source: 'balloon-paradise', title: '气球天堂' },
-  fruitPie: { source: 'fruit-pie', title: '水果馅饼' },
   brickBreak: { source: 'brick-break', title: '砌砖' },
   fruitSnake: { source: 'fruit-snake', title: '吃水果的蛇' },
-  pandaRun: { source: 'panda-run', title: '圣诞熊猫跑步' },
-  christmasBalloon: { source: 'christmas-balloon', title: '圣诞气球' },
-  smileGame: { source: 'smile-game', title: '笑脸微笑' },
-  bouncyBall: { source: 'bouncy-ball', title: '弹力球' }
+  mahjongLink: { source: 'mahjong-link', title: '麻将连台' },
+  stackTower: { source: 'stack-tower', title: '霓虹叠塔' },
+  penaltyRush: { source: 'penalty-rush', title: '点球热浪' },
+  moleMarket: { source: 'mole-market', title: '菜摊敲敲乐' }
+}
+
+// 2026-09 下线的旧嵌入小游戏：云端老任务若仍引用这些 id，自动映射到同类型的轻松新游戏，
+// 避免签到面板空白，也无需手动去管理页改任务。
+const RETIRED_GAME_FALLBACK = {
+  balloonParadise: 'moleMarket',
+  christmasBalloon: 'moleMarket',
+  smileGame: 'moleMarket',
+  fruitPie: 'moleMarket',
+  pandaRun: 'stackTower',
+  bouncyBall: 'stackTower'
 }
 
 const MINI_GAMES = [
@@ -5152,6 +5161,38 @@ const MINI_GAMES = [
     fields: [EMBEDDED_SECONDS_FIELD]
   },
   {
+    id: 'mahjongLink',
+    label: '麻将连台',
+    icon: '🀄',
+    hint: '把两张相同且至少一侧开放的麻将牌配对消掉，玩满设定秒数即可签到',
+    defaults: { seconds: 120 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'stackTower',
+    label: '霓虹叠塔',
+    icon: '🗼',
+    hint: '看准时机点一下，让方块稳稳叠成高塔，玩满设定秒数即可签到',
+    defaults: { seconds: 120 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'penaltyRush',
+    label: '点球热浪',
+    icon: '⚽',
+    hint: '选择射门角度并蓄力，把点球踢进球门，玩满设定秒数即可签到',
+    defaults: { seconds: 120 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
+    id: 'moleMarket',
+    label: '菜摊敲敲乐',
+    icon: '🥬',
+    hint: '摊位上冒出的好菜要敲、坏菜别敲，敲对得分，玩满设定秒数即可签到',
+    defaults: { seconds: 120 },
+    fields: [EMBEDDED_SECONDS_FIELD]
+  },
+  {
     id: 'dressUp',
     label: '给小琳换装',
     icon: '👗',
@@ -5168,22 +5209,6 @@ const MINI_GAMES = [
     fields: [EMBEDDED_SECONDS_FIELD]
   },
   {
-    id: 'balloonParadise',
-    label: '气球天堂',
-    icon: '🎈',
-    hint: '戳破飘起来的气球，玩满设定秒数即可签到',
-    defaults: { seconds: 150 },
-    fields: [EMBEDDED_SECONDS_FIELD]
-  },
-  {
-    id: 'fruitPie',
-    label: '水果馅饼',
-    icon: '🥧',
-    hint: '收集水果做香喷喷的馅饼，玩满设定秒数即可签到',
-    defaults: { seconds: 150 },
-    fields: [EMBEDDED_SECONDS_FIELD]
-  },
-  {
     id: 'brickBreak',
     label: '砌砖',
     icon: '🧱',
@@ -5196,38 +5221,6 @@ const MINI_GAMES = [
     label: '吃水果的蛇',
     icon: '🐍',
     hint: '小蛇吃水果越吃越长，玩满设定秒数即可签到',
-    defaults: { seconds: 150 },
-    fields: [EMBEDDED_SECONDS_FIELD]
-  },
-  {
-    id: 'pandaRun',
-    label: '圣诞熊猫跑步',
-    icon: '🐼',
-    hint: '圣诞熊猫快乐奔跑，玩满设定秒数即可签到',
-    defaults: { seconds: 150 },
-    fields: [EMBEDDED_SECONDS_FIELD]
-  },
-  {
-    id: 'christmasBalloon',
-    label: '圣诞气球',
-    icon: '🎄',
-    hint: '戳破圣诞气球收礼物，玩满设定秒数即可签到',
-    defaults: { seconds: 150 },
-    fields: [EMBEDDED_SECONDS_FIELD]
-  },
-  {
-    id: 'smileGame',
-    label: '笑脸微笑',
-    icon: '😊',
-    hint: '把笑脸都点亮，玩满设定秒数即可签到',
-    defaults: { seconds: 150 },
-    fields: [EMBEDDED_SECONDS_FIELD]
-  },
-  {
-    id: 'bouncyBall',
-    label: '弹力球',
-    icon: '🏀',
-    hint: '小球弹跳闯关，玩满设定秒数即可签到',
     defaults: { seconds: 150 },
     fields: [EMBEDDED_SECONDS_FIELD]
   },
@@ -6278,14 +6271,14 @@ function idiomRating(totalScore) {
 
 function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
   const target = clampNumber(item.gameConfig?.rounds, 3, 8, 5)
-  const maxLives = 3
+  // 温柔通关版：单题 30 秒，答错/跳过/超时都只是亮出答案并进入下一题，
+  // 不会扣光小心心重来；答满 target 题即可完成签到，答对越多得分越高。
+  const questionSeconds = 30000
   const [questions] = React.useState(() => shuffleArray(IDIOM_QUESTIONS).slice(0, Math.max(target, 8)))
   const [qIndex, setQIndex] = React.useState(0)
-  const [lives, setLives] = React.useState(maxLives)
   const [score, setScore] = React.useState(0)
   const [timeLeft, setTimeLeft] = React.useState(null)
   const [wrong, setWrong] = React.useState(null)
-  const [failed, setFailed] = React.useState(false)
   const [done, setDone] = React.useState(taskCompleted)
   const [rating, setRating] = React.useState(null)
   const [best, setBest] = React.useState(() => {
@@ -6293,41 +6286,43 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
   })
   const timerRef = React.useRef(null)
   const timeLeftRef = React.useRef(0)
-  const skipTimerRef = React.useRef(null)
+  const advanceTimerRef = React.useRef(null)
   const current = questions[qIndex]
 
   React.useEffect(() => () => {
     if (timerRef.current) window.clearInterval(timerRef.current)
-    if (skipTimerRef.current) window.clearTimeout(skipTimerRef.current)
+    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
   }, [])
 
   function startTimer() {
     if (timerRef.current) window.clearInterval(timerRef.current)
-    timeLeftRef.current = 12000
-    setTimeLeft(12000)
+    timeLeftRef.current = questionSeconds
+    setTimeLeft(questionSeconds)
     timerRef.current = window.setInterval(() => {
       timeLeftRef.current -= 100
       setTimeLeft(timeLeftRef.current)
       if (timeLeftRef.current <= 0) {
         window.clearInterval(timerRef.current)
-        handleWrong(`时间到啦，正确答案是「${current.answer}」`)
+        timerRef.current = null
+        revealAnswer(`时间到啦，正确答案是「${current.answer}」`)
       }
     }, 100)
   }
 
-  function handleWrong(message) {
-    if (done || failed) return
-    if (timerRef.current) window.clearInterval(timerRef.current)
-    const nextLives = lives - 1
-    setLives(nextLives)
-    setWrong(message)
-    if (nextLives <= 0) {
-      setFailed(true)
-      setWrong(null)
-      return
+  function stopTimer() {
+    if (timerRef.current) {
+      window.clearInterval(timerRef.current)
+      timerRef.current = null
     }
-    skipTimerRef.current = window.setTimeout(() => {
-      if (!done && !failed) {
+  }
+
+  function revealAnswer(message) {
+    if (done || wrong) return
+    stopTimer()
+    setWrong(message)
+    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
+    advanceTimerRef.current = window.setTimeout(() => {
+      if (!done) {
         const next = qIndex + 1
         if (next >= target) {
           finishGame(score)
@@ -6337,7 +6332,7 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
           startTimer()
         }
       }
-    }, 1600)
+    }, 1800)
   }
 
   function finishGame(finalScore) {
@@ -6352,13 +6347,12 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
   }
 
   function choose(option) {
-    if (done || failed || !current) return
+    if (done || wrong || !current) return
     if (option === current.answer) {
-      if (timerRef.current) window.clearInterval(timerRef.current)
+      stopTimer()
       const bonus = Math.max(0, Math.round((timeLeft || 0) / 1000)) * 2
       const nextScore = score + 10 + bonus
       setScore(nextScore)
-      setWrong(null)
       const next = qIndex + 1
       if (next >= target) {
         finishGame(nextScore)
@@ -6367,61 +6361,65 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
         startTimer()
       }
     } else {
-      handleWrong(`不对哦，正确答案是「${current.answer}」`)
+      revealAnswer(`不对哦，正确答案是「${current.answer}」`)
     }
   }
 
+  function skipQuestion() {
+    if (done || wrong || !current) return
+    revealAnswer(`先跳过这题，正确答案是「${current.answer}」`)
+  }
+
   function restart() {
-    if (skipTimerRef.current) window.clearTimeout(skipTimerRef.current)
-    if (timerRef.current) window.clearInterval(timerRef.current)
+    if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
+    stopTimer()
     setQIndex(0)
-    setLives(maxLives)
     setScore(0)
     setWrong(null)
-    setFailed(false)
+    setDone(false)
+    setRating(null)
     startTimer()
   }
 
   React.useEffect(() => {
-    if (!taskCompleted && !done && !failed) startTimer()
-    return () => { if (timerRef.current) window.clearInterval(timerRef.current) }
+    if (!taskCompleted && !done) startTimer()
+    return () => {
+      stopTimer()
+      if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [qIndex])
 
-  const timerPercent = timeLeft === null ? null : Math.max(0, Math.min(100, (timeLeft / 12000) * 100))
-  const hearts = '💖'.repeat(Math.max(0, lives)) + '🤍'.repeat(Math.max(0, maxLives - lives))
+  const timerPercent = timeLeft === null ? null : Math.max(0, Math.min(100, (timeLeft / questionSeconds) * 100))
 
   return (
     <div className="mini-game idiom-game">
-      <p className="idiom-hint">限时补成语：答对得分（越快分越高），答错或超时扣小心心</p>
+      <p className="idiom-hint">限时补成语：每道 30 秒，答对得分（越快分越高）；答错、跳过或超时都会亮出答案，然后自动进入下一题。答满 {target} 题即可签到，不会因失误重来。</p>
       <div className="idiom-meta">
         <span>第 <strong>{Math.min(qIndex + 1, target)}</strong> / {target} 题</span>
         <span>得分 <strong>{score}</strong></span>
-        <span>{hearts}</span>
         {best > 0 && <span>🏆 最佳 {best}</span>}
       </div>
-      {!done && !failed && current && (
+      {!done && current && (
         <>
           <div className="idiom-timer"><i style={{ width: `${timerPercent}%` }} /></div>
           <div className="idiom-question" key={`${qIndex}-${current.text}`}>{current.text}</div>
           <div className="idiom-options">
             {shuffleArray(current.options).map(option => (
-              <button key={option} type="button" className="idiom-option" onClick={() => choose(option)}>{option}</button>
+              <button key={option} type="button" className="idiom-option" disabled={!!wrong} onClick={() => choose(option)}>{option}</button>
             ))}
           </div>
-          {wrong && <p className="idiom-wrong">{wrong}</p>}
+          {!wrong && (
+            <button type="button" className="idiom-skip" onClick={skipQuestion}>跳过这题 · 看答案</button>
+          )}
+          {wrong && <p className="idiom-wrong">{wrong}，下一题马上就来～</p>}
         </>
-      )}
-      {failed && (
-        <div className="game-fail-panel">
-          <p>小心心用完了… 得分 <strong>{score}</strong> 分，再来一次吧！</p>
-          <button type="button" className="game-restart" onClick={restart}>↺ 重新挑战</button>
-        </div>
       )}
       {done && rating && (
         <div className="game-done-panel">
           <p>评级 <strong>{rating.grade}</strong> · 称号「{rating.title}」</p>
           <p>{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
+          <button type="button" className="game-restart" onClick={restart}>🔁 再玩一轮</button>
         </div>
       )}
     </div>
@@ -7993,7 +7991,10 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
   }
 
   if (item.type === 'game') {
-    const gameId = item.gameId || 'mazeClassic'
+    const rawGameId = item.gameId || 'mazeClassic'
+    // 老任务若引用了已下线的嵌入小游戏，自动映射到同类型的轻松新游戏。
+    const gameId = RETIRED_GAME_FALLBACK[rawGameId] || rawGameId
+    const retiredFrom = RETIRED_GAME_FALLBACK[rawGameId]
     const registry = MINI_GAMES.find(entry => entry.id === gameId)
     const embeddedGame = EMBEDDED_GAME_SOURCES[gameId]
     const renderGame = () => {
@@ -8018,12 +8019,15 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     // 已完成的一天直接展示结果；未完成的必须先点“开始游戏”才真正进入游戏。
     if (taskCompleted) return renderGame()
     const gameSeconds = clampNumber(item.gameConfig?.seconds, 10, 300, 150)
+    const gateHint = retiredFrom
+      ? `原小游戏已换新为「${registry?.label || embeddedGame?.title || '轻松小游戏'}」，${registry?.hint || `玩满 ${gameSeconds} 秒就能点亮签到。`}`
+      : registry?.hint || (embeddedGame ? `在下方画面里玩，玩满 ${gameSeconds} 秒就能点亮签到。` : '')
     return (
       <GameStartGate
         item={item}
         icon={registry?.icon || '🎮'}
         label={registry?.label || embeddedGame?.title || '小游戏'}
-        hint={registry?.hint || (embeddedGame ? `在下方画面里玩，玩满 ${gameSeconds} 秒就能点亮签到。` : '')}
+        hint={gateHint}
         resumeLabel={hasGameProgress(gameId, item) ? '继续上次的进度' : ''}
       >
         {renderGame()}
