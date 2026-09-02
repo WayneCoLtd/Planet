@@ -13655,3 +13655,147 @@ html { overflow-x: hidden; }
     flex-wrap: wrap;
   }
 }
+
+/* ===== 每日签到：进度口径修正 + 手机版排版 ===== */
+@media (max-width: 780px) {
+  /* 手机上把“当天任务面板”放到最上面、日历放到下面，打开就能直接看到今天的任务 */
+  .checkin-layout,
+  .checkin-layout:has(.type-serialRiddleFirework) {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "panel"
+      "calendar";
+    gap: 18px;
+    align-items: start;
+  }
+  .checkin-layout > .daily-panel { grid-area: panel; }
+  .checkin-layout > .calendar-card {
+    grid-area: calendar;
+    position: static;
+    top: auto;
+  }
+}
+@media (max-width: 640px) {
+  .checkin-section .calendar-card {
+    padding: 16px 12px;
+  }
+  .checkin-section .day-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 7px;
+  }
+  .checkin-section .day-dot {
+    min-height: 58px;
+    padding: 6px 2px 5px;
+    border-radius: 14px;
+  }
+  .checkin-section .day-dot .day-dot-icon {
+    font-size: 1.12rem !important;
+  }
+  .checkin-section .day-dot small {
+    font-size: .64rem;
+  }
+  .checkin-section .day-status-badge {
+    font-size: .58rem;
+  }
+  .checkin-section .calendar-topline {
+    font-size: 1rem;
+  }
+  .checkin-section .calendar-topline span {
+    min-width: 62px;
+    padding: 4px 10px;
+    font-size: .92rem;
+  }
+  .checkin-section .progress-track {
+    height: 14px;
+    margin: 12px 0;
+  }
+}
+
+/* ===== 相册：时间倒序 + 分页 ===== */
+.album-list-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 14px;
+}
+.album-sort-note {
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #8a684f;
+  background: rgba(255, 255, 255, .66);
+  border: 1px dashed rgba(255, 143, 77, .3);
+  font-size: .82rem;
+}
+.album-pagination {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  color: #8a684f;
+  font-size: .84rem;
+}
+.album-pagination.is-bottom {
+  justify-content: center;
+  margin-top: 14px;
+}
+.album-pagination button {
+  padding: 7px 16px;
+  border: none;
+  border-radius: 999px;
+  color: #fff;
+  font-size: .86rem;
+  font-weight: 700;
+  cursor: pointer;
+  background: linear-gradient(135deg, #ff8fab, #ff6f91);
+  box-shadow: 0 4px 12px rgba(255, 111, 145, .3);
+  transition: transform .15s ease, filter .15s ease;
+}
+.album-pagination button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  filter: brightness(1.06);
+}
+.album-pagination button:disabled {
+  opacity: .5;
+  cursor: not-allowed;
+}
+.interstellar-voyage-theme .album-sort-note,
+.interstellar-voyage-theme .album-pagination {
+  color: #c7d6f2;
+}
+.interstellar-voyage-theme .album-sort-note {
+  background: rgba(30, 43, 71, .66);
+  border-color: rgba(150, 190, 255, .3);
+}
+.interstellar-voyage-theme .album-pagination button {
+  background: linear-gradient(135deg, #6fb1ff, #8f6bff);
+}
+/* 已加“一天一页/两天一页”的分页后，列表不再需要内部滚动，交给页面自然滚动 */
+.daily-upload-list {
+  max-height: none;
+  overflow: visible;
+}
+@media (max-width: 760px) {
+  .album-list-toolbar {
+    margin: 8px 0 12px;
+  }
+  .album-pagination {
+    justify-content: center;
+  }
+  .upload-day-card {
+    padding: 12px;
+  }
+  .upload-slot {
+    min-height: 0;
+    padding: 10px;
+  }
+  .empty-upload-slot,
+  .mini-framed-photo {
+    min-height: 140px;
+  }
+  .slot-heading {
+    margin-bottom: 8px;
+  }
+}

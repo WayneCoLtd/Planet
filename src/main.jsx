@@ -1254,7 +1254,9 @@ function CheckIn() {
     && (selected.type !== 'photoWallFinale' || isPhotoWallFinaleActuallyComplete(selected.day))
     && (selected.type !== 'anniversary' || getRoleJson(ANNIVERSARY_ANSWER_KEY, false) === true || signed.includes(selected.day))
   const lastRealDay = items.length ? Math.max(...items.map(item => Number(item.day))) : 300
-  const futureDaySlots = Array.from({ length: 65 }, (_, index) => ({
+  // 星图目标是 Day 300 → 365：未来格子只补到 365，避免格子数超过“65 天”的说法。
+  const futureDayCount = Math.max(0, Math.min(65, STAR_MAP_LAST_DAY - lastRealDay))
+  const futureDaySlots = Array.from({ length: futureDayCount }, (_, index) => ({
     day: lastRealDay + 1 + index,
     date: adminDayToDate(lastRealDay + 1 + index),
     title: `未来第 ${index + 1} 天`,
@@ -1271,8 +1273,10 @@ function CheckIn() {
   }))
   const visibleDailyItems = [...items, ...futureDaySlots]
   const futureDayTotal = futureDaySlots.length
-  const totalTargetDayCount = Math.max(1, items.length)
-  const percent = Math.round((Math.max(0, signed.length) / Math.max(1, totalTargetDayCount)) * 100)
+  // 进度条与“X/65”的口径一致：只统计 300→365 星图范围内的已签天数，避免“已布置的
+  // 任务全签完但总数不足 65”时进度条提前拉满。
+  const signedGoalCount = signed.filter(day => Number(day) >= STAR_MAP_FIRST_DAY && Number(day) <= STAR_MAP_LAST_DAY).length
+  const percent = Math.max(0, Math.min(100, Math.round((signedGoalCount / 65) * 100)))
   const refreshCheckinsInFlightRef = React.useRef(false)
   const refreshTasksInFlightRef = React.useRef(false)
 
@@ -1405,6 +1409,12 @@ function CheckIn() {
       return
     }
     setSelectedDay(item.day)
+    // 手机上任务面板在上、日历在下：点某一天后把面板滚回视野，方便直接看到任务。
+    if (typeof window !== 'undefined' && window.matchMedia('(max-width: 780px)').matches) {
+      window.requestAnimationFrame(() => {
+        document.querySelector('.checkin-section .daily-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      })
+    }
   }
 
   return (
@@ -1419,9 +1429,11 @@ function CheckIn() {
         <aside className="calendar-card sticker-card">
           <div className="calendar-topline">
             <strong>签到进度</strong>
-            <span>{signed.length}/65</span>
+            <span>{signedGoalCount}/65</span>
           </div>
-          <div className="progress-track"><span style={{ width: `${percent}%` }} /></div>
+          <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={65} aria-valuenow={signedGoalCount} aria-label={`签到进度 ${signedGoalCount}/65`}>
+            <span style={{ width: `${percent}%` }} />
+          </div>
           <div className="day-grid">
             {visibleDailyItems.map(item => {
               const unlockedDay = isUnlocked(item)
@@ -8647,10 +8659,19 @@ function PhotoWall() {
   const [lightbox, setLightbox] = useState(null)
   const [albumDays, setAlbumDays] = useState(() => getDailyAdventures())
   const [pendingCount, setPendingCount] = useState(() => loadPhotoWallPending().length)
+  // 上传列表：时间逆序 + 分页，最新日期永远在第一页最上面。
+  const [uploadPage, setUploadPage] = useState(1)
+  const [uploadPageSize, setUploadPageSize] = useState(() => (
+    typeof window !== 'undefined' && window.innerWidth < 640 ? 2 : 6
+  ))
   const photoRefreshInFlightRef = React.useRef(false)
   const previewMode = isPreviewMode()
   const openedDays = albumDays.filter(item => isAlbumUploadOpen(item))
   const photos = mergePhotoWallViews(cloudPhotos, localPhotos)
+  const uploadDaysDesc = [...albumDays].sort((a, b) => Number(b.day) - Number(a.day))
+  const uploadTotalPages = Math.max(1, Math.ceil(uploadDaysDesc.length / uploadPageSize))
+  const safeUploadPage = Math.max(1, Math.min(uploadPage, uploadTotalPages))
+  const visibleUploadDays = uploadDaysDesc.slice((safeUploadPage - 1) * uploadPageSize, safeUploadPage * uploadPageSize)
   const filledPhotos = albumDays.flatMap(day => PHOTO_OWNERS.map(owner => {
     const key = `${day.day}-${owner.id}`
     return { key, day, owner, photo: photos[key] }
@@ -8659,6 +8680,25 @@ function PhotoWall() {
   const wallColumns = wallCount <= 1 ? 1 : wallCount <= 4 ? 2 : wallCount <= 9 ? 3 : wallCount <= 16 ? 4 : wallCount <= 25 ? 5 : wallCount <= 36 ? 6 : 7
   const wallRows = Math.max(1, Math.ceil(wallCount / wallColumns))
   const wallGap = wallCount <= 4 ? 18 : wallCount <= 16 ? 14 : wallCount <= 36 ? 10 : 8
+  const prevAlbumCountRef = React.useRef(albumDays.length)
+
+  // 日期列表数量变化（管理员发布新一天等）时回到第一页，保证看到最新日期。
+  React.useEffect(() => {
+    if (albumDays.length !== prevAlbumCountRef.current) {
+      prevAlbumCountRef.current = albumDays.length
+      setUploadPage(1)
+    }
+  }, [albumDays.length])
+
+  // 屏幕宽度变化时切换每页天数：手机 2 天/页，桌面 6 天/页。
+  React.useEffect(() => {
+    const onResize = () => {
+      const nextSize = window.innerWidth < 640 ? 2 : 6
+      setUploadPageSize(current => (current === nextSize ? current : nextSize))
+    }
+    window.addEventListener('resize', onResize)
+    return () => window.removeEventListener('resize', onResize)
+  }, [])
 
   React.useEffect(() => {
     let alive = true
@@ -8853,6 +8893,17 @@ function PhotoWall() {
     }
   }
 
+  const renderAlbumPagination = (position = 'bottom') => {
+    if (uploadTotalPages <= 1) return null
+    return (
+      <div className={`album-pagination is-${position}`} role="navigation" aria-label="相册分页">
+        <button type="button" disabled={safeUploadPage <= 1} onClick={() => setUploadPage(value => Math.max(1, value - 1))} aria-label="上一页">‹ 上一页</button>
+        <span>第 {safeUploadPage} / {uploadTotalPages} 页 · 共 {uploadDaysDesc.length} 天</span>
+        <button type="button" disabled={safeUploadPage >= uploadTotalPages} onClick={() => setUploadPage(value => Math.min(uploadTotalPages, value + 1))} aria-label="下一页">下一页 ›</button>
+      </div>
+    )
+  }
+
   return (
     <section className="content-section gallery-theater">
       <header className="section-heading playful-heading">
@@ -8879,8 +8930,12 @@ function PhotoWall() {
             </div>
           )}
           {status && <p className="answer-error-note">{status}</p>}
+          <div className="album-list-toolbar">
+            <span className="album-sort-note">🕘 时间倒序 · 最新日期在最上面</span>
+            {renderAlbumPagination('top')}
+          </div>
           <div className="daily-upload-list">
-            {albumDays.map(day => {
+            {visibleUploadDays.map(day => {
               const open = isAlbumUploadOpen(day)
               return (
                 <article key={day.day} className={`upload-day-card ${open ? 'is-open' : 'is-locked'}`}>
@@ -8916,6 +8971,7 @@ function PhotoWall() {
               )
             })}
           </div>
+          {renderAlbumPagination('bottom')}
         </div>
         <div className="photo-wall-layer" aria-hidden={!curtainOpen}>
           <div className="photo-wall-header"><span>🖼️</span><strong>我们的照片墙</strong><small>每次新增照片都会自动补到这里，每天 2 栏，天数越多照片位越多。</small></div>
