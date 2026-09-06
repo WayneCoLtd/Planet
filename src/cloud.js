@@ -596,6 +596,7 @@ function normalizeMessageRow(row) {
     displayName: row.display_name,
     content: row.content,
     imageUrl: row.image_url,
+    parentId: row.parent_id || null,
     createdAt: row.created_at
   }
 }
@@ -606,9 +607,9 @@ export async function loadCloudMessages() {
     if (!supabase) return null
     const { data, error } = await supabase
       .from('wwcxrl_messages')
-      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
       .order('created_at', { ascending: false })
-      .limit(200)
+      .limit(500)
     if (error) {
       console.warn('[wwcxrl cloud] messages load failed', error.message)
       return null
@@ -620,7 +621,7 @@ export async function loadCloudMessages() {
   }
 }
 
-export async function saveCloudMessage({ content = '', imageUrl = '' }, sender = null) {
+export async function saveCloudMessage({ content = '', imageUrl = '', parentId = null }, sender = null) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return { ok: false, error: '未连接云端' }
@@ -634,9 +635,10 @@ export async function saveCloudMessage({ content = '', imageUrl = '' }, sender =
         role,
         display_name: String(displayName || ''),
         content: String(content || '').trim(),
-        image_url: String(imageUrl || '')
+        image_url: String(imageUrl || ''),
+        parent_id: parentId || null
       })
-      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
       .single()
     if (error) {
       console.warn('[wwcxrl cloud] message save failed', error.message)
@@ -655,7 +657,7 @@ async function loadCloudMessageById(id) {
     if (!supabase || !id) return null
     const { data, error } = await supabase
       .from('wwcxrl_messages')
-      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
       .eq('id', id)
       .maybeSingle()
     if (error || !data) return null
@@ -675,7 +677,7 @@ export async function updateCloudMessage(id, { content = '', imageUrl = '' }) {
       .from('wwcxrl_messages')
       .update(payload)
       .eq('id', id)
-      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
       .maybeSingle()
     if (!error && data) return { ok: true, message: normalizeMessageRow(data) }
     // 老库可能缺少 update 策略：改用“删除旧行 + 原样重插”兜底（保留发送人与时间），
@@ -688,14 +690,16 @@ export async function updateCloudMessage(id, { content = '', imageUrl = '' }) {
     const { data: inserted, error: insertError } = await supabase
       .from('wwcxrl_messages')
       .insert({
+        id: original.id,
         user_id: original.userId,
         role: original.role,
         display_name: original.displayName,
         content: String(content || '').trim(),
         image_url: String(imageUrl || ''),
+        parent_id: original.parentId,
         created_at: original.createdAt
       })
-      .select('id,user_id,role,display_name,content,image_url,created_at')
+      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
       .single()
     if (insertError) return { ok: false, error: insertError.message }
     return { ok: true, message: normalizeMessageRow(inserted) }
@@ -709,6 +713,22 @@ export async function deleteCloudMessage(id) {
   try {
     const { supabase } = await ensureProfile()
     if (!supabase || !id) return false
+    // 先清理这条留言下面的“楼中楼”评论，再删主留言；
+    // 即使线上库还没建外键/级联，也不会留下孤儿评论。
+    const { data: replies, error: repliesError } = await supabase
+      .from('wwcxrl_messages')
+      .select('id')
+      .eq('parent_id', id)
+      .limit(1000)
+    if (!repliesError && Array.isArray(replies) && replies.length) {
+      const { error: childDeleteError } = await supabase
+        .from('wwcxrl_messages')
+        .delete()
+        .in('id', replies.map(reply => reply.id))
+      if (childDeleteError) {
+        console.warn('[wwcxrl cloud] message children delete failed', childDeleteError.message)
+      }
+    }
     const { error } = await supabase.from('wwcxrl_messages').delete().eq('id', id)
     if (error) {
       console.warn('[wwcxrl cloud] message delete failed', error.message)

@@ -13811,3 +13811,214 @@ html { overflow-x: hidden; }
     margin-bottom: 8px;
   }
 }
+
+/* ===== 谜语签到：提示图完整展示，不再裁成 16:9 ===== */
+.memory-puzzle .memory-photo-wrap {
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: 8px;
+  background:
+    radial-gradient(circle at 24% 18%, rgba(255, 216, 132, .2), transparent 32%),
+    linear-gradient(160deg, #403430, #211b18);
+}
+.memory-puzzle .memory-photo-wrap img {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: min(66vh, 680px);
+  aspect-ratio: auto;
+  object-fit: contain;
+  object-position: center;
+  border-radius: 14px;
+}
+
+/* ===== 小信箱：楼中楼评论 ===== */
+.message-comments {
+  display: grid;
+  gap: 8px;
+  margin-top: 4px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 159, 189, .28);
+}
+.message-comments-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--soft-ink);
+  font-size: .82rem;
+}
+.message-comments-head span:first-child {
+  font-weight: 900;
+  color: var(--rose);
+}
+.message-comments-empty {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: .84rem;
+  line-height: 1.6;
+}
+.message-comment {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .56);
+  border: 1px solid rgba(255, 159, 189, .2);
+  box-shadow: 0 6px 14px rgba(112, 70, 36, .06);
+}
+.message-comment.is-orange {
+  background: rgba(255, 245, 226, .72);
+  border-color: rgba(255, 173, 77, .26);
+}
+.message-comment.is-pomelo {
+  background: rgba(255, 241, 246, .72);
+  border-color: rgba(255, 159, 189, .24);
+}
+.message-comment-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.message-comment-head .message-avatar {
+  font-size: 1.05rem;
+}
+.message-comment-head strong {
+  font-size: .9rem;
+}
+.message-comment-head time {
+  margin-left: auto;
+  font-size: .72rem;
+}
+.message-comment-floor {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #8a5a35;
+  background: linear-gradient(135deg, #fff1a8, #ffd9e5);
+  font-size: .72rem;
+  font-weight: 900;
+}
+.message-comment-delete {
+  padding: 3px 6px;
+  font-size: .76rem;
+}
+.message-comment-reply {
+  justify-self: start;
+  padding: 7px 13px;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff7d9, #ffe7f0);
+  border: 1px dashed rgba(255, 159, 189, .42);
+  box-shadow: none;
+  font-size: .84rem;
+}
+.message-comment-reply:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(255, 111, 145, .14);
+}
+.message-comment-compose {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 253, 247, .82);
+  border: 2px dashed rgba(255, 173, 77, .34);
+}
+.message-comment-title {
+  color: var(--soft-ink);
+  font-size: .84rem;
+  font-weight: 700;
+}
+.message-comment-sender {
+  gap: 7px;
+}
+.message-comment-sender .message-sender-label {
+  font-size: .8rem;
+}
+.message-comment-sender .message-sender-toggle button {
+  padding: 5px 11px;
+  font-size: .8rem;
+}
+.message-comment-compose textarea {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 11px 13px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 159, 189, .36);
+  background: rgba(255, 255, 255, .92);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.7;
+  outline: none;
+}
+.message-comment-compose textarea:focus {
+  border-color: rgba(255, 111, 145, .68);
+  box-shadow: 0 0 0 3px rgba(255, 159, 189, .18);
+}
+.message-comment-bar .message-image-button {
+  padding: 7px 12px;
+  font-size: .84rem;
+}
+.message-comment-bar .message-compose-count {
+  font-size: .78rem;
+}
+.message-comment-send {
+  padding: 8px 16px;
+  font-size: .88rem;
+}
+.message-comment-cancel {
+  padding: 8px 13px;
+  border-radius: 999px;
+  color: var(--soft-ink);
+  background: rgba(255, 255, 255, .76);
+  border: 1px solid rgba(255, 159, 189, .24);
+  box-shadow: none;
+  font-size: .84rem;
+}
+
+/* ===== 留言 / 评论：图文并存时的协调排版 ===== */
+.message-body.has-both {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  align-items: center;
+  gap: clamp(12px, 2.2vw, 20px);
+  padding: 12px;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .52);
+}
+.message-body.has-both .message-image {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: min(58vh, 440px);
+  aspect-ratio: auto;
+  object-fit: contain;
+  margin-inline: auto;
+  border-radius: 14px;
+}
+.message-body.comment-message-body.has-both {
+  padding: 10px;
+}
+.message-body.comment-message-body.has-both .message-image {
+  max-height: min(52vh, 340px);
+}
+.message-body.has-both .message-content {
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .message-body.has-both {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+  .message-body.has-both .message-image {
+    width: auto;
+    max-width: min(100%, 320px);
+    margin-inline: auto;
+  }
+  .message-comment-compose textarea {
+    min-height: 64px;
+  }
+}

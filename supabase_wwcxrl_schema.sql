@@ -257,10 +257,14 @@ create table if not exists public.wwcxrl_messages (
   display_name text not null default '',
   content text not null default '',
   image_url text not null default '',
+  parent_id uuid,
   created_at timestamptz not null default now()
 );
 
 alter table public.wwcxrl_messages enable row level security;
+-- 楼中楼评论：parent_id 指向主留言；null 表示这条本身就是主留言。
+alter table public.wwcxrl_messages add column if not exists parent_id uuid;
+create index if not exists wwcxrl_messages_parent_id_idx on public.wwcxrl_messages (parent_id);
 
 drop policy if exists "wwcxrl_messages_public_read" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_read" on public.wwcxrl_messages for select using (true);
@@ -272,6 +276,9 @@ drop policy if exists "wwcxrl_messages_public_delete" on public.wwcxrl_messages;
 create policy "wwcxrl_messages_public_delete" on public.wwcxrl_messages for delete using (true);
 -- 已上线的老库补执行（去掉对 profiles 的外键依赖，发送方不再要求档案存在）：
 -- alter table public.wwcxrl_messages drop constraint if exists wwcxrl_messages_user_id_fkey;
+-- 已上线的老库补执行（评论楼中楼；新库建表已包含 parent_id）：
+-- alter table public.wwcxrl_messages add column if not exists parent_id uuid;
+-- create index if not exists wwcxrl_messages_parent_id_idx on public.wwcxrl_messages (parent_id);
 
 -- ============ 网站建议箱（wwcxrl_feedback）：小琳/小琛给网站建设提建议 ============
 -- 页脚「💡 网站建议」弹窗，文字建议同步到两台设备；未连接云端时回退本地存储。

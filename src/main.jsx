@@ -10216,6 +10216,13 @@ function MessageBoard() {
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [replyOpenRootId, setReplyOpenRootId] = useState(null)
+  const [replyDrafts, setReplyDrafts] = useState({})
+  const [replyImages, setReplyImages] = useState({})
+  const [replySenders, setReplySenders] = useState({})
+  const [replySendingRootId, setReplySendingRootId] = useState(null)
+  const [replyStatusByRoot, setReplyStatusByRoot] = useState({})
+  const [commentDeleteTarget, setCommentDeleteTarget] = useState(null)
   const refreshInFlightRef = React.useRef(false)
   const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
   const [senderRole, setSenderRole] = useState(() => {
@@ -10227,6 +10234,20 @@ function MessageBoard() {
   })
   const senderName = senderRole === 'orange' ? '小琛' : '小琳'
   const senderUserId = `wwcxrl-${senderRole}-main`
+  const rootMessages = React.useMemo(() => messages
+    .filter(item => !item.parentId)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))), [messages])
+  const commentsByRootId = React.useMemo(() => {
+    const grouped = {}
+    messages
+      .filter(item => Boolean(item.parentId))
+      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
+      .forEach(item => {
+        grouped[item.parentId] = grouped[item.parentId] || []
+        grouped[item.parentId].push(item)
+      })
+    return grouped
+  }, [messages])
 
   // 云端请求偶尔会很慢：超过 18 秒就换一条提示，避免一直卡在“正在寄出…”，但不会中断请求造成重复发送
   function awaitWithSlowHint(promise, slowText) {
@@ -10288,6 +10309,133 @@ function MessageBoard() {
     setContent('')
     setImageData(null)
     setStatus('')
+  }
+
+  function setReplyStatus(rootId, text) {
+    setReplyStatusByRoot(previous => ({ ...previous, [rootId]: text }))
+  }
+
+  function awaitWithReplyHint(rootId, promise, slowText) {
+    let settled = false
+    const timer = window.setTimeout(() => {
+      if (!settled) setReplyStatus(rootId, slowText)
+    }, 18000)
+    return Promise.resolve(promise).finally(() => {
+      settled = true
+      window.clearTimeout(timer)
+    })
+  }
+
+  function getReplySender(rootId) {
+    const role = replySenders[rootId] || senderRole
+    return {
+      role,
+      name: role === 'orange' ? '小琛' : '小琳',
+      userId: `wwcxrl-${role}-main`
+    }
+  }
+
+  function changeReplySender(rootId, role) {
+    setReplySenders(previous => ({ ...previous, [rootId]: role }))
+  }
+
+  function toggleReplyComposer(message) {
+    if (!message || message.parentId) return
+    if (replyOpenRootId === message.id) {
+      setReplyOpenRootId(null)
+      return
+    }
+    setReplyOpenRootId(message.id)
+    setReplySenders(previous => previous[message.id] ? previous : { ...previous, [message.id]: senderRole })
+    setReplyStatusByRoot(previous => ({ ...previous, [message.id]: '' }))
+  }
+
+  function handleReplyFile(rootId, file) {
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setReplyImages(previous => ({ ...previous, [rootId]: { file, dataUrl: reader.result, name: file.name } }))
+    reader.readAsDataURL(file)
+  }
+
+  function removeReplyImage(rootId) {
+    setReplyImages(previous => {
+      const next = { ...previous }
+      delete next[rootId]
+      return next
+    })
+  }
+
+  async function sendComment(rootId) {
+    const rootMessage = messages.find(item => item.id === rootId && !item.parentId)
+    if (!rootMessage) return
+    const sender = getReplySender(rootId)
+    const text = String(replyDrafts[rootId] || '').trim()
+    const image = replyImages[rootId] || null
+    if (!text && !image) {
+      setReplyStatus(rootId, '写一句评论，或选一张照片吧 💬')
+      return
+    }
+    setReplySendingRootId(rootId)
+    setReplyStatus(rootId, '正在盖楼…')
+    try {
+      if (cloudEnabled) {
+        let imageUrl = ''
+        if (image?.file) {
+          const upload = await awaitWithReplyHint(rootId, uploadMessageImage(image.file, sender.role), '照片上传有点慢，再稍等一下…')
+          if (!upload?.ok) {
+            setReplyStatus(rootId, `评论照片失败：${upload?.error || '请稍后再试。'}`)
+            return
+          }
+          imageUrl = upload.url
+        }
+        const saved = await awaitWithReplyHint(rootId, saveCloudMessage({
+          content: text,
+          imageUrl,
+          parentId: rootId
+        }, { role: sender.role, userId: sender.userId, displayName: sender.name }), '盖楼有点慢，如果已经出现，说明成功了，稍后会自动刷新。')
+        if (!saved?.ok) {
+          setReplyStatus(rootId, `评论失败：${saved?.error || '请稍后再试。'}`)
+          return
+        }
+        setMessages(previous => [saved.message, ...previous.filter(item => item.id !== saved.message.id)])
+        setReplyStatus(rootId, '评论盖好一层啦 💬')
+      } else {
+        const localComment = {
+          id: `local-comment-${Date.now()}`,
+          parentId: rootId,
+          userId: sender.userId,
+          role: sender.role,
+          displayName: sender.name,
+          content: text,
+          imageUrl: image?.dataUrl || '',
+          createdAt: new Date().toISOString()
+        }
+        const next = [localComment, ...loadMessagesLocal()]
+        saveMessagesLocal(next)
+        setMessages(next)
+        setReplyStatus(rootId, '已经盖上一层楼啦 💬')
+      }
+      setReplyDrafts(previous => ({ ...previous, [rootId]: '' }))
+      removeReplyImage(rootId)
+    } catch (error) {
+      console.warn('[wwcxrl messages] comment send failed', error.message)
+      setReplyStatus(rootId, '评论寄出失败，请稍后再试。')
+    } finally {
+      setReplySendingRootId(null)
+    }
+  }
+
+  async function removeComment(comment) {
+    const mine = comment.userId === senderUserId || !cloudEnabled
+    if (!mine) return
+    if (cloudEnabled) {
+      const ok = await deleteCloudMessage(comment.id)
+      if (ok) setMessages(previous => previous.filter(item => item.id !== comment.id))
+    } else {
+      const next = loadMessagesLocal().filter(item => item.id !== comment.id)
+      saveMessagesLocal(next)
+      setMessages(next)
+    }
   }
 
   async function sendMessage() {
@@ -10379,9 +10527,9 @@ function MessageBoard() {
     if (!mine) return
     if (cloudEnabled) {
       const ok = await deleteCloudMessage(message.id)
-      if (ok) setMessages(prev => prev.filter(item => item.id !== message.id))
+      if (ok) setMessages(prev => prev.filter(item => item.id !== message.id && item.parentId !== message.id))
     } else {
-      const next = loadMessagesLocal().filter(item => item.id !== message.id)
+      const next = loadMessagesLocal().filter(item => item.id !== message.id && item.parentId !== message.id)
       saveMessagesLocal(next)
       setMessages(next)
     }
@@ -10439,29 +10587,106 @@ function MessageBoard() {
       </div>
 
       <div className="message-list">
-        {messages.length === 0 ? (
+        {rootMessages.length === 0 ? (
           <div className="message-empty sticker-card"><span>🕊️</span><p>还没有留言，写第一句吧。</p></div>
-        ) : messages.map(message => (
-          <article key={message.id} className={`message-card sticker-card ${message.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
-            <header className="message-card-head">
-              <span className="message-avatar">{message.role === 'orange' ? '🌞' : '🌟'}</span>
-              <strong>{message.displayName || (message.role === 'orange' ? '小琛' : '小琳')}</strong>
-              <time>{formatMessageTime(message.createdAt)}</time>
-              {(message.userId === senderUserId || !cloudEnabled) && (
-                <>
-                  <button type="button" className="message-edit" onClick={() => startEdit(message)} aria-label="编辑这条留言">✏️</button>
-                  <button type="button" className="message-delete" onClick={() => setDeleteTarget(message)} aria-label="删除这条留言">🗑</button>
-                </>
+        ) : rootMessages.map(message => {
+          const comments = commentsByRootId[message.id] || []
+          const replySender = getReplySender(message.id)
+          const replyDraftText = replyDrafts[message.id] || ''
+          const replyImage = replyImages[message.id] || null
+          return (
+            <article key={message.id} className={`message-card sticker-card ${message.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
+              <header className="message-card-head">
+                <span className="message-avatar">{message.role === 'orange' ? '🌞' : '🌟'}</span>
+                <strong>{message.displayName || (message.role === 'orange' ? '小琛' : '小琳')}</strong>
+                <time>{formatMessageTime(message.createdAt)}</time>
+                {(message.userId === senderUserId || !cloudEnabled) && (
+                  <>
+                    <button type="button" className="message-edit" onClick={() => startEdit(message)} aria-label="编辑这条留言">✏️</button>
+                    <button type="button" className="message-delete" onClick={() => setDeleteTarget(message)} aria-label="删除这条留言">🗑</button>
+                  </>
+                )}
+              </header>
+              {(message.content || message.imageUrl) && (
+                <div className={`message-body ${message.content && message.imageUrl ? 'has-both' : ''}`}>
+                  {message.imageUrl && <img className="message-image" src={message.imageUrl} alt="留言图片" loading="lazy" />}
+                  {message.content && <p className="message-content">{message.content}</p>}
+                </div>
               )}
-            </header>
-            {(message.content || message.imageUrl) && (
-              <div className={`message-body ${message.content && message.imageUrl ? 'has-both' : ''}`}>
-                {message.imageUrl && <img className="message-image" src={message.imageUrl} alt="留言图片" loading="lazy" />}
-                {message.content && <p className="message-content">{message.content}</p>}
+              <div className="message-comments">
+                {comments.length > 0 ? (
+                  <div className="message-comments-head">
+                    <span>💬 楼中楼</span>
+                    <span>{comments.length} 条评论</span>
+                  </div>
+                ) : (
+                  <p className="message-comments-empty">还没有评论，来留第一层吧。</p>
+                )}
+                {comments.map((comment, index) => (
+                  <article key={comment.id} className={`message-comment ${comment.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
+                    <header className="message-comment-head">
+                      <span className="message-avatar">{comment.role === 'orange' ? '🌞' : '🌟'}</span>
+                      <strong>{comment.displayName || (comment.role === 'orange' ? '小琛' : '小琳')}</strong>
+                      <span className="message-comment-floor">{index + 1} 楼</span>
+                      <time>{formatMessageTime(comment.createdAt)}</time>
+                      {(comment.userId === senderUserId || !cloudEnabled) && (
+                        <button type="button" className="message-delete message-comment-delete" onClick={() => setCommentDeleteTarget(comment)} aria-label="删除这条评论">🗑</button>
+                      )}
+                    </header>
+                    {(comment.content || comment.imageUrl) && (
+                      <div className={`message-body comment-message-body ${comment.content && comment.imageUrl ? 'has-both' : ''}`}>
+                        {comment.imageUrl && <img className="message-image" src={comment.imageUrl} alt="评论图片" loading="lazy" />}
+                        {comment.content && <p className="message-content">{comment.content}</p>}
+                      </div>
+                    )}
+                  </article>
+                ))}
+                {replyOpenRootId === message.id ? (
+                  <div className="message-comment-compose">
+                    <div className="message-comment-title">回复 {message.displayName || (message.role === 'orange' ? '小琛' : '小琳')} 的留言</div>
+                    <div className="message-sender-row message-comment-sender">
+                      <span className="message-sender-label">我是</span>
+                      <div className="message-sender-toggle" role="group" aria-label="评论身份">
+                        <button type="button" className={replySender.role === 'orange' ? 'is-active' : ''} onClick={() => changeReplySender(message.id, 'orange')}>🌞 小琛</button>
+                        <button type="button" className={replySender.role === 'pomelo' ? 'is-active' : ''} onClick={() => changeReplySender(message.id, 'pomelo')}>🌟 小琳</button>
+                      </div>
+                    </div>
+                    <textarea
+                      value={replyDraftText}
+                      onChange={event => setReplyDrafts(previous => ({ ...previous, [message.id]: event.target.value }))}
+                      rows={2}
+                      maxLength={500}
+                      placeholder="写一句评论，或带上一张照片…"
+                      aria-label={`回复 ${message.displayName || '对方'} 的留言`}
+                    />
+                    <div className="message-compose-bar message-comment-bar">
+                      <label className="message-image-button">
+                        📷 {replyImage ? '换一张' : '加一张照片'}
+                        <input type="file" accept="image/*" hidden onChange={event => { const file = event.target.files?.[0]; if (file) handleReplyFile(message.id, file); event.target.value = '' }} />
+                      </label>
+                      {replyImage && (
+                        <span className="message-image-preview">
+                          <img src={replyImage.dataUrl} alt="评论图片预览" />
+                          <button type="button" onClick={() => removeReplyImage(message.id)} aria-label="移除图片">✕</button>
+                        </span>
+                      )}
+                      <span className="message-compose-count">{replyDraftText.length}/500</span>
+                      <button type="button" className="message-send message-comment-send" disabled={replySendingRootId === message.id} onClick={() => sendComment(message.id)}>
+                        {replySendingRootId === message.id ? '盖楼中…' : '💬 评论'}
+                      </button>
+                      <button type="button" className="message-comment-cancel" onClick={() => { setReplyOpenRootId(null); setReplyStatusByRoot(previous => ({ ...previous, [message.id]: '' })) }}>收起</button>
+                    </div>
+                    {replyStatusByRoot[message.id] && <p className="message-status">{replyStatusByRoot[message.id]}</p>}
+                  </div>
+                ) : (
+                  <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(message)}>
+                    {comments.length ? `💬 回复 · 已有 ${comments.length} 楼` : '💬 来盖第一楼'}
+                  </button>
+                )}
               </div>
-            )}
-          </article>
-        ))}
+            </article>
+          )
+        })}
       </div>
 
       {deleteTarget && (
@@ -10473,6 +10698,19 @@ function MessageBoard() {
             <div className="message-confirm-actions">
               <button type="button" className="message-confirm-cancel" onClick={() => setDeleteTarget(null)}>再想想</button>
               <button type="button" className="message-confirm-ok" onClick={() => { removeMessage(deleteTarget); setDeleteTarget(null) }}>确认删除</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {commentDeleteTarget && (
+        <div className="message-confirm-backdrop" role="presentation" onClick={() => setCommentDeleteTarget(null)}>
+          <div className="message-confirm-modal sticker-card" role="alertdialog" aria-modal="true" aria-labelledby="comment-confirm-title" onClick={event => event.stopPropagation()}>
+            <span className="message-confirm-icon">🗑</span>
+            <h3 id="comment-confirm-title">删除这层评论？</h3>
+            <p>只删这一层楼，原留言还会保留。确定要删除吗？</p>
+            <div className="message-confirm-actions">
+              <button type="button" className="message-confirm-cancel" onClick={() => setCommentDeleteTarget(null)}>再想想</button>
+              <button type="button" className="message-confirm-ok" onClick={() => { removeComment(commentDeleteTarget); setCommentDeleteTarget(null) }}>确认删除</button>
             </div>
           </div>
         </div>
