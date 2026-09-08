@@ -5,6 +5,9 @@ node_modules/
 dist/
 deploy/
 .wrangler/
+# 五子棋静态页的构建产物需要随仓库一起发布，不能被通用 dist/ 规则忽略
+!public/games/gobang/dist/
+!public/games/gobang/dist/gobang.min.js
 
 # local env / secrets
 .env
