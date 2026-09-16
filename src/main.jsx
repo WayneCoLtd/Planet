@@ -11832,7 +11832,8 @@ function parseNightReadingPasteText(text) {
 
 async function resolveNightReadingImageBlob(url) {
   if (String(url || '').startsWith('data:')) return dataUrlToBlob(url)
-  const response = await fetch(url, { mode: 'cors', credentials: 'omit' })
+  const proxiedUrl = `/api/night-reading-image?url=${encodeURIComponent(url)}`
+  const response = await fetch(proxiedUrl, { mode: 'cors', credentials: 'omit' })
   if (!response.ok) throw new Error(`图片请求失败：${response.status}`)
   return response.blob()
 }
@@ -12578,7 +12579,10 @@ function AdminTaskPage() {
                         <button type="button" disabled={nightImporting} onClick={() => removeNightReadingBlock(index)} aria-label="删除">✕</button>
                       </div>
                       {block.type === 'image' ? (
-                        <input value={block.url || ''} onChange={event => updateNightReadingBlock(index, { url: event.target.value })} placeholder="图片地址" />
+                        <div className="admin-night-block-image-editor">
+                          {block.url && <img className="admin-night-block-thumb" src={block.url} alt="图片预览" referrerPolicy="no-referrer" />}
+                          <input value={block.url || ''} onChange={event => updateNightReadingBlock(index, { url: event.target.value })} placeholder="图片地址" />
+                        </div>
                       ) : (
                         <textarea value={block.text || ''} onChange={event => updateNightReadingBlock(index, { text: event.target.value })} rows={3} placeholder="这段文字" />
                       )}
