@@ -11864,6 +11864,7 @@ function AdminTaskPage() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [nightImporting, setNightImporting] = useState(false)
   const [nightImportProgress, setNightImportProgress] = useState('')
+  const nightImportTokenRef = React.useRef(0)
   const [missingFields, setMissingFields] = useState([])
   const [dateAuto, setDateAuto] = useState(true)
   const [toast, setToast] = useState('')
@@ -12137,6 +12138,14 @@ function AdminTaskPage() {
     setDraft(previous => ({ ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }))
   }
 
+  function clearNightReadingImport() {
+    nightImportTokenRef.current += 1
+    setNightImporting(false)
+    setNightImportProgress('')
+    setNightReadingBlocks([])
+    setToast('已清空导入内容。')
+  }
+
   function addNightReadingBlock(type = 'text') {
     setDraft(previous => {
       const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
@@ -12170,16 +12179,20 @@ function AdminTaskPage() {
   }
 
   async function processNightReadingBlocks(initialBlocks) {
-    if (!initialBlocks.length || nightImporting) return initialBlocks
+    if (!initialBlocks.length) return initialBlocks
+    const token = ++nightImportTokenRef.current
     setNightImporting(true)
+    setNightImportProgress('')
     let completed = 0
     const total = initialBlocks.filter(block => block.type === 'image').length
     const next = [...initialBlocks]
     for (let index = 0; index < next.length; index += 1) {
+      if (token !== nightImportTokenRef.current) break
       const block = next[index]
       if (block.type !== 'image' || !block.url || String(block.url).startsWith('/')) continue
       completed += 1
       setNightImportProgress(`正在转存第 ${completed}/${total || 0} 张图片…`)
+      if (token !== nightImportTokenRef.current) break
       setDraft(previous => ({
         ...previous,
         gameConfig: {
@@ -12189,7 +12202,9 @@ function AdminTaskPage() {
       }))
       try {
         const blob = await resolveNightReadingImageBlob(block.url)
+        if (token !== nightImportTokenRef.current) return next
         const uploadedUrl = await uploadNightReadingImageBlob(blob, draft.day, draft.gameConfig?.source || '夜读')
+        if (token !== nightImportTokenRef.current) return next
         if (uploadedUrl) {
           next[index] = { ...block, url: uploadedUrl, sourceUrl: block.url, status: 'uploaded' }
         } else {
@@ -12199,6 +12214,7 @@ function AdminTaskPage() {
         console.warn('[wwcxrl admin] night reading image import failed', error)
         next[index] = { ...block, status: 'failed' }
       }
+      if (token !== nightImportTokenRef.current) return next
       setDraft(previous => ({
         ...previous,
         gameConfig: {
@@ -12207,6 +12223,7 @@ function AdminTaskPage() {
         }
       }))
     }
+    if (token !== nightImportTokenRef.current) return next
     setDraft(previous => ({ ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks: next } }))
     setNightImportProgress('')
     setNightImporting(false)
@@ -12216,7 +12233,9 @@ function AdminTaskPage() {
 
   function handleNightReadingPaste(event) {
     event.preventDefault()
-    if (nightImporting) return
+    nightImportTokenRef.current += 1
+    setNightImporting(false)
+    setNightImportProgress('')
     const html = event.clipboardData?.getData('text/html') || ''
     const plainText = event.clipboardData?.getData('text/plain') || ''
     let blocks = html ? parseNightReadingPasteHtml(html) : parseNightReadingPasteText(plainText)
@@ -12438,6 +12457,11 @@ function AdminTaskPage() {
               <select value={draft.type} onChange={event => {
                 const type = event.target.value
                 const next = { ...draft, type }
+                if (type !== 'nightReading') {
+                  nightImportTokenRef.current += 1
+                  setNightImporting(false)
+                  setNightImportProgress('')
+                }
                 if (type === 'game' && !draft.gameId) next.gameId = 'mazeClassic'
                 if (type === 'game' && !draft.gameConfig) next.gameConfig = { ...getMiniGameDefaults(draft.gameId || 'mazeClassic') }
                 if (type === 'dailyLight') next.gameConfig = { ...(draft.gameConfig || {}), cardKind: draft.gameConfig?.cardKind || '冷知识' }
@@ -12520,11 +12544,11 @@ function AdminTaskPage() {
             <div className="admin-full admin-night-import">
               <div className="admin-section-head">
                 <h3>📥 从微信粘贴导入</h3>
-                <button type="button" className="admin-meeting-add" onClick={() => setNightReadingBlocks([])} disabled={nightImporting}>清空导入</button>
+                <button type="button" className="admin-meeting-add" onClick={clearNightReadingImport}>清空导入</button>
               </div>
               <div
                 className={`admin-night-paste-zone ${nightImporting ? 'is-importing' : ''}`}
-                contentEditable={!nightImporting}
+                contentEditable
                 suppressContentEditableWarning
                 onPaste={handleNightReadingPaste}
                 role="textbox"
@@ -12559,7 +12583,7 @@ function AdminTaskPage() {
                   <div className="admin-night-block-actions">
                     <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 文字块</button>
                     <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片块</button>
-                    <button type="button" onClick={() => processNightReadingBlocks(nightBlocks)} disabled={nightImporting}>↻ 重新转存全部图片</button>
+                    <button type="button" onClick={() => processNightReadingBlocks(nightBlocks)} disabled={!nightBlocks.length}>↻ 重新转存全部图片</button>
                   </div>
                 </div>
               )}
