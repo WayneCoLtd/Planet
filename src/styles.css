@@ -14291,6 +14291,28 @@ html { overflow-x: hidden; }
   border: 2px solid #fff;
   box-shadow: 0 12px 26px rgba(83, 62, 102, .12);
 }
+.night-reading-block-placeholder {
+  display: grid;
+  place-items: center;
+  gap: 8px;
+  min-height: 180px;
+  padding: 22px;
+  border-radius: 18px;
+  color: #6c5b86;
+  background: rgba(255, 255, 255, .66);
+  border: 2px dashed rgba(124, 98, 181, .34);
+  text-align: center;
+}
+.night-reading-block-placeholder span {
+  font-size: 2rem;
+}
+.night-reading-block-placeholder strong {
+  font-size: .96rem;
+}
+.night-reading-block-placeholder small {
+  color: var(--soft-ink);
+  line-height: 1.6;
+}
 .night-reading-gallery img {
   display: block;
   width: 100%;
@@ -14431,6 +14453,9 @@ html { overflow-x: hidden; }
 }
 .admin-night-block-status.is-importing {
   color: #b1792a;
+}
+.admin-night-block-status.is-failed {
+  color: #c44d6a;
 }
 .admin-night-block-head button {
   width: 26px;

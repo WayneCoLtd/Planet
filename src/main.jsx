@@ -7774,7 +7774,17 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
         <div className="night-reading-blocks">
           {blocks.map((block, index) => {
             if (block.type === 'image' && block.url) {
-              return <img key={`${item.day}-b-${index}`} className="night-reading-block-image" src={block.url} alt={`夜读图片 ${index + 1}`} loading="lazy" />
+              const imageBlocked = block.status === 'failed' || block.status === 'remote'
+              if (imageBlocked) {
+                return (
+                  <div key={`${item.day}-b-${index}`} className="night-reading-block-placeholder">
+                    <span>🖼️</span>
+                    <strong>这张图片没有成功转存</strong>
+                    <small>请让发布者重新导入这张图，或替换成新的图片地址。</small>
+                  </div>
+                )
+              }
+              return <img key={`${item.day}-b-${index}`} className="night-reading-block-image" src={block.url} alt={`夜读图片 ${index + 1}`} loading="lazy" referrerPolicy="no-referrer" />
             }
             if (block.type !== 'image' && block.text) {
               return <p key={`${item.day}-b-${index}`}>{block.text}</p>
@@ -12041,6 +12051,10 @@ function AdminTaskPage() {
   }
 
   function save(status) {
+    if (draft.type === 'nightReading' && nightImporting) {
+      setToast('夜读图片还在转存，请等进度完成后，再点发布。')
+      return
+    }
     const missing = []
     if (!draft.day) missing.push('天数')
     if (!draft.date) missing.push('日期')
@@ -12179,11 +12193,11 @@ function AdminTaskPage() {
         if (uploadedUrl) {
           next[index] = { ...block, url: uploadedUrl, sourceUrl: block.url, status: 'uploaded' }
         } else {
-          next[index] = { ...block, status: 'remote' }
+          next[index] = { ...block, status: 'failed' }
         }
       } catch (error) {
         console.warn('[wwcxrl admin] night reading image import failed', error)
-        next[index] = { ...block, status: 'remote' }
+        next[index] = { ...block, status: 'failed' }
       }
       setDraft(previous => ({
         ...previous,
@@ -12352,6 +12366,7 @@ function AdminTaskPage() {
   const promptLabel = draft.type === 'nightReading' ? '夜读导语（选填，可写一两句开场白）' : '任务说明（她看到的第一段话，选填）'
   const nightGallery = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
   const nightBlocks = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks : []
+  const usingNightBlocks = draft.type === 'nightReading' && nightBlocks.length > 0
   const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）', nightReading: '夜读正文（可分段；漫画类可以只留图集）' })[draft.type] || '完成后显示的内容'
   const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : draft.type === 'nightReading' ? '把今晚想对她说的话，写成几段温柔的文字。' : '完成后显示的一段话'
   const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
@@ -12528,7 +12543,7 @@ function AdminTaskPage() {
                       <div className="admin-night-block-head">
                         <span>{block.type === 'image' ? '🖼️ 图片' : '📄 文字'}</span>
                         <span className={`admin-night-block-status is-${block.status || 'local'}`}>
-                          {block.status === 'importing' ? '转存中…' : block.status === 'uploaded' ? '已转存' : block.status === 'remote' ? '暂用原图' : ''}
+                          {block.status === 'importing' ? '转存中…' : block.status === 'uploaded' ? '已转存' : block.status === 'failed' ? '未转存' : ''}
                         </span>
                         <button type="button" disabled={nightImporting || index === 0} onClick={() => moveNightReadingBlock(index, -1)} aria-label="上移">↑</button>
                         <button type="button" disabled={nightImporting || index === nightBlocks.length - 1} onClick={() => moveNightReadingBlock(index, 1)} aria-label="下移">↓</button>
@@ -12544,24 +12559,29 @@ function AdminTaskPage() {
                   <div className="admin-night-block-actions">
                     <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 文字块</button>
                     <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片块</button>
+                    <button type="button" onClick={() => processNightReadingBlocks(nightBlocks)} disabled={nightImporting}>↻ 重新转存全部图片</button>
                   </div>
                 </div>
               )}
             </div>
           )}
         </div>
-        <label className="admin-full">{promptLabel}
-          <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
-        </label>
-        {draft.type === 'memoryPuzzle' && (
-          <label className={`admin-full${missingFields.includes('谜底答案') ? ' admin-field-missing' : ''}`}>谜底答案（她答对后才能签到）
-            <input value={draft.answer} onChange={event => { setDraft({ ...draft, answer: event.target.value }); setMissingFields([]) }} placeholder="例如：郑州二砂文化创意园" />
-          </label>
+        {!usingNightBlocks && (
+          <>
+            <label className="admin-full">{promptLabel}
+              <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
+            </label>
+            {draft.type === 'memoryPuzzle' && (
+              <label className={`admin-full${missingFields.includes('谜底答案') ? ' admin-field-missing' : ''}`}>谜底答案（她答对后才能签到）
+                <input value={draft.answer} onChange={event => { setDraft({ ...draft, answer: event.target.value }); setMissingFields([]) }} placeholder="例如：郑州二砂文化创意园" />
+              </label>
+            )}
+            <label className={`admin-full${missingFields.includes('完成后显示的内容') ? ' admin-field-missing' : ''}`}>{secretLabel}
+              <textarea value={draft.secret} onChange={event => { setDraft({ ...draft, secret: event.target.value }); setMissingFields([]) }} rows={draft.type === 'fortune' ? 4 : draft.type === 'nightReading' ? 10 : 2} placeholder={secretPlaceholder} />
+            </label>
+          </>
         )}
-        <label className={`admin-full${missingFields.includes('完成后显示的内容') ? ' admin-field-missing' : ''}`}>{secretLabel}
-          <textarea value={draft.secret} onChange={event => { setDraft({ ...draft, secret: event.target.value }); setMissingFields([]) }} rows={draft.type === 'fortune' ? 4 : draft.type === 'nightReading' ? 10 : 2} placeholder={secretPlaceholder} />
-        </label>
-        <label className="admin-full">配图（可选：谜语/信/贴纸顶部图片，支持上传）
+        <label className="admin-full">{usingNightBlocks ? '封面图（可选）' : '配图（可选：谜语/信/贴纸顶部图片，支持上传）'}
           <input value={draft.image} onChange={event => setDraft({ ...draft, image: event.target.value })} placeholder="/images/xxx.jpg 或 https://…" />
           <span className="admin-image-upload-row">
             <input type="file" accept="image/*" onChange={handleImageFile} disabled={uploadingImage || !draft.day} />
@@ -12569,7 +12589,7 @@ function AdminTaskPage() {
           </span>
           {draft.image && <img className="admin-image-preview" src={draft.image} alt="配图预览" />}
         </label>
-        {draft.type === 'nightReading' && (
+        {draft.type === 'nightReading' && !usingNightBlocks && (
           <div className="admin-full admin-night-gallery">
             <div className="admin-section-head">
               <h3>🖼️ 夜读图集</h3>
@@ -12624,8 +12644,8 @@ function AdminTaskPage() {
         </details>
 {activeTypeHint && <p className="admin-type-hint">💡 {activeTypeHint.hint}</p>}
         <div className="admin-actions">
-          <button type="button" className="admin-save-draft" disabled={saving} onClick={() => save('draft')}>{saving ? '保存中…' : '存为草稿'}</button>
-          <button type="button" className="admin-save-publish" disabled={saving} onClick={() => save('published')}>{saving ? '保存中…' : '发布任务'}</button>
+          <button type="button" className="admin-save-draft" disabled={saving || nightImporting} onClick={() => save('draft')}>{saving ? '保存中…' : '存为草稿'}</button>
+          <button type="button" className="admin-save-publish" disabled={saving || nightImporting} onClick={() => save('published')}>{saving ? '保存中…' : nightImporting ? '图片转存中…' : '发布任务'}</button>
           {editingDay && <button type="button" className="admin-cancel" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeDay)); setDateAuto(true) }}>取消编辑</button>}
         </div>
       </section>
