@@ -12383,6 +12383,7 @@ function AdminTaskPage() {
 
   const activeTypeHint = ADMIN_TASK_TYPES.find(type => type.id === draft.type)
   const promptLabel = draft.type === 'nightReading' ? '夜读导语（选填，可写一两句开场白）' : '任务说明（她看到的第一段话，选填）'
+  const imageLabel = draft.type === 'nightReading' ? '封面图（可选）' : draft.type === 'memoryPuzzle' ? '谜题配图（可选）' : '配图（可选）'
   const nightGallery = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
   const nightBlocks = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks : []
   const usingNightBlocks = draft.type === 'nightReading' && nightBlocks.length > 0
@@ -12514,31 +12515,34 @@ function AdminTaskPage() {
             </label>
           )}
           {draft.type === 'nightReading' && (
-            <>
-              <label>夜读形式
-                <select
-                  value={draft.gameConfig?.readingKind || 'article'}
-                  onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), readingKind: event.target.value } })}
-                >
-                  <option value="article">温暖夜读 · 文字</option>
-                  <option value="comic">治愈漫画 · 图片</option>
-                </select>
-              </label>
-              <label>来源名称
-                <input
-                  value={draft.gameConfig?.source || '央视新闻'}
-                  onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), source: event.target.value } })}
-                  placeholder="例如：央视新闻"
-                />
-              </label>
-              <label>原文链接（选填）
-                <input
-                  value={draft.gameConfig?.sourceUrl || ''}
-                  onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), sourceUrl: event.target.value } })}
-                  placeholder="https://mp.weixin.qq.com/s/…"
-                />
-              </label>
-            </>
+            <div className="admin-full admin-night-meta">
+              <div className="admin-night-meta-title">🌙 夜读信息</div>
+              <div className="admin-night-meta-grid">
+                <label>夜读形式
+                  <select
+                    value={draft.gameConfig?.readingKind || 'article'}
+                    onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), readingKind: event.target.value } })}
+                  >
+                    <option value="article">温暖夜读 · 文字</option>
+                    <option value="comic">治愈漫画 · 图片</option>
+                  </select>
+                </label>
+                <label>来源名称
+                  <input
+                    value={draft.gameConfig?.source || '央视新闻'}
+                    onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), source: event.target.value } })}
+                    placeholder="例如：央视新闻"
+                  />
+                </label>
+                <label>原文链接（选填）
+                  <input
+                    value={draft.gameConfig?.sourceUrl || ''}
+                    onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), sourceUrl: event.target.value } })}
+                    placeholder="https://mp.weixin.qq.com/s/…"
+                  />
+                </label>
+              </div>
+            </div>
           )}
           {draft.type === 'nightReading' && (
             <div className="admin-full admin-night-import">
@@ -12605,7 +12609,7 @@ function AdminTaskPage() {
             </label>
           </>
         )}
-        <label className="admin-full">{usingNightBlocks ? '封面图（可选）' : '配图（可选：谜语/信/贴纸顶部图片，支持上传）'}
+        <label className="admin-full">{imageLabel}
           <input value={draft.image} onChange={event => setDraft({ ...draft, image: event.target.value })} placeholder="/images/xxx.jpg 或 https://…" />
           <span className="admin-image-upload-row">
             <input type="file" accept="image/*" onChange={handleImageFile} disabled={uploadingImage || !draft.day} />
