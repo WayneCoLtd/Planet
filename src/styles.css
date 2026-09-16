@@ -14181,9 +14181,9 @@ html { overflow-x: hidden; }
   padding: clamp(18px, 3vw, 28px);
   border-radius: 28px;
   background:
-    radial-gradient(circle at 8% 6%, rgba(185, 167, 255, .24), transparent 28%),
-    radial-gradient(circle at 96% 12%, rgba(155, 217, 255, .26), transparent 30%),
-    linear-gradient(160deg, #fffdf7, #f3edff 52%, #eaf6ff);
+    radial-gradient(circle at 8% 6%, rgba(255, 226, 109, .12), transparent 28%),
+    radial-gradient(circle at 96% 12%, rgba(155, 217, 255, .14), transparent 30%),
+    linear-gradient(160deg, #fffdf7, #fff4e8 52%, #edfaff);
   border: 2px solid rgba(255, 255, 255, .9);
   box-shadow: 0 20px 44px rgba(83, 62, 102, .14);
 }
@@ -14250,11 +14250,11 @@ html { overflow-x: hidden; }
   display: grid;
   gap: 14px;
   min-width: 0;
-  padding: clamp(16px, 3vw, 24px);
-  border-radius: 20px;
-  background: rgba(255, 255, 255, .68);
-  border: 1px dashed rgba(150, 132, 203, .34);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .58), 0 12px 26px rgba(83, 62, 102, .08);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .night-reading-body p {
   margin: 0;
