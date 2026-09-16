@@ -7742,6 +7742,8 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
   const body = String(item.secret || '').trim()
   const paragraphs = body ? body.split(/\n+/).map(line => line.trim()).filter(Boolean) : []
   const gallery = Array.isArray(config.gallery) ? config.gallery.map(String).filter(Boolean) : []
+  const blocks = Array.isArray(config.blocks) ? config.blocks.filter(Boolean) : []
+  const hasBlocks = blocks.length > 0
   const intro = String(item.prompt || '').trim()
 
   function finishReading() {
@@ -7768,12 +7770,25 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
       </header>
       {item.image && <img className="night-reading-cover" src={item.image} alt="夜读封面" loading="lazy" />}
       {intro && <p className="night-reading-intro">{intro}</p>}
-      {paragraphs.length > 0 && (
+      {hasBlocks && (
+        <div className="night-reading-blocks">
+          {blocks.map((block, index) => {
+            if (block.type === 'image' && block.url) {
+              return <img key={`${item.day}-b-${index}`} className="night-reading-block-image" src={block.url} alt={`夜读图片 ${index + 1}`} loading="lazy" />
+            }
+            if (block.type !== 'image' && block.text) {
+              return <p key={`${item.day}-b-${index}`}>{block.text}</p>
+            }
+            return null
+          })}
+        </div>
+      )}
+      {!hasBlocks && paragraphs.length > 0 && (
         <div className="night-reading-body">
           {paragraphs.map((text, index) => <p key={`${item.day}-p-${index}`}>{text}</p>)}
         </div>
       )}
-      {gallery.length > 0 && (
+      {!hasBlocks && gallery.length > 0 && (
         <div className="night-reading-gallery">
           {gallery.map((url, index) => (
             <img key={`${item.day}-g-${index}`} src={url} alt={`夜读配图 ${index + 1}`} loading="lazy" />
@@ -11742,6 +11757,91 @@ function parseAdminChatLines(text) {
   })
 }
 
+function normalizeNightReadingText(value) {
+  return String(value || '')
+    .replace(/\u00a0/g, ' ')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function parseNightReadingPasteHtml(html) {
+  const blocks = []
+  const doc = new DOMParser().parseFromString(String(html || ''), 'text/html')
+  const root = doc.body || doc
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      if (node.nodeType === Node.ELEMENT_NODE && ['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE', 'IFRAME', 'VIDEO', 'AUDIO'].includes(node.tagName)) {
+        return NodeFilter.FILTER_REJECT
+      }
+      return NodeFilter.FILTER_ACCEPT
+    }
+  })
+  let textBuffer = ''
+
+  function flushText() {
+    const text = normalizeNightReadingText(textBuffer)
+    if (text) blocks.push({ id: `nr-${Date.now()}-${blocks.length}`, type: 'text', text })
+    textBuffer = ''
+  }
+
+  let node
+  while ((node = walker.nextNode())) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      textBuffer += node.textContent || ''
+      continue
+    }
+    const tag = node.tagName
+    if (tag === 'IMG') {
+      flushText()
+      const source = node.getAttribute('data-src') || node.getAttribute('src') || ''
+      if (source && !/^data:image\/svg\+xml/.test(source)) {
+        blocks.push({ id: `nr-${Date.now()}-${blocks.length}`, type: 'image', url: source, sourceUrl: source })
+      }
+      continue
+    }
+    if (tag === 'BR') {
+      textBuffer += '\n'
+      continue
+    }
+    if (['P', 'DIV', 'SECTION', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'BLOCKQUOTE', 'LI', 'TR'].includes(tag)) {
+      flushText()
+    }
+  }
+  flushText()
+  return blocks.filter(block => block.type === 'image' ? Boolean(block.url) : Boolean(block.text))
+}
+
+function parseNightReadingPasteText(text) {
+  return String(text || '')
+    .split(/\n{2,}/)
+    .map(normalizeNightReadingText)
+    .filter(Boolean)
+    .map(text => ({ id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: 'text', text }))
+}
+
+async function resolveNightReadingImageBlob(url) {
+  if (String(url || '').startsWith('data:')) return dataUrlToBlob(url)
+  const response = await fetch(url, { mode: 'cors', credentials: 'omit' })
+  if (!response.ok) throw new Error(`图片请求失败：${response.status}`)
+  return response.blob()
+}
+
+async function uploadNightReadingImageBlob(blob, day, sourceName = '') {
+  const supabase = await getSupabase()
+  if (!supabase) return null
+  const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/gif' ? 'gif' : blob.type === 'image/webp' ? 'webp' : 'jpg'
+  const safeSource = String(sourceName || 'import').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 28)
+  const path = `admin-task-images/day-${Number(day) || 0}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeSource}.${extension}`
+  const { error } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
+    contentType: blob.type || 'image/jpeg',
+    upsert: true
+  })
+  if (error) throw error
+  const { data } = supabase.storage.from('wwcxrl-photos').getPublicUrl(path)
+  return data.publicUrl
+}
+
 function AdminTaskPage() {
   const [ok, setOk] = useState(() => typeof window !== 'undefined' && sessionStorage.getItem('wwcxrl-admin-ok') === '1')
   const [password, setPassword] = useState('')
@@ -11752,6 +11852,8 @@ function AdminTaskPage() {
   const [editingDay, setEditingDay] = useState(null)
   const [saving, setSaving] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [nightImporting, setNightImporting] = useState(false)
+  const [nightImportProgress, setNightImportProgress] = useState('')
   const [missingFields, setMissingFields] = useState([])
   const [dateAuto, setDateAuto] = useState(true)
   const [toast, setToast] = useState('')
@@ -11945,7 +12047,11 @@ function AdminTaskPage() {
     if (!draft.title.trim()) missing.push('标题')
     if (draft.type === 'memoryPuzzle' && !draft.answer.trim()) missing.push('谜底答案')
     if (draft.type === 'dailyLight' && !draft.secret.trim()) missing.push('小卡内容')
-    if (draft.type === 'nightReading' && !draft.secret.trim() && !(Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery.filter(Boolean).length : 0)) missing.push('夜读内容')
+    if (draft.type === 'nightReading') {
+      const galleryCount = Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery.filter(Boolean).length : 0
+      const blockCount = Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks.filter(block => block.type === 'image' ? Boolean(block.url) : Boolean(block.text)).length : 0
+      if (!draft.secret.trim() && !galleryCount && !blockCount) missing.push('夜读内容')
+    }
     if (draft.type === 'letter' && !draft.secret.trim()) missing.push('信的内容')
     if (missing.length) {
       setMissingFields(missing)
@@ -12011,6 +12117,107 @@ function AdminTaskPage() {
     } else {
       setToast('配图上传失败：云端未连接或存储不可用，可改用图片链接。')
     }
+  }
+
+  function setNightReadingBlocks(blocks) {
+    setDraft(previous => ({ ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }))
+  }
+
+  function addNightReadingBlock(type = 'text') {
+    setDraft(previous => {
+      const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
+      blocks.push({ id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, text: '', url: '' })
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
+    })
+  }
+
+  function updateNightReadingBlock(index, patch) {
+    setDraft(previous => {
+      const blocks = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.map((block, blockIndex) => blockIndex === index ? { ...block, ...patch } : block) : []
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
+    })
+  }
+
+  function removeNightReadingBlock(index) {
+    setDraft(previous => {
+      const blocks = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter((_, blockIndex) => blockIndex !== index) : []
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
+    })
+  }
+
+  function moveNightReadingBlock(index, direction) {
+    setDraft(previous => {
+      const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
+      const nextIndex = index + direction
+      if (nextIndex < 0 || nextIndex >= blocks.length) return previous
+      ;[blocks[index], blocks[nextIndex]] = [blocks[nextIndex], blocks[index]]
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
+    })
+  }
+
+  async function processNightReadingBlocks(initialBlocks) {
+    if (!initialBlocks.length || nightImporting) return initialBlocks
+    setNightImporting(true)
+    let completed = 0
+    const total = initialBlocks.filter(block => block.type === 'image').length
+    const next = [...initialBlocks]
+    for (let index = 0; index < next.length; index += 1) {
+      const block = next[index]
+      if (block.type !== 'image' || !block.url || String(block.url).startsWith('/')) continue
+      completed += 1
+      setNightImportProgress(`正在转存第 ${completed}/${total || 0} 张图片…`)
+      setDraft(previous => ({
+        ...previous,
+        gameConfig: {
+          ...(previous.gameConfig || {}),
+          blocks: (previous.gameConfig?.blocks || next).map((item, itemIndex) => itemIndex === index ? { ...item, status: 'importing' } : item)
+        }
+      }))
+      try {
+        const blob = await resolveNightReadingImageBlob(block.url)
+        const uploadedUrl = await uploadNightReadingImageBlob(blob, draft.day, draft.gameConfig?.source || '夜读')
+        if (uploadedUrl) {
+          next[index] = { ...block, url: uploadedUrl, sourceUrl: block.url, status: 'uploaded' }
+        } else {
+          next[index] = { ...block, status: 'remote' }
+        }
+      } catch (error) {
+        console.warn('[wwcxrl admin] night reading image import failed', error)
+        next[index] = { ...block, status: 'remote' }
+      }
+      setDraft(previous => ({
+        ...previous,
+        gameConfig: {
+          ...(previous.gameConfig || {}),
+          blocks: (previous.gameConfig?.blocks || next).map((item, itemIndex) => itemIndex === index ? next[index] : item)
+        }
+      }))
+    }
+    setDraft(previous => ({ ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks: next } }))
+    setNightImportProgress('')
+    setNightImporting(false)
+    setToast(total ? `夜读图片处理完成：已转存 ${next.filter(item => item.type === 'image' && item.status === 'uploaded').length}/${total} 张。` : '夜读内容已解析。')
+    return next
+  }
+
+  function handleNightReadingPaste(event) {
+    event.preventDefault()
+    if (nightImporting) return
+    const html = event.clipboardData?.getData('text/html') || ''
+    const plainText = event.clipboardData?.getData('text/plain') || ''
+    let blocks = html ? parseNightReadingPasteHtml(html) : parseNightReadingPasteText(plainText)
+    if (!blocks.length) {
+      setToast('没有识别到可导入的文字或图片，请先在微信文章里全选并复制。')
+      return
+    }
+    setNightReadingBlocks(blocks)
+    const imageCount = blocks.filter(block => block.type === 'image').length
+    const textCount = blocks.filter(block => block.type === 'text').length
+    if (imageCount > textCount) {
+      setDraft(previous => ({ ...previous, gameConfig: { ...(previous.gameConfig || {}), readingKind: 'comic' } }))
+    }
+    setToast(`已识别 ${blocks.length} 个内容块，正在处理图片…`)
+    processNightReadingBlocks(blocks)
   }
 
   async function handleNightReadingGalleryFiles(event) {
@@ -12144,6 +12351,7 @@ function AdminTaskPage() {
   const activeTypeHint = ADMIN_TASK_TYPES.find(type => type.id === draft.type)
   const promptLabel = draft.type === 'nightReading' ? '夜读导语（选填，可写一两句开场白）' : '任务说明（她看到的第一段话，选填）'
   const nightGallery = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
+  const nightBlocks = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks : []
   const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）', nightReading: '夜读正文（可分段；漫画类可以只留图集）' })[draft.type] || '完成后显示的内容'
   const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : draft.type === 'nightReading' ? '把今晚想对她说的话，写成几段温柔的文字。' : '完成后显示的一段话'
   const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
@@ -12292,6 +12500,54 @@ function AdminTaskPage() {
                 />
               </label>
             </>
+          )}
+          {draft.type === 'nightReading' && (
+            <div className="admin-full admin-night-import">
+              <div className="admin-section-head">
+                <h3>📥 从微信粘贴导入</h3>
+                <button type="button" className="admin-meeting-add" onClick={() => setNightReadingBlocks([])} disabled={nightImporting}>清空导入</button>
+              </div>
+              <div
+                className={`admin-night-paste-zone ${nightImporting ? 'is-importing' : ''}`}
+                contentEditable={!nightImporting}
+                suppressContentEditableWarning
+                onPaste={handleNightReadingPaste}
+                role="textbox"
+                aria-multiline="true"
+                aria-label="从微信粘贴夜读内容"
+              >
+                {nightImporting ? (nightImportProgress || '正在转存图片…') : '在微信文章页 Ctrl+A 复制全部内容，然后回到这里 Ctrl+V 粘贴。'}
+              </div>
+              <p className="admin-night-import-status">
+                {nightImportProgress || `已识别 ${nightBlocks.length} 个内容块`}
+              </p>
+              {nightBlocks.length > 0 && (
+                <div className="admin-night-block-list">
+                  {nightBlocks.map((block, index) => (
+                    <div className={`admin-night-block-item is-${block.type}`} key={block.id || `nr-block-${index}`}>
+                      <div className="admin-night-block-head">
+                        <span>{block.type === 'image' ? '🖼️ 图片' : '📄 文字'}</span>
+                        <span className={`admin-night-block-status is-${block.status || 'local'}`}>
+                          {block.status === 'importing' ? '转存中…' : block.status === 'uploaded' ? '已转存' : block.status === 'remote' ? '暂用原图' : ''}
+                        </span>
+                        <button type="button" disabled={nightImporting || index === 0} onClick={() => moveNightReadingBlock(index, -1)} aria-label="上移">↑</button>
+                        <button type="button" disabled={nightImporting || index === nightBlocks.length - 1} onClick={() => moveNightReadingBlock(index, 1)} aria-label="下移">↓</button>
+                        <button type="button" disabled={nightImporting} onClick={() => removeNightReadingBlock(index)} aria-label="删除">✕</button>
+                      </div>
+                      {block.type === 'image' ? (
+                        <input value={block.url || ''} onChange={event => updateNightReadingBlock(index, { url: event.target.value })} placeholder="图片地址" />
+                      ) : (
+                        <textarea value={block.text || ''} onChange={event => updateNightReadingBlock(index, { text: event.target.value })} rows={3} placeholder="这段文字" />
+                      )}
+                    </div>
+                  ))}
+                  <div className="admin-night-block-actions">
+                    <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 文字块</button>
+                    <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片块</button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
         </div>
         <label className="admin-full">{promptLabel}
