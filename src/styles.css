@@ -14172,3 +14172,211 @@ html { overflow-x: hidden; }
     animation: none;
   }
 }
+
+/* ===== 夜读：温暖阅读 / 治愈漫画 ===== */
+.night-reading {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: clamp(18px, 3vw, 28px);
+  border-radius: 28px;
+  background:
+    radial-gradient(circle at 8% 6%, rgba(185, 167, 255, .24), transparent 28%),
+    radial-gradient(circle at 96% 12%, rgba(155, 217, 255, .26), transparent 30%),
+    linear-gradient(160deg, #fffdf7, #f3edff 52%, #eaf6ff);
+  border: 2px solid rgba(255, 255, 255, .9);
+  box-shadow: 0 20px 44px rgba(83, 62, 102, .14);
+}
+.night-reading-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.night-reading-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #4d3e7c;
+  background: linear-gradient(135deg, #f5e9ff, #dceeff);
+  box-shadow: 0 6px 14px rgba(109, 92, 161, .13);
+  font-size: .84rem;
+  font-weight: 900;
+}
+.night-reading-top small {
+  color: var(--soft-ink);
+  font-size: .78rem;
+}
+.night-reading-header h3 {
+  margin: 0;
+  color: #43345f;
+  font-size: clamp(1.2rem, 2.7vw, 1.65rem);
+  line-height: 1.48;
+}
+.night-reading-header p {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 8px 0 0;
+  color: var(--soft-ink);
+  font-size: .84rem;
+}
+.night-reading-header a {
+  color: #6d7cd9;
+  text-decoration: none;
+  font-weight: 900;
+}
+.night-reading-cover {
+  display: block;
+  width: 100%;
+  max-height: min(52vh, 520px);
+  object-fit: contain;
+  margin-inline: auto;
+  border-radius: 18px;
+  border: 2px solid #fff;
+  box-shadow: 0 14px 30px rgba(83, 62, 102, .15);
+}
+.night-reading-intro {
+  margin: 0;
+  color: #6c5b86;
+  font-size: .95rem;
+  line-height: 1.85;
+}
+.night-reading-body {
+  display: grid;
+  gap: 14px;
+  min-width: 0;
+  padding: clamp(16px, 3vw, 24px);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .68);
+  border: 1px dashed rgba(150, 132, 203, .34);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .58), 0 12px 26px rgba(83, 62, 102, .08);
+}
+.night-reading-body p {
+  margin: 0;
+  color: #4f3e68;
+  font-size: clamp(.96rem, 2vw, 1.05rem);
+  line-height: 2;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.night-reading-gallery {
+  display: grid;
+  gap: 14px;
+}
+.night-reading-gallery img {
+  display: block;
+  width: 100%;
+  max-height: min(64vh, 720px);
+  object-fit: contain;
+  margin-inline: auto;
+  border-radius: 16px;
+  border: 2px solid #fff;
+  box-shadow: 0 12px 26px rgba(83, 62, 102, .12);
+}
+.night-reading-ending {
+  margin: 0;
+  color: #5b4b7a;
+  font-size: .92rem;
+  line-height: 1.8;
+}
+.night-reading-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.night-reading-finish {
+  padding: 11px 22px;
+  border-radius: 999px;
+  color: #fff;
+  background: linear-gradient(135deg, #8f83e8, #6baee9 56%, #84d5cf);
+  box-shadow: 0 10px #6e68b655, 0 18px 30px #6b7cd338;
+  font-weight: 900;
+}
+.night-reading-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  color: #3f7b6a;
+  background: rgba(141, 231, 194, .24);
+  border: 1px solid rgba(76, 175, 135, .28);
+  font-weight: 900;
+}
+.night-reading-foot small {
+  color: var(--soft-ink);
+  font-size: .8rem;
+}
+.night-reading.is-collecting .night-reading-body,
+.night-reading.is-collecting .night-reading-gallery {
+  animation: nightReadingClose .46s ease both;
+}
+@keyframes nightReadingClose {
+  0% { opacity: 1; transform: scale(1); }
+  50% { opacity: .72; transform: scale(.992); }
+  100% { opacity: 1; transform: scale(1); }
+}
+.interstellar-voyage-theme .night-reading {
+  background:
+    radial-gradient(circle at 8% 6%, rgba(155, 217, 255, .16), transparent 28%),
+    radial-gradient(circle at 96% 12%, rgba(185, 167, 255, .22), transparent 30%),
+    linear-gradient(160deg, #18243d, #292347 52%, #152b3d);
+  border-color: rgba(185, 215, 255, .22);
+}
+.interstellar-voyage-theme .night-reading-header h3,
+.interstellar-voyage-theme .night-reading-body p,
+.interstellar-voyage-theme .night-reading-ending {
+  color: #eef6ff;
+}
+.interstellar-voyage-theme .night-reading-body {
+  background: rgba(16, 26, 44, .7);
+  border-color: rgba(185, 215, 255, .26);
+}
+
+/* ===== 管理端：夜读图集 ===== */
+.admin-night-gallery {
+  display: grid;
+  gap: 10px;
+}
+.admin-night-gallery .admin-section-head {
+  margin: 0;
+}
+.admin-night-gallery .admin-section-head h3 {
+  margin: 0;
+}
+.admin-night-gallery-list {
+  display: grid;
+  gap: 8px;
+}
+.admin-night-gallery-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .night-reading-foot {
+    align-items: stretch;
+  }
+  .night-reading-finish,
+  .night-reading-done {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+  .admin-night-gallery-item {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .night-reading.is-collecting .night-reading-body,
+  .night-reading.is-collecting .night-reading-gallery {
+    animation: none;
+  }
+}

@@ -15,6 +15,7 @@
 | --- | --- | --- |
 | 谜语签到（推荐） | 输入谜底答案，答对自动点亮签到 | 谜面 prompt、谜底 answer、配图可选 |
 | 今日小卡（轻量签到） | 看一张 10 秒小卡：冷知识 / 生活技巧 / AI 小提示 / 脑筋急转弯；看完点“收下啦”即完成 | 小卡正文 secret、分类、配图可选 |
+| 夜读（温暖阅读） | 看一篇温暖治愈的文字或漫画，读完点「我读完啦」即完成 | 夜读形式、来源、原文链接、封面、正文、图集 |
 | 一封信 | 拆开信封 → 读信 → 点「我读完啦」 | 信的内容 secret |
 | 今日抽签 | 点一下签筒摇一摇，出签即完成 | 出签文案 secret |
 | 贴纸 / 心愿 | 点一下揭下贴纸，看到背后的话 | 背后的话 secret |
@@ -29,6 +30,16 @@
 5. 发布后，她看完小卡点「收下啦，完成签到」，签到按钮就会亮起。
 
 这个类型没有答案、没有倒计时、没有失败状态；适合每天 10–30 秒完成。
+
+### 夜读怎么布置
+
+1. 任务类型选择「夜读（温暖阅读）」。
+2. 夜读形式可选「温暖夜读 · 文字」或「治愈漫画 · 图片」。
+3. 填写来源名称和原文链接，例如「央视新闻」和微信原文地址。
+4. 可以上传一张封面图，再填写导语、正文，以及一组图集。
+5. 文字夜读以正文为主；漫画夜读可以只放图集，不写正文。
+
+她打开签到页后安静读完整篇，点「我读完啦，完成签到」即可。没有考题、不计时，也不会要求写读后感想。
 
 ### 小游戏模板与参数
 
@@ -97,7 +108,7 @@
 
 ```sql
 alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
-alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'letter', 'fortune', 'sticker', 'game'));
+alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'nightReading', 'letter', 'fortune', 'sticker', 'game'));
 alter table public.wwcxrl_daily_tasks add column if not exists game_id text not null default '';
 alter table public.wwcxrl_daily_tasks add column if not exists game_config jsonb not null default '{}'::jsonb;
 ```

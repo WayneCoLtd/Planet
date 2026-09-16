@@ -35,6 +35,7 @@ const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wwcxrl2026'
 const ADMIN_TASK_TYPES = [
   { id: 'memoryPuzzle', label: '谜语签到（推荐）', hint: '输入谜底答案，答对后自动亮起签到' },
   { id: 'dailyLight', label: '今日小卡（轻量签到）', hint: '一张 10 秒小卡：冷知识、生活技巧、AI 小提示、脑筋急转弯。看完点“收下啦”即可签到' },
+  { id: 'nightReading', label: '夜读（温暖阅读）', hint: '一篇温暖治愈的文字或漫画，看完点“我读完啦”即可签到。支持封面、正文、多图和原文链接' },
   { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
   { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
   { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
@@ -1533,6 +1534,8 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
                     ? '🥚 砸开金蛋后可签到'
                     : item.type === 'dailyLight'
                       ? '💡 看完小卡后可签到'
+                    : item.type === 'nightReading'
+                      ? '🌙 读完夜读后可签到'
                     : '🍊 完成任务后可签到'
         : '🍊 点击签到'
   const showDay8Reset = item.day === 8 && resetAvailable
@@ -7729,6 +7732,69 @@ function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}
   )
 }
 
+// ---- 夜读：温暖治愈的文字或漫画，读完即可完成 ----
+function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () => {} }) {
+  const [collecting, setCollecting] = useState(false)
+  const config = item.gameConfig || {}
+  const kind = config.readingKind === 'comic' ? '治愈漫画' : '温暖夜读'
+  const sourceName = String(config.source || '央视新闻').trim()
+  const sourceUrl = String(config.sourceUrl || '').trim()
+  const body = String(item.secret || '').trim()
+  const paragraphs = body ? body.split(/\n+/).map(line => line.trim()).filter(Boolean) : []
+  const gallery = Array.isArray(config.gallery) ? config.gallery.map(String).filter(Boolean) : []
+  const intro = String(item.prompt || '').trim()
+
+  function finishReading() {
+    if (taskCompleted || collecting) return
+    setCollecting(true)
+    window.setTimeout(() => {
+      setCollecting(false)
+      onTaskComplete(item.day)
+    }, 460)
+  }
+
+  return (
+    <div className={`mini-game night-reading ${taskCompleted ? 'is-completed' : ''} ${collecting ? 'is-collecting' : ''}`}>
+      <div className="night-reading-top">
+        <span className="night-reading-badge">{item.icon || '🌙'} {kind}</span>
+        <small>{item.date} · Day {item.day}</small>
+      </div>
+      <header className="night-reading-header">
+        <h3>{item.title || '夜读'}</h3>
+        <p>
+          <span>来源：{sourceName}</span>
+          {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer">查看原文 ↗</a>}
+        </p>
+      </header>
+      {item.image && <img className="night-reading-cover" src={item.image} alt="夜读封面" loading="lazy" />}
+      {intro && <p className="night-reading-intro">{intro}</p>}
+      {paragraphs.length > 0 && (
+        <div className="night-reading-body">
+          {paragraphs.map((text, index) => <p key={`${item.day}-p-${index}`}>{text}</p>)}
+        </div>
+      )}
+      {gallery.length > 0 && (
+        <div className="night-reading-gallery">
+          {gallery.map((url, index) => (
+            <img key={`${item.day}-g-${index}`} src={url} alt={`夜读配图 ${index + 1}`} loading="lazy" />
+          ))}
+        </div>
+      )}
+      {item.reward && <p className="night-reading-ending">{item.reward}</p>}
+      <div className="night-reading-foot">
+        {taskCompleted ? (
+          <span className="night-reading-done">✓ 今晚已经读完啦</span>
+        ) : (
+          <button type="button" className="night-reading-finish" onClick={finishReading} disabled={collecting}>
+            {collecting ? '正在合上书页…' : '我读完啦，完成签到'}
+          </button>
+        )}
+        <small>不设考题，只安静读完这一篇。</small>
+      </div>
+    </div>
+  )
+}
+
 // ---- 砸金蛋：点金蛋敲出今日奖励 ----
 const DEFAULT_FORTUNE_POOL = ['🧋 一杯奶茶', '☕ 一杯咖啡', '🍜 点一个好吃的外卖', '🎁 神秘大奖', '🍰 一块小蛋糕']
 const FORTUNE_PICKS_KEY = 'wwcxrl-fortune-picks-v1'
@@ -8028,6 +8094,10 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
 
   if (item.type === 'dailyLight') {
     return <DailyLightCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+  }
+
+  if (item.type === 'nightReading') {
+    return <NightReadingQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
   }
 
   if (item.type === 'anniversary') {
@@ -11597,6 +11667,14 @@ const ADMIN_TASK_EXAMPLES = {
     icon: '💡',
     gameConfig: { cardKind: '冷知识' }
   },
+  nightReading: {
+    title: '夜读 · 想，全是问题；做，才有答案',
+    prompt: '今晚把手机调静音，留三分钟读一点温柔。',
+    secret: '很多时候，因为害怕失败，我们总希望做好万全的准备，才敢迈出第一步。\n\n但其实，并没有那个完美的时机。\n\n想，全是问题；做，才有答案。',
+    reward: '愿你放下包袱，勇敢出发。',
+    icon: '🌙',
+    gameConfig: { readingKind: 'article', source: '央视新闻', sourceUrl: '', gallery: [] }
+  },
   letter: {
     title: '第 X 天的一封信',
     prompt: '今天有一封信想给你。',
@@ -11867,6 +11945,7 @@ function AdminTaskPage() {
     if (!draft.title.trim()) missing.push('标题')
     if (draft.type === 'memoryPuzzle' && !draft.answer.trim()) missing.push('谜底答案')
     if (draft.type === 'dailyLight' && !draft.secret.trim()) missing.push('小卡内容')
+    if (draft.type === 'nightReading' && !draft.secret.trim() && !(Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery.filter(Boolean).length : 0)) missing.push('夜读内容')
     if (draft.type === 'letter' && !draft.secret.trim()) missing.push('信的内容')
     if (missing.length) {
       setMissingFields(missing)
@@ -11932,6 +12011,52 @@ function AdminTaskPage() {
     } else {
       setToast('配图上传失败：云端未连接或存储不可用，可改用图片链接。')
     }
+  }
+
+  async function handleNightReadingGalleryFiles(event) {
+    const files = Array.from(event.target.files || []).filter(Boolean).slice(0, 12)
+    event.target.value = ''
+    if (!files.length) return
+    if (!draft.day) { setToast('请先填写天数 Day，再上传夜读配图'); return }
+    setUploadingImage(true)
+    setToast(`正在上传 ${files.length} 张夜读配图…`)
+    const uploaded = []
+    for (const file of files) {
+      const url = await uploadCloudTaskImage(file, draft.day)
+      if (url) uploaded.push(url)
+    }
+    setUploadingImage(false)
+    if (uploaded.length) {
+      setDraft(previous => {
+        const existing = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery.filter(Boolean) : []
+        return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery: [...existing, ...uploaded] } }
+      })
+      setToast(`已上传 ${uploaded.length} 张夜读配图。`)
+    } else {
+      setToast('夜读配图上传失败：云端未连接或存储不可用，可改用图片链接。')
+    }
+  }
+
+  function addNightReadingGalleryImage() {
+    setDraft(previous => {
+      const gallery = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery : []
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery: [...gallery, ''] } }
+    })
+  }
+
+  function updateNightReadingGalleryImage(index, url) {
+    setDraft(previous => {
+      const gallery = Array.isArray(previous.gameConfig?.gallery) ? [...previous.gameConfig.gallery] : []
+      gallery[index] = url
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery } }
+    })
+  }
+
+  function removeNightReadingGalleryImage(index) {
+    setDraft(previous => {
+      const gallery = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery.filter((_, itemIndex) => itemIndex !== index) : []
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery } }
+    })
   }
 
 
@@ -12017,8 +12142,10 @@ function AdminTaskPage() {
   }
 
   const activeTypeHint = ADMIN_TASK_TYPES.find(type => type.id === draft.type)
-  const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）' })[draft.type] || '完成后显示的内容'
-  const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : '完成后显示的一段话'
+  const promptLabel = draft.type === 'nightReading' ? '夜读导语（选填，可写一两句开场白）' : '任务说明（她看到的第一段话，选填）'
+  const nightGallery = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
+  const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）', nightReading: '夜读正文（可分段；漫画类可以只留图集）' })[draft.type] || '完成后显示的内容'
+  const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : draft.type === 'nightReading' ? '把今晚想对她说的话，写成几段温柔的文字。' : '完成后显示的一段话'
   const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
 
   return (
@@ -12091,6 +12218,13 @@ function AdminTaskPage() {
                 if (type === 'game' && !draft.gameId) next.gameId = 'mazeClassic'
                 if (type === 'game' && !draft.gameConfig) next.gameConfig = { ...getMiniGameDefaults(draft.gameId || 'mazeClassic') }
                 if (type === 'dailyLight') next.gameConfig = { ...(draft.gameConfig || {}), cardKind: draft.gameConfig?.cardKind || '冷知识' }
+                if (type === 'nightReading') next.gameConfig = {
+                  ...(draft.gameConfig || {}),
+                  readingKind: draft.gameConfig?.readingKind || 'article',
+                  source: draft.gameConfig?.source || '央视新闻',
+                  sourceUrl: draft.gameConfig?.sourceUrl || '',
+                  gallery: Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
+                }
                 setDraft(next)
                 setMissingFields([])
               }}>
@@ -12132,8 +12266,35 @@ function AdminTaskPage() {
               </select>
             </label>
           )}
+          {draft.type === 'nightReading' && (
+            <>
+              <label>夜读形式
+                <select
+                  value={draft.gameConfig?.readingKind || 'article'}
+                  onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), readingKind: event.target.value } })}
+                >
+                  <option value="article">温暖夜读 · 文字</option>
+                  <option value="comic">治愈漫画 · 图片</option>
+                </select>
+              </label>
+              <label>来源名称
+                <input
+                  value={draft.gameConfig?.source || '央视新闻'}
+                  onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), source: event.target.value } })}
+                  placeholder="例如：央视新闻"
+                />
+              </label>
+              <label>原文链接（选填）
+                <input
+                  value={draft.gameConfig?.sourceUrl || ''}
+                  onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), sourceUrl: event.target.value } })}
+                  placeholder="https://mp.weixin.qq.com/s/…"
+                />
+              </label>
+            </>
+          )}
         </div>
-        <label className="admin-full">任务说明（她看到的第一段话，选填）
+        <label className="admin-full">{promptLabel}
           <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
         </label>
         {draft.type === 'memoryPuzzle' && (
@@ -12142,7 +12303,7 @@ function AdminTaskPage() {
           </label>
         )}
         <label className={`admin-full${missingFields.includes('完成后显示的内容') ? ' admin-field-missing' : ''}`}>{secretLabel}
-          <textarea value={draft.secret} onChange={event => { setDraft({ ...draft, secret: event.target.value }); setMissingFields([]) }} rows={draft.type === 'fortune' ? 4 : 2} placeholder={secretPlaceholder} />
+          <textarea value={draft.secret} onChange={event => { setDraft({ ...draft, secret: event.target.value }); setMissingFields([]) }} rows={draft.type === 'fortune' ? 4 : draft.type === 'nightReading' ? 10 : 2} placeholder={secretPlaceholder} />
         </label>
         <label className="admin-full">配图（可选：谜语/信/贴纸顶部图片，支持上传）
           <input value={draft.image} onChange={event => setDraft({ ...draft, image: event.target.value })} placeholder="/images/xxx.jpg 或 https://…" />
@@ -12152,6 +12313,30 @@ function AdminTaskPage() {
           </span>
           {draft.image && <img className="admin-image-preview" src={draft.image} alt="配图预览" />}
         </label>
+        {draft.type === 'nightReading' && (
+          <div className="admin-full admin-night-gallery">
+            <div className="admin-section-head">
+              <h3>🖼️ 夜读图集</h3>
+              <button type="button" className="admin-meeting-add" onClick={addNightReadingGalleryImage}>＋ 添加图片链接</button>
+            </div>
+            <div className="admin-night-gallery-list">
+              {(nightGallery.length ? nightGallery : ['']).map((url, index) => (
+                <div className="admin-night-gallery-item" key={`night-gallery-${index}`}>
+                  <input
+                    value={url}
+                    onChange={event => updateNightReadingGalleryImage(index, event.target.value)}
+                    placeholder="粘贴图片地址，或点击下方批量上传"
+                  />
+                  <button type="button" className="admin-row-delete" onClick={() => removeNightReadingGalleryImage(index)}>删除</button>
+                </div>
+              ))}
+            </div>
+            <span className="admin-image-upload-row">
+              <input type="file" accept="image/*" multiple onChange={handleNightReadingGalleryFiles} disabled={uploadingImage || !draft.day} />
+              <small>{uploadingImage ? '上传中…' : '可一次选择多张图片，自动追加到图集'}</small>
+            </span>
+          </div>
+        )}
         <details className="admin-advanced">
           <summary>高级选项（选填）</summary>
           <div className="admin-form-grid">
@@ -12202,6 +12387,9 @@ function AdminTaskPage() {
             )}
             {draft.type === 'dailyLight' && (
               <p className="admin-preview-prompt">💡 {draft.gameConfig?.cardKind || '今日小卡'} · 看完点“收下啦”即可完成签到</p>
+            )}
+            {draft.type === 'nightReading' && (
+              <p className="admin-preview-prompt">🌙 {draft.gameConfig?.readingKind === 'comic' ? '治愈漫画' : '温暖夜读'} · 看完点“我读完啦”即可完成签到</p>
             )}
             {draft.prompt && <p className="admin-preview-prompt">{draft.prompt}</p>}
           </div>

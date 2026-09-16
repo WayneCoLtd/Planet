@@ -167,7 +167,7 @@ create table if not exists public.wwcxrl_daily_tasks (
   date text not null,
   title text not null,
   icon text not null default '✨',
-  type text not null default 'memoryPuzzle' check (type in ('memoryPuzzle', 'dailyLight', 'letter', 'fortune', 'sticker', 'game')),
+  type text not null default 'memoryPuzzle' check (type in ('memoryPuzzle', 'dailyLight', 'nightReading', 'letter', 'fortune', 'sticker', 'game')),
   theme text not null default '',
   reward text not null default '',
   prompt text not null default '',
@@ -326,7 +326,7 @@ drop policy if exists "wwcxrl_changelog_public_delete" on public.wwcxrl_changelo
 create policy "wwcxrl_changelog_public_delete" on public.wwcxrl_changelog for delete using (true);
 -- 已建表的老库执行下面两条即可（新库建表已包含）：
 -- alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
--- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'letter', 'fortune', 'sticker', 'game'));
+-- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'nightReading', 'letter', 'fortune', 'sticker', 'game'));
 -- alter table public.wwcxrl_daily_tasks add column if not exists game_id text not null default '';
 -- alter table public.wwcxrl_daily_tasks add column if not exists game_config jsonb not null default '{}'::jsonb;
 
