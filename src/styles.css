@@ -14610,13 +14610,23 @@ html { overflow-x: hidden; }
     transition: width .22s ease, max-width .22s ease;
   }
   .checkin-section .day-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 8px;
+    grid-template-columns: repeat(9, minmax(0, 1fr));
+    gap: 6px;
   }
   .checkin-section .day-dot {
-    min-height: 58px;
-    padding: 6px 2px 5px;
-    border-radius: 14px;
+    min-height: 54px;
+    padding: 4px 2px 4px;
+    border-radius: 12px;
+  }
+  .checkin-section .day-dot .day-dot-icon {
+    font-size: .92rem;
+  }
+  .checkin-section .day-dot small {
+    font-size: .58rem;
+  }
+  .checkin-section .day-status-badge {
+    padding: 2px 3px;
+    font-size: .52rem;
   }
   .checkin-sidebar-toggle {
     position: sticky;
