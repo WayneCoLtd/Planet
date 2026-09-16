@@ -14602,8 +14602,6 @@ html { overflow-x: hidden; }
     position: sticky;
     top: 16px;
     z-index: 5;
-    max-height: calc(100vh - 32px);
-    overflow: auto;
     align-self: start;
     transition: width .22s ease, max-width .22s ease;
   }
@@ -14626,8 +14624,9 @@ html { overflow-x: hidden; }
     z-index: 2;
     display: inline-grid;
     place-items: center;
-    width: 34px;
+    width: auto;
     height: 34px;
+    padding: 0 12px;
     margin: -4px 0 8px auto;
     border-radius: 999px;
     color: #7b4335;
@@ -14642,6 +14641,7 @@ html { overflow-x: hidden; }
     gap: 10px;
     padding: 14px 10px;
     overflow: hidden;
+    max-height: none;
   }
   .calendar-card.is-collapsed .checkin-sidebar-toggle {
     margin: 0 auto 2px;

@@ -1464,7 +1464,7 @@ function CheckIn() {
             aria-label={sidebarCollapsed ? '展开签到进度栏' : '收起签到进度栏'}
             title={sidebarCollapsed ? '展开签到进度栏' : '收起签到进度栏'}
           >
-            {sidebarCollapsed ? '▶' : '◀'}
+            {sidebarCollapsed ? '▶ 展开' : '◀ 收起'}
           </button>
           {sidebarCollapsed ? (
             <div className="checkin-sidebar-collapsed">
