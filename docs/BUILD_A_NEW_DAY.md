@@ -35,6 +35,7 @@ bash scripts/review-local.sh
 | type | 用途 |
 | --- | --- |
 | `letter` | 一封文字信 / 直接完成 |
+| `dailyLight` | 今日小卡：看一张冷知识 / 生活技巧 / AI 小提示 / 脑筋急转弯，点“收下啦”完成 |
 | `puzzle` | 输入答案的小谜题 |
 | `tap` | 点击累积型小游戏 |
 | `fortune` | 抽签 / 扭蛋感结果 |

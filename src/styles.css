@@ -14022,3 +14022,153 @@ html { overflow-x: hidden; }
     min-height: 64px;
   }
 }
+
+/* ===== 今日小卡：轻量签到 ===== */
+.daily-light-card {
+  display: grid;
+  gap: 14px;
+  padding: clamp(18px, 3vw, 26px);
+  border-radius: 26px;
+  background:
+    radial-gradient(circle at 10% 8%, rgba(255, 226, 109, .28), transparent 28%),
+    radial-gradient(circle at 94% 12%, rgba(155, 217, 255, .24), transparent 30%),
+    linear-gradient(160deg, #fffdf6, #fff4e8 56%, #eefaff);
+  border: 2px solid rgba(255, 255, 255, .92);
+  box-shadow: 0 18px 38px rgba(160, 93, 52, .12);
+}
+.daily-light-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.daily-light-card-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #d8f1ff);
+  box-shadow: 0 5px 12px rgba(255, 173, 77, .14);
+  font-size: .84rem;
+  font-weight: 900;
+}
+.daily-light-card-kind b {
+  font-size: 1.08rem;
+  line-height: 1;
+}
+.daily-light-card-head small {
+  color: var(--soft-ink);
+  font-size: .78rem;
+}
+.daily-light-card h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: clamp(1.12rem, 2.4vw, 1.45rem);
+  line-height: 1.45;
+}
+.daily-light-card-intro {
+  margin: 0;
+  color: var(--soft-ink);
+  font-size: .92rem;
+  line-height: 1.7;
+}
+.daily-light-card-paper {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: clamp(16px, 3vw, 24px);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .72);
+  border: 1px dashed rgba(255, 159, 189, .38);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .6), 0 10px 22px rgba(112, 70, 36, .07);
+}
+.daily-light-card-paper img {
+  display: block;
+  width: 100%;
+  max-height: min(46vh, 420px);
+  object-fit: contain;
+  margin-inline: auto;
+  border-radius: 14px;
+  border: 2px solid #fff;
+  box-shadow: 0 10px 22px rgba(112, 70, 36, .14);
+}
+.daily-light-card-paper p {
+  margin: 0;
+  color: #5c4231;
+  font-size: clamp(.96rem, 2vw, 1.05rem);
+  line-height: 1.95;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.daily-light-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.daily-light-card-collect {
+  padding: 11px 22px;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #ffe26d, #ffad49 55%, #ff92b1);
+  box-shadow: 0 10px #ffb14954, 0 18px 30px #ff875038;
+  font-weight: 900;
+}
+.daily-light-card-done {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 16px;
+  border-radius: 999px;
+  color: #3b7d65;
+  background: rgba(141, 231, 194, .28);
+  border: 1px solid rgba(76, 175, 135, .3);
+  font-weight: 900;
+}
+.daily-light-card-foot small {
+  color: var(--soft-ink);
+  font-size: .8rem;
+}
+.daily-light-card.is-collecting .daily-light-card-paper {
+  animation: dailyLightCollect .42s ease both;
+}
+@keyframes dailyLightCollect {
+  0% { transform: scale(1); }
+  45% { transform: scale(.985) rotate(-.4deg); }
+  100% { transform: scale(1); }
+}
+.interstellar-voyage-theme .daily-light-card {
+  background:
+    radial-gradient(circle at 10% 8%, rgba(155, 217, 255, .18), transparent 28%),
+    radial-gradient(circle at 94% 12%, rgba(185, 167, 255, .22), transparent 30%),
+    linear-gradient(160deg, #1c2942, #2a2448 56%, #16283a);
+  border-color: rgba(185, 215, 255, .24);
+}
+.interstellar-voyage-theme .daily-light-card-paper {
+  background: rgba(16, 26, 44, .72);
+  border-color: rgba(185, 215, 255, .28);
+}
+.interstellar-voyage-theme .daily-light-card-paper p,
+.interstellar-voyage-theme .daily-light-card h3 {
+  color: #eef6ff;
+}
+@media (max-width: 640px) {
+  .daily-light-card-foot {
+    align-items: stretch;
+  }
+  .daily-light-card-collect,
+  .daily-light-card-done {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .daily-light-card.is-collecting .daily-light-card-paper {
+    animation: none;
+  }
+}

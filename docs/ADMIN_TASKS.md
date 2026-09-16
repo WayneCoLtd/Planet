@@ -14,10 +14,21 @@
 | 类型 | 她看到的效果 | 需要填的内容 |
 | --- | --- | --- |
 | 谜语签到（推荐） | 输入谜底答案，答对自动点亮签到 | 谜面 prompt、谜底 answer、配图可选 |
+| 今日小卡（轻量签到） | 看一张 10 秒小卡：冷知识 / 生活技巧 / AI 小提示 / 脑筋急转弯；看完点“收下啦”即完成 | 小卡正文 secret、分类、配图可选 |
 | 一封信 | 拆开信封 → 读信 → 点「我读完啦」 | 信的内容 secret |
 | 今日抽签 | 点一下签筒摇一摇，出签即完成 | 出签文案 secret |
 | 贴纸 / 心愿 | 点一下揭下贴纸，看到背后的话 | 背后的话 secret |
 | 小游戏 | 玩完小游戏自动点亮签到 | 选择游戏模板 + 参数 |
+
+### 今日小卡怎么布置
+
+1. 任务类型选择「今日小卡（轻量签到）」。
+2. 小卡分类可选：冷知识、生活技巧、AI 小提示、脑筋急转弯、趣味小知识。
+3. 「任务说明」选填，会显示在小卡标题下方。
+4. 「小卡内容」必填，就是她点开看到的正文；可以只写一小段，也可以配一张图。
+5. 发布后，她看完小卡点「收下啦，完成签到」，签到按钮就会亮起。
+
+这个类型没有答案、没有倒计时、没有失败状态；适合每天 10–30 秒完成。
 
 ### 小游戏模板与参数
 
@@ -86,7 +97,7 @@
 
 ```sql
 alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
-alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'letter', 'fortune', 'sticker', 'game'));
+alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'letter', 'fortune', 'sticker', 'game'));
 alter table public.wwcxrl_daily_tasks add column if not exists game_id text not null default '';
 alter table public.wwcxrl_daily_tasks add column if not exists game_config jsonb not null default '{}'::jsonb;
 ```

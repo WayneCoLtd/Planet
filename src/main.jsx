@@ -34,6 +34,7 @@ const END_DATE = new Date(`${dailyAdventures[dailyAdventures.length - 1]?.date |
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wwcxrl2026'
 const ADMIN_TASK_TYPES = [
   { id: 'memoryPuzzle', label: '谜语签到（推荐）', hint: '输入谜底答案，答对后自动亮起签到' },
+  { id: 'dailyLight', label: '今日小卡（轻量签到）', hint: '一张 10 秒小卡：冷知识、生活技巧、AI 小提示、脑筋急转弯。看完点“收下啦”即可签到' },
   { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
   { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
   { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
@@ -1530,6 +1531,8 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
                   ? '🖼️ 补满照片墙后可签到'
                   : item.type === 'fortune'
                     ? '🥚 砸开金蛋后可签到'
+                    : item.type === 'dailyLight'
+                      ? '💡 看完小卡后可签到'
                     : '🍊 完成任务后可签到'
         : '🍊 点击签到'
   const showDay8Reset = item.day === 8 && resetAvailable
@@ -7685,6 +7688,47 @@ function LetterQuest({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
+// ---- 今日小卡：一张 10 秒轻量小卡，看完点“收下啦”即可完成 ----
+function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {} }) {
+  const [collecting, setCollecting] = useState(false)
+  const cardKind = String(item.gameConfig?.cardKind || '今日小卡').trim()
+  const cardBody = String(item.secret || '').trim() || '今天的小卡还在路上。'
+
+  function collectCard() {
+    if (taskCompleted || collecting) return
+    setCollecting(true)
+    window.setTimeout(() => {
+      setCollecting(false)
+      onTaskComplete(item.day)
+    }, 420)
+  }
+
+  return (
+    <div className={`mini-game daily-light-card ${taskCompleted ? 'is-completed' : ''} ${collecting ? 'is-collecting' : ''}`}>
+      <div className="daily-light-card-head">
+        <span className="daily-light-card-kind"><b>{item.icon || '💡'}</b>{cardKind}</span>
+        <small>{item.date} · Day {item.day}</small>
+      </div>
+      <h3>{item.title || '今日小卡'}</h3>
+      {item.prompt && <p className="daily-light-card-intro">{item.prompt}</p>}
+      <article className="daily-light-card-paper">
+        {item.image && <img src={item.image} alt="今日小卡配图" loading="lazy" />}
+        <p>{cardBody}</p>
+      </article>
+      <div className="daily-light-card-foot">
+        {taskCompleted ? (
+          <span className="daily-light-card-done">✓ 今天已经收好啦</span>
+        ) : (
+          <button type="button" className="daily-light-card-collect" onClick={collectCard} disabled={collecting}>
+            {collecting ? '正在收下…' : '收下啦，完成签到'}
+          </button>
+        )}
+        <small>看完就行，不用记，也没有小测验。</small>
+      </div>
+    </div>
+  )
+}
+
 // ---- 砸金蛋：点金蛋敲出今日奖励 ----
 const DEFAULT_FORTUNE_POOL = ['🧋 一杯奶茶', '☕ 一杯咖啡', '🍜 点一个好吃的外卖', '🎁 神秘大奖', '🍰 一块小蛋糕']
 const FORTUNE_PICKS_KEY = 'wwcxrl-fortune-picks-v1'
@@ -7980,6 +8024,10 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
 
   if (item.type === 'photoWallFinale') {
     return <PhotoWallFinaleQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+  }
+
+  if (item.type === 'dailyLight') {
+    return <DailyLightCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
   }
 
   if (item.type === 'anniversary') {
@@ -11541,6 +11589,14 @@ const ADMIN_TASK_EXAMPLES = {
     reward: '打开今天的纪念日签到',
     icon: '🧭'
   },
+  dailyLight: {
+    title: '今日小卡 · 为什么会计里叫“借”和“贷”',
+    prompt: '今天的小卡来啦，看一眼就好。',
+    secret: '“借”和“贷”最早不是“借钱”和“贷款”的意思。它们来自复式记账里的方向标记，后来才慢慢变成今天会计语言中的符号。所以第一次觉得绕，是很正常的。',
+    reward: '收下今天的小知识，签个到',
+    icon: '💡',
+    gameConfig: { cardKind: '冷知识' }
+  },
   letter: {
     title: '第 X 天的一封信',
     prompt: '今天有一封信想给你。',
@@ -11810,6 +11866,7 @@ function AdminTaskPage() {
     if (!draft.date) missing.push('日期')
     if (!draft.title.trim()) missing.push('标题')
     if (draft.type === 'memoryPuzzle' && !draft.answer.trim()) missing.push('谜底答案')
+    if (draft.type === 'dailyLight' && !draft.secret.trim()) missing.push('小卡内容')
     if (draft.type === 'letter' && !draft.secret.trim()) missing.push('信的内容')
     if (missing.length) {
       setMissingFields(missing)
@@ -11923,7 +11980,9 @@ function AdminTaskPage() {
       memoryTitle: row.memoryTitle || '',
       memoryCaption: row.memoryCaption || '',
       gameId: row.gameId || 'mazeClassic',
-      gameConfig: { ...getMiniGameDefaults(row.gameId || 'mazeClassic'), ...(row.gameConfig || {}) },
+      gameConfig: row.type === 'game'
+        ? { ...getMiniGameDefaults(row.gameId || 'mazeClassic'), ...(row.gameConfig || {}) }
+        : { ...(row.gameConfig || {}) },
       chat: Array.isArray(row.chatMessages)
         ? row.chatMessages.map(msg => `${msg.side === 'her' ? '小琳' : '小琛'}：${msg.text}`).join('\n')
         : '',
@@ -11951,14 +12010,15 @@ function AdminTaskPage() {
       answer: withDay(example.answer),
       secret: withDay(example.secret),
       reward: withDay(example.reward),
-      icon: example.icon
+      icon: example.icon,
+      gameConfig: example.gameConfig ? { ...(prev.gameConfig || {}), ...example.gameConfig } : prev.gameConfig
     }))
     setToast('已填入示例，改一改就能发布啦')
   }
 
   const activeTypeHint = ADMIN_TASK_TYPES.find(type => type.id === draft.type)
-  const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）' })[draft.type] || '完成后显示的内容'
-  const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : '完成后显示的一段话'
+  const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）' })[draft.type] || '完成后显示的内容'
+  const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : '完成后显示的一段话'
   const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
 
   return (
@@ -12030,6 +12090,7 @@ function AdminTaskPage() {
                 const next = { ...draft, type }
                 if (type === 'game' && !draft.gameId) next.gameId = 'mazeClassic'
                 if (type === 'game' && !draft.gameConfig) next.gameConfig = { ...getMiniGameDefaults(draft.gameId || 'mazeClassic') }
+                if (type === 'dailyLight') next.gameConfig = { ...(draft.gameConfig || {}), cardKind: draft.gameConfig?.cardKind || '冷知识' }
                 setDraft(next)
                 setMissingFields([])
               }}>
@@ -12060,6 +12121,16 @@ function AdminTaskPage() {
                 </label>
               ))}
             </>
+          )}
+          {draft.type === 'dailyLight' && (
+            <label>小卡分类
+              <select
+                value={draft.gameConfig?.cardKind || '冷知识'}
+                onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), cardKind: event.target.value } })}
+              >
+                {['冷知识', '生活技巧', 'AI 小提示', '脑筋急转弯', '趣味小知识'].map(kind => <option key={kind} value={kind}>{kind}</option>)}
+              </select>
+            </label>
           )}
         </div>
         <label className="admin-full">任务说明（她看到的第一段话，选填）
@@ -12128,6 +12199,9 @@ function AdminTaskPage() {
             <p>{draft.type === 'memoryPuzzle' && draft.theme ? `谜底：${draft.theme}` : draft.reward}</p>
             {draft.type === 'game' && activeGame && (
               <p className="admin-preview-prompt">🎮 {activeGame.icon} {activeGame.label} · {activeGame.fields.map(field => `${field.label}：${draft.gameConfig?.[field.key] ?? activeGame.defaults[field.key]}`).join(' · ')}</p>
+            )}
+            {draft.type === 'dailyLight' && (
+              <p className="admin-preview-prompt">💡 {draft.gameConfig?.cardKind || '今日小卡'} · 看完点“收下啦”即可完成签到</p>
             )}
             {draft.prompt && <p className="admin-preview-prompt">{draft.prompt}</p>}
           </div>
