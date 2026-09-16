@@ -14590,7 +14590,7 @@ html { overflow-x: hidden; }
   .checkin-layout,
   .checkin-layout:has(.type-serialRiddleFirework) {
     display: grid;
-    grid-template-columns: minmax(300px, 320px) minmax(0, 1fr);
+    grid-template-columns: minmax(440px, 480px) minmax(0, 1fr);
     gap: clamp(18px, 2.4vw, 28px);
     align-items: start;
   }
