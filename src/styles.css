@@ -14584,3 +14584,38 @@ html { overflow-x: hidden; }
     animation: none;
   }
 }
+
+/* ===== 电脑端签到布局：进度置顶，文章占满整行 ===== */
+@media (min-width: 781px) {
+  .checkin-layout,
+  .checkin-layout:has(.type-serialRiddleFirework) {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "calendar"
+      "panel";
+    gap: 18px;
+    align-items: start;
+  }
+  .checkin-layout > .calendar-card {
+    grid-area: calendar;
+    position: sticky;
+    top: 16px;
+    z-index: 5;
+    max-height: 36vh;
+    overflow: auto;
+    align-self: start;
+  }
+  .checkin-layout > .daily-panel {
+    grid-area: panel;
+  }
+  .checkin-section .day-grid {
+    grid-template-columns: repeat(10, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .checkin-section .day-dot {
+    min-height: 58px;
+    padding: 6px 2px 5px;
+    border-radius: 14px;
+  }
+}
