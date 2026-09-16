@@ -1252,6 +1252,9 @@ function CheckIn() {
   const [signed, setSigned] = useState(() => filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', [])))
   const [completedTasks, setCompletedTasks] = useState(() => filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', [])))
   const [items, setItems] = useState(() => getDailyAdventures())
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try { return localStorage.getItem('wwcxrl-checkin-sidebar-collapsed') === '1' } catch { return false }
+  })
   const selected = items.find(item => item.day === selectedDay) || items[0]
   const selectedPostponed = isChildrenSpecialPostponed(selected)
   const unlocked = isUnlocked(selected) && !selectedPostponed
@@ -1435,6 +1438,14 @@ function CheckIn() {
     }
   }
 
+  function toggleCheckinSidebar() {
+    setSidebarCollapsed(previous => {
+      const next = !previous
+      try { localStorage.setItem('wwcxrl-checkin-sidebar-collapsed', next ? '1' : '0') } catch {}
+      return next
+    })
+  }
+
   return (
     <section className="content-section checkin-section">
       <header className="section-heading playful-heading">
@@ -1443,16 +1454,36 @@ function CheckIn() {
         <p>每天打开一格星图：已经抵达的日子，完成小任务就能点亮签到；还没到来的格子，先保持一点神秘。</p>
         <p className="daily-refresh-note">每日更新次日签到任务</p>
       </header>
-      <div className="checkin-layout">
-        <aside className="calendar-card sticker-card">
-          <div className="calendar-topline">
-            <strong>签到进度</strong>
-            <span>{signedGoalCount}/65</span>
-          </div>
-          <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={65} aria-valuenow={signedGoalCount} aria-label={`签到进度 ${signedGoalCount}/65`}>
-            <span style={{ width: `${percent}%` }} />
-          </div>
-          <div className="day-grid">
+      <div className={`checkin-layout ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
+        <aside className={`calendar-card sticker-card ${sidebarCollapsed ? 'is-collapsed' : ''}`}>
+          <button
+            type="button"
+            className={`checkin-sidebar-toggle ${sidebarCollapsed ? 'is-collapsed' : ''}`}
+            onClick={toggleCheckinSidebar}
+            aria-expanded={!sidebarCollapsed}
+            aria-label={sidebarCollapsed ? '展开签到进度栏' : '收起签到进度栏'}
+            title={sidebarCollapsed ? '展开签到进度栏' : '收起签到进度栏'}
+          >
+            {sidebarCollapsed ? '▶' : '◀'}
+          </button>
+          {sidebarCollapsed ? (
+            <div className="checkin-sidebar-collapsed">
+              <strong>{signedGoalCount}/65</strong>
+              <span>Day {selected.day}</span>
+              <div className="progress-track mini" aria-hidden="true">
+                <span style={{ width: `${percent}%` }} />
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="calendar-topline">
+                <strong>签到进度</strong>
+                <span>{signedGoalCount}/65</span>
+              </div>
+              <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={65} aria-valuenow={signedGoalCount} aria-label={`签到进度 ${signedGoalCount}/65`}>
+                <span style={{ width: `${percent}%` }} />
+              </div>
+              <div className="day-grid">
             {visibleDailyItems.map(item => {
               const unlockedDay = isUnlocked(item)
               const done = signed.includes(item.day)
@@ -1477,7 +1508,9 @@ function CheckIn() {
                 </button>
               )
             })}
-          </div>
+              </div>
+            </>
+          )}
         </aside>
         <DailyPanel item={selected} unlocked={unlocked} resetAvailable={resetAvailable} signed={signed.includes(selected.day)} taskCompleted={taskCompleted} onTaskComplete={completeTask} onSign={signToday} />
       </div>
