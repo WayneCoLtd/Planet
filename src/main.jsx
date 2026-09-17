@@ -13181,9 +13181,9 @@ const MUSIC_MODE_KEY = 'wwcxrl-music-mode'
 const MUSIC_VOLUME_KEY = 'wwcxrl-music-volume'
 
 const MUSIC_MODES = [
-  { id: 'list', icon: '🔁', label: '顺序播放' },
-  { id: 'single', icon: '🔂', label: '单曲循环' },
-  { id: 'shuffle', icon: '🔀', label: '随机播放' }
+  { id: 'list', icon: 'repeat', label: '顺序播放' },
+  { id: 'single', icon: 'repeatOne', label: '单曲循环' },
+  { id: 'shuffle', icon: 'shuffle', label: '随机播放' }
 ]
 
 async function musicRequest(path, options = {}) {
@@ -13470,6 +13470,48 @@ function MusicIcon({ name, size = 18 }) {
   if (name === 'close') {
     return <svg {...common}><path d="M6.2 6.2a1.1 1.1 0 0 1 1.6 0L12 10.4l4.2-4.2a1.1 1.1 0 1 1 1.6 1.6L13.6 12l4.2 4.2a1.1 1.1 0 0 1-1.6 1.6L12 13.6l-4.2 4.2a1.1 1.1 0 0 1-1.6-1.6L10.4 12 6.2 7.8a1.1 1.1 0 0 1 0-1.6Z" /></svg>
   }
+  // 播放模式也用 SVG：这三个 emoji（🔁🔂🔀）在部分系统上会渲染成蓝色方块，和旁边的图标不搭。
+  const stroked = {
+    ...common,
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.9,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round'
+  }
+  if (name === 'repeat') {
+    return (
+      <svg {...stroked}>
+        <path d="M5 10V9a3.5 3.5 0 0 1 3.5-3.5h9" />
+        <path d="m15 3 3 2.5-3 2.5" />
+        <path d="M19 14v1a3.5 3.5 0 0 1-3.5 3.5h-9" />
+        <path d="m9 21-3-2.5 3-2.5" />
+      </svg>
+    )
+  }
+  if (name === 'repeatOne') {
+    return (
+      <svg {...stroked}>
+        <path d="M5 10V9a3.5 3.5 0 0 1 3.5-3.5h9" />
+        <path d="m15 3 3 2.5-3 2.5" />
+        <path d="M19 14v1a3.5 3.5 0 0 1-3.5 3.5h-9" />
+        <path d="m9 21-3-2.5 3-2.5" />
+        <path d="M12.7 10.3v4.4" />
+        <path d="m12.7 10.3-1.3 1" />
+      </svg>
+    )
+  }
+  if (name === 'shuffle') {
+    return (
+      <svg {...stroked}>
+        <path d="M3 7h3c1.1 0 2.1.5 2.8 1.4l4.4 5.2c.7.9 1.7 1.4 2.8 1.4h3" />
+        <path d="m16.6 12.6 2.4 2.4-2.4 2.4" />
+        <path d="M3 17h3c1.1 0 2.1-.5 2.8-1.4l.6-.7" />
+        <path d="M13.4 9.1l.8-.9c.7-.9 1.7-1.4 2.8-1.4h3" />
+        <path d="m16.6 4.4 2.4 2.4-2.4 2.4" />
+      </svg>
+    )
+  }
   return null
 }
 
@@ -13548,7 +13590,7 @@ function MusicDock() {
 
           <div className="music-controls">
             <button type="button" className="music-mode-button" onClick={() => musicSetMode(musicNextMode(music.mode))} title={mode.label} aria-label={`切换播放模式，当前${mode.label}`}>
-              <span className="music-mode-glyph" aria-hidden="true">{mode.icon}</span>
+              <MusicIcon name={mode.icon} size={17} />
             </button>
             <button type="button" className="music-step-button" onClick={() => musicPlayStep(-1)} disabled={!music.tracks.length} aria-label="上一首"><MusicIcon name="prev" /></button>
             <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing ? '暂停' : '播放'}>
