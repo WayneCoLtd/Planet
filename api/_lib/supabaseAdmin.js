@@ -50,6 +50,31 @@ export function getSupabaseTargetInfo() {
   }
 }
 
+// 诊断用：只看密钥的「形态」和归属，绝不回显密钥本身。
+// Supabase 的服务端密钥是一个 JWT，载荷里带着 ref（项目编号）和 role，都是本来就公开的信息。
+export function getServiceKeyInfo() {
+  const key = getServiceRoleKey()
+  if (!key) return { present: false }
+  const info = { present: true, length: key.length, shape: '未知形式' }
+  if (key.startsWith('sb_secret_')) {
+    info.shape = 'sb_secret_（新版服务端密钥）'
+  } else if (key.startsWith('sb_publishable_')) {
+    info.shape = 'sb_publishable_（这是公开密钥，不能当服务端密钥用）'
+  } else if (key.startsWith('eyJ')) {
+    info.shape = 'JWT'
+    try {
+      const payload = JSON.parse(Buffer.from(key.split('.')[1] || '', 'base64url').toString('utf8'))
+      info.jwtRef = payload.ref || null
+      info.jwtRole = payload.role || null
+    } catch {
+      info.jwtRef = '(载荷无法解析，密钥可能被截断)'
+    }
+  } else {
+    info.shape = '未知形式（开头是：' + key.slice(0, 3) + '***）'
+  }
+  return info
+}
+
 export function getAdminClient() {
   const key = getServiceRoleKey()
   if (!key) return null
