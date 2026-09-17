@@ -14797,3 +14797,151 @@ html { overflow-x: hidden; }
   font-size: .74rem;
   word-break: break-word;
 }
+
+/* ===== 站点访问口令门 =====
+   没通过之前不渲染站点内容；通过后靠 HttpOnly Cookie 记住 180 天，
+   所以平时访问是直接进来的，感觉不到这道门的存在。 */
+.access-gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: clamp(24px, 6vw, 64px) clamp(18px, 5vw, 40px);
+  background:
+    radial-gradient(circle at 18% 16%, rgba(255, 226, 109, .58), transparent 22rem),
+    radial-gradient(circle at 84% 22%, rgba(255, 159, 189, .44), transparent 25rem),
+    radial-gradient(circle at 62% 88%, rgba(141, 231, 194, .40), transparent 26rem),
+    linear-gradient(135deg, #fff6d7, #ffeaf1 48%, #e2fff3);
+}
+.access-gate-card {
+  position: relative;
+  width: min(420px, 100%);
+  padding: clamp(30px, 6vw, 46px) clamp(24px, 5vw, 40px);
+  border-radius: 30px;
+  text-align: center;
+  background: linear-gradient(150deg, rgba(255, 253, 242, .97), rgba(255, 240, 246, .95));
+  border: 3px solid rgba(255, 255, 255, .92);
+  box-shadow: 0 26px 60px rgba(122, 71, 31, .2), inset 0 0 0 2px rgba(255, 173, 73, .16);
+}
+.access-gate-planet {
+  display: block;
+  font-size: 2.9rem;
+  line-height: 1;
+  animation: accessPlanetFloat 4.2s ease-in-out infinite;
+}
+.access-gate-card h1 {
+  margin: 14px 0 10px;
+  color: #653f26;
+  font-size: clamp(1.35rem, 4.4vw, 1.8rem);
+  letter-spacing: .04em;
+}
+.access-gate-hint {
+  margin: 0 0 22px;
+  color: #8a684f;
+  line-height: 1.8;
+}
+.access-gate-form {
+  display: grid;
+  gap: 14px;
+}
+.access-gate-field {
+  display: block;
+}
+.access-gate-field input {
+  width: 100%;
+  padding: 14px 18px;
+  border: 2px solid rgba(135, 84, 45, .18);
+  border-radius: 18px;
+  font-size: 1.05rem;
+  letter-spacing: .32em;
+  text-align: center;
+  color: #653f26;
+  background: rgba(255, 255, 255, .86);
+  outline: none;
+  transition: border-color .18s ease, box-shadow .18s ease;
+}
+.access-gate-field input::placeholder {
+  letter-spacing: .12em;
+  color: #bda58f;
+}
+.access-gate-field input:focus {
+  border-color: rgba(255, 143, 77, .62);
+  box-shadow: 0 0 0 5px rgba(255, 173, 73, .16);
+}
+.access-gate-submit {
+  padding: 13px 24px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 1.02rem;
+  font-weight: 900;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  box-shadow: 0 10px 22px rgba(255, 111, 145, .2);
+}
+.access-gate-submit:disabled {
+  opacity: .62;
+}
+.access-gate-error {
+  margin: 2px 0 0;
+  color: #c2485f;
+  font-size: .88rem;
+  line-height: 1.6;
+}
+.interstellar-voyage-theme .access-gate,
+body:has(.interstellar-voyage-theme) .access-gate {
+  background:
+    radial-gradient(circle at 50% -16%, rgba(139, 247, 255, .26), transparent 32rem),
+    radial-gradient(circle at 16% 10%, rgba(119, 255, 239, .22), transparent 26rem),
+    linear-gradient(138deg, #030717 0%, #0d1b42 52%, #050b18 100%);
+}
+.interstellar-voyage-theme .access-gate-card,
+body:has(.interstellar-voyage-theme) .access-gate-card {
+  background: linear-gradient(150deg, rgba(12, 26, 54, .94), rgba(9, 20, 44, .92));
+  border-color: rgba(141, 242, 255, .28);
+  box-shadow: 0 26px 60px rgba(0, 0, 0, .5), inset 0 0 0 2px rgba(126, 246, 255, .12);
+}
+.interstellar-voyage-theme .access-gate-card h1,
+body:has(.interstellar-voyage-theme) .access-gate-card h1 {
+  color: #eafcff;
+}
+.interstellar-voyage-theme .access-gate-hint,
+body:has(.interstellar-voyage-theme) .access-gate-hint {
+  color: #a8d8ea;
+}
+.interstellar-voyage-theme .access-gate-field input,
+body:has(.interstellar-voyage-theme) .access-gate-field input {
+  color: #eafcff;
+  background: rgba(6, 16, 36, .8);
+  border-color: rgba(141, 242, 255, .26);
+}
+.interstellar-voyage-theme .access-gate-submit,
+body:has(.interstellar-voyage-theme) .access-gate-submit {
+  color: #062033;
+  background: linear-gradient(135deg, #ffe39a, #74f6ff);
+}
+@keyframes accessPlanetFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+/* 校验接口不可用时的温和提示：只是告知，不挡任何操作 */
+.access-gate-notice {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  padding: 7px 16px;
+  border-radius: 999px;
+  font-size: .8rem;
+  color: #6b452c;
+  background: rgba(255, 252, 240, .94);
+  border: 1.5px solid rgba(255, 255, 255, .9);
+  box-shadow: 0 10px 24px rgba(122, 71, 31, .16);
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .access-gate-planet {
+    animation: none;
+  }
+}

@@ -455,3 +455,54 @@ where image_path like '%miyou-orange-main%';
 update public.wwcxrl_photo_wall
 set image_path = replace(image_path, 'miyou-pomelo-main', 'wwcxrl-pomelo-main')
 where image_path like '%miyou-pomelo-main%';
+
+-- ============ 音乐室：私有曲库 ============
+-- 完整说明见 supabase_wwcxrl_music_patch.sql。
+-- 关键点：音频桶 public = false，且【不建任何匿名策略】，
+-- 所以拿着网页里的 publishable key 也签不出链接、下载不到文件；
+-- 播放链接由站点的服务端接口用 service_role 临时签名。
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'wwcxrl-music',
+  'wwcxrl-music',
+  false,
+  31457280,
+  array['audio/mpeg', 'audio/mp4', 'audio/wav', 'image/jpeg', 'image/png', 'image/webp']
+)
+on conflict (id) do update
+  set public = false,
+      file_size_limit = 31457280,
+      allowed_mime_types = array['audio/mpeg', 'audio/mp4', 'audio/wav', 'image/jpeg', 'image/png', 'image/webp'];
+
+drop policy if exists "wwcxrl_music_public_read" on storage.objects;
+drop policy if exists "wwcxrl_music_public_insert" on storage.objects;
+drop policy if exists "wwcxrl_music_public_update" on storage.objects;
+drop policy if exists "wwcxrl_music_public_delete" on storage.objects;
+
+create table if not exists public.wwcxrl_music_tracks (
+  id uuid primary key default gen_random_uuid(),
+  title text not null default '',
+  artist text not null default '',
+  mood text not null default '',
+  audio_path text not null default '',
+  cover_path text not null default '',
+  duration_seconds numeric not null default 0,
+  sort int not null default 0,
+  status text not null default 'draft' check (status in ('draft', 'published')),
+  created_by text not null default 'pomelo',
+  updated_at timestamptz not null default now(),
+  created_at timestamptz not null default now()
+);
+alter table public.wwcxrl_music_tracks enable row level security;
+
+create table if not exists public.wwcxrl_music_requests (
+  id uuid primary key default gen_random_uuid(),
+  user_id text not null default '',
+  role text not null default 'pomelo' check (role in ('orange', 'pomelo', 'guest')),
+  display_name text not null default '',
+  content text not null default '',
+  track_id uuid,
+  status text not null default 'open' check (status in ('open', 'done')),
+  created_at timestamptz not null default now()
+);
+alter table public.wwcxrl_music_requests enable row level security;

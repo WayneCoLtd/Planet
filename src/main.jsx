@@ -36,7 +36,6 @@ function getAnniversaryCounts() {
 }
 const END_DATE = new Date(`${dailyAdventures[dailyAdventures.length - 1]?.date || '2026-05-24'}T23:59:59`)
 
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || 'wwcxrl2026'
 const ADMIN_TASK_TYPES = [
   { id: 'memoryPuzzle', label: '谜语签到（推荐）', hint: '输入谜底答案，答对后自动亮起签到' },
   { id: 'dailyLight', label: '今日小卡（轻量签到）', hint: '一张 10 秒小卡：冷知识、生活技巧、AI 小提示、脑筋急转弯。看完点“收下啦”即可签到' },
@@ -11897,6 +11896,7 @@ function AdminTaskPage() {
   const [ok, setOk] = useState(() => typeof window !== 'undefined' && safeGetItem('wwcxrl-admin-ok', null, 'sessionStorage') === '1')
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
+  const [adminChecking, setAdminChecking] = useState(false)
   const [tasks, setTasks] = useState([])
   const [loading, setLoading] = useState(false)
   const [draft, setDraft] = useState(emptyAdminTask)
@@ -12073,12 +12073,20 @@ function AdminTaskPage() {
       <main className="admin-page admin-login">
         <form className="admin-login-card sticker-card" onSubmit={event => {
           event.preventDefault()
-          if (password === ADMIN_PASSWORD) {
-            safeSetItem('wwcxrl-admin-ok', '1', 'sessionStorage')
-            setOk(true)
-          } else {
-            setPasswordError('密码不对哦')
-          }
+          if (adminChecking) return
+          setAdminChecking(true)
+          setPasswordError('')
+          verifyAdminPassword(password).then(passed => {
+            setAdminChecking(false)
+            if (passed) {
+              safeSetItem('wwcxrl-admin-ok', '1', 'sessionStorage')
+              setOk(true)
+            } else {
+              setPasswordError(import.meta.env.VITE_ADMIN_PASSWORD || !isLocalDevHost()
+                ? '密码不对哦'
+                : '本地开发：请在 .env.local 里设置 VITE_ADMIN_PASSWORD')
+            }
+          })
         }}>
           <h1>🔐 任务管理</h1>
           <p>这里是只有小琛能进的任务布置页。</p>
@@ -12086,7 +12094,7 @@ function AdminTaskPage() {
             <input type="password" value={password} onChange={event => { setPassword(event.target.value); setPasswordError('') }} placeholder="输入管理密码" autoFocus />
           </label>
           {passwordError && <p className="admin-error">{passwordError}</p>}
-          <button type="submit" className="admin-save-publish">进入管理页</button>
+          <button type="submit" className="admin-save-publish" disabled={adminChecking}>{adminChecking ? '正在核对…' : '进入管理页'}</button>
         </form>
       </main>
     )
@@ -12959,6 +12967,145 @@ function App() {
   return <PlanetApp />
 }
 
+// ---- 站点访问密码（服务端校验） ----
+// 密码只存在于服务端环境变量里，前端拿不到、也不会被打包进公开的 JS。
+const ACCESS_API = '/api/access'
+
+function isLocalDevHost() {
+  if (typeof window === 'undefined') return true
+  return ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname)
+}
+
+async function callAccessApi(options = {}) {
+  const timeoutMs = 8000
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null
+  try {
+    const response = await fetch(ACCESS_API, { ...options, signal: controller ? controller.signal : undefined })
+    const data = await response.json().catch(() => ({}))
+    return { reached: true, status: response.status, data }
+  } catch (error) {
+    return { reached: false, status: 0, data: {}, error }
+  } finally {
+    if (timer) window.clearTimeout(timer)
+  }
+}
+
+// 验证管理端密码：线上交给服务端判断，本地开发用 .env.local 里的 VITE_ADMIN_PASSWORD。
+async function verifyAdminPassword(password) {
+  if (isLocalDevHost()) {
+    const local = import.meta.env.VITE_ADMIN_PASSWORD
+    return Boolean(local) && String(password) === String(local)
+  }
+  const result = await callAccessApi({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password, scope: 'admin' })
+  })
+  return result.reached && result.status === 200
+}
+
+// 密码门：通过之前不渲染站点的任何内容。
+// 通过之后靠 HttpOnly Cookie 记住 180 天，平时访问完全无感。
+function AccessGate({ children }) {
+  const [phase, setPhase] = useState(() => (isLocalDevHost() ? 'open' : 'checking'))
+  const [password, setPassword] = useState('')
+  const [message, setMessage] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState('')
+
+  React.useEffect(() => {
+    if (phase !== 'checking') return
+    let alive = true
+    callAccessApi({ method: 'GET' }).then(result => {
+      if (!alive) return
+      // 接口不可用时放行，避免因为一次网络抖动或部署异常把人挡在自己的站点外面。
+      // 真正需要保护的是音乐文件本身，那部分由私有存储桶把关，不依赖这里。
+      const unavailable = !result.reached || result.status === 404 || result.status >= 500
+      if (unavailable) {
+        setNotice('访问校验暂时不可用，已按公开模式打开')
+        setPhase('open')
+        return
+      }
+      const data = result.data || {}
+      if (data.enabled === false || data.ok === true) setPhase('open')
+      else setPhase('locked')
+    })
+    return () => { alive = false }
+  }, [phase])
+
+  async function submit(event) {
+    event.preventDefault()
+    if (busy) return
+    setBusy(true)
+    setMessage('')
+    const result = await callAccessApi({
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password, scope: 'site' })
+    })
+    setBusy(false)
+    if (!result.reached) {
+      setMessage('连不上服务器，检查一下网络再试')
+      return
+    }
+    if (result.status === 200 && result.data && result.data.ok) {
+      setPassword('')
+      setPhase('open')
+      return
+    }
+    setMessage((result.data && result.data.error) || '密码不对哦，再想想')
+  }
+
+  if (phase === 'open') {
+    return (
+      <>
+        {children}
+        {notice && <div className="access-gate-notice" role="status">{notice}</div>}
+      </>
+    )
+  }
+
+  return (
+    <div className="access-gate">
+      <StarField />
+      <div className="access-gate-card">
+        <span className="access-gate-planet" aria-hidden="true">🪐</span>
+        {phase === 'checking' ? (
+          <>
+            <h1>正在确认身份</h1>
+            <p className="access-gate-hint">稍等一下下…</p>
+          </>
+        ) : (
+          <form onSubmit={submit} className="access-gate-form">
+            <h1>小星球的门</h1>
+            <p className="access-gate-hint">输入我们约定的口令，就能进来</p>
+            <label className="access-gate-field">
+              <input
+                type="password"
+                value={password}
+                onChange={event => { setPassword(event.target.value); setMessage('') }}
+                placeholder="口令"
+                aria-label="站点访问口令"
+                autoComplete="current-password"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                // eslint-disable-next-line jsx-a11y/no-autofocus
+                autoFocus
+              />
+            </label>
+            <button type="submit" className="access-gate-submit" disabled={busy || !password}>
+              {busy ? '正在核对…' : '进去吧'}
+            </button>
+            {message && <p className="access-gate-error" role="alert">{message}</p>}
+          </form>
+        )}
+      </div>
+    </div>
+  )
+}
+
 // 渲染兜底：万一还有没预料到的异常，给一个能重试的页面，而不是白屏。
 class AppErrorBoundary extends React.Component {
   constructor(props) {
@@ -13012,7 +13159,9 @@ function CloudStatusPill() {
 
 createRoot(document.getElementById('root')).render(
   <AppErrorBoundary>
-    <App />
+    <AccessGate>
+      <App />
+    </AccessGate>
   </AppErrorBoundary>
 )
 
