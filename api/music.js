@@ -12,7 +12,7 @@
 //   POST /api/music { action: ... }    管理操作：上传签名 / 新建 / 修改 / 删除
 import crypto from 'node:crypto'
 import { LEVEL_ADMIN, LEVEL_SITE, readLevel } from './_lib/session.js'
-import { MUSIC_BUCKET, getAdminClient, getServiceKeyInfo, getSupabaseTargetInfo, isAdminConfigured } from './_lib/supabaseAdmin.js'
+import { MUSIC_BUCKET, checkServiceConfig, getAdminClient, getServiceKeyInfo, getSupabaseTargetInfo } from './_lib/supabaseAdmin.js'
 
 const PLAY_TTL_SECONDS = 4 * 60 * 60 // 播放链接 4 小时
 const COVER_TTL_SECONDS = 6 * 60 * 60 // 封面链接 6 小时
@@ -218,8 +218,16 @@ export default async function handler(request, response) {
   if (level < LEVEL_SITE) {
     return response.status(401).json({ ok: false, error: '请先通过站点访问密码' })
   }
-  if (!isAdminConfigured()) {
-    return response.status(503).json({ ok: false, error: '服务端还没配置 SUPABASE_SERVICE_ROLE_KEY' })
+  const config = checkServiceConfig()
+  if (!config.ok) {
+    return response.status(503).json({
+      ok: false,
+      error: config.reason === 'missing'
+        ? '服务端还没配置 SUPABASE_SERVICE_ROLE_KEY'
+        : `服务端密钥属于另一个项目（${config.keyRef}），请换成 ${config.host} 这个项目的 service_role 密钥`,
+      target: getSupabaseTargetInfo(),
+      key: getServiceKeyInfo()
+    })
   }
   const admin = getAdminClient()
 

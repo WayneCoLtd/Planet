@@ -6,7 +6,7 @@
 //
 // 与曲库一样，表开了 RLS 且没有匿名策略，前端只能经由这里访问。
 import { LEVEL_SITE, readLevel } from './_lib/session.js'
-import { getAdminClient, getSupabaseTargetInfo, isAdminConfigured } from './_lib/supabaseAdmin.js'
+import { checkServiceConfig, getAdminClient, getSupabaseTargetInfo } from './_lib/supabaseAdmin.js'
 
 const MAX_CONTENT_LENGTH = 200
 const ROLE_NAMES = { orange: '小琛', pomelo: '小琳', guest: '神秘访客' }
@@ -49,8 +49,14 @@ export default async function handler(request, response) {
   if (readLevel(request) < LEVEL_SITE) {
     return response.status(401).json({ ok: false, error: '请先通过站点访问密码' })
   }
-  if (!isAdminConfigured()) {
-    return response.status(503).json({ ok: false, error: '服务端还没配置 SUPABASE_SERVICE_ROLE_KEY' })
+  const config = checkServiceConfig()
+  if (!config.ok) {
+    return response.status(503).json({
+      ok: false,
+      error: config.reason === 'missing'
+        ? '服务端还没配置 SUPABASE_SERVICE_ROLE_KEY'
+        : `服务端密钥属于另一个项目（${config.keyRef}），请换成 ${config.host} 这个项目的 service_role 密钥`
+    })
   }
   const admin = getAdminClient()
 

@@ -75,6 +75,22 @@ export function getServiceKeyInfo() {
   return info
 }
 
+// 配置自检：密钥有没有配、以及它是不是【当前这个项目】的密钥。
+// 踩过的坑：环境里留着一套旧项目的 SUPABASE_URL + service_role 密钥，
+// 表现是「Invalid API key」，很容易误以为是密钥填错了，其实是配错了项目。
+export function checkServiceConfig() {
+  if (!getServiceRoleKey()) {
+    return { ok: false, reason: 'missing' }
+  }
+  const { host } = getSupabaseTargetInfo()
+  const { jwtRef } = getServiceKeyInfo()
+  // JWT 里的 ref 就是项目编号，正常应该等于主机名的第一段。
+  if (jwtRef && host && !host.startsWith(`${jwtRef}.`)) {
+    return { ok: false, reason: 'mismatch', keyRef: jwtRef, host }
+  }
+  return { ok: true }
+}
+
 export function getAdminClient() {
   const key = getServiceRoleKey()
   if (!key) return null
