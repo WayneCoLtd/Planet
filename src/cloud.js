@@ -25,6 +25,25 @@ const FIXED_ROLE_IDS = {
   pomelo: 'wwcxrl-pomelo-main'
 }
 
+// 两个人的签到、背包、相册本来就是同一份，所以不再按设备区分「数据归属」。
+// 固定使用数据所在的那个身份：网页、手机、换浏览器、清缓存，看到的都是同一份。
+// （历史上曾用网址参数 ?user=orange|pomelo 切换设备身份，那正是「换台电脑就看不到记录」的原因。）
+const SHARED_ROLE = 'pomelo'
+const SHARED_USER_ID = FIXED_ROLE_IDS[SHARED_ROLE]
+
+// 留言/评论的署名仍是可切换的，且属于「这台设备」的偏好，与数据归属无关。
+const MESSAGE_SENDER_KEY = 'wwcxrl-message-sender-role'
+
+// 网址里的 ?user= 不再决定数据归属，只用来记住「我发留言时署名是谁」。
+// 这样旧书签里的 ?user=orange 从「看到空数据」变成「署名是小琛」，不再有害。
+if (typeof window !== 'undefined') {
+  try {
+    const params = new URLSearchParams(window.location.search)
+    const sender = params.get('user') || params.get('role')
+    if (sender === 'orange' || sender === 'pomelo') safeSetItem(MESSAGE_SENDER_KEY, sender)
+  } catch {}
+}
+
 export const cloudEnabled = Boolean(supabaseUrl && supabaseKey)
 
 let supabasePromise = null
@@ -221,16 +240,6 @@ function safeJson(value, fallback) {
   }
 }
 
-function getRoleFromUrl() {
-  const params = new URLSearchParams(window.location.search)
-  const role = params.get('user') || params.get('role')
-  if (role === 'orange' || role === 'pomelo') {
-    safeSetItem('wwcxrl-cloud-role', role)
-    return role
-  }
-  return safeGetItem('wwcxrl-cloud-role') || 'pomelo'
-}
-
 function getDisplayName(role) {
   const params = new URLSearchParams(window.location.search)
   const fromUrl = params.get('name')
@@ -242,14 +251,14 @@ function getDisplayName(role) {
 
 export function getCloudIdentity() {
   if (typeof window === 'undefined') return null
-  const role = getRoleFromUrl()
-  const id = FIXED_ROLE_IDS[role] || FIXED_ROLE_IDS.pomelo
-  safeSetItem('wwcxrl-cloud-role', role)
-  safeSetItem(`wwcxrl-cloud-user-id-${role}`, id)
+  // 只在值不对时才写，避免每次读取都产生一次存储写入。
+  if (safeGetItem('wwcxrl-cloud-role') !== SHARED_ROLE) safeSetItem('wwcxrl-cloud-role', SHARED_ROLE)
+  const userIdKey = `wwcxrl-cloud-user-id-${SHARED_ROLE}`
+  if (safeGetItem(userIdKey) !== SHARED_USER_ID) safeSetItem(userIdKey, SHARED_USER_ID)
   return {
-    id,
-    role,
-    displayName: getDisplayName(role),
+    id: SHARED_USER_ID,
+    role: SHARED_ROLE,
+    displayName: getDisplayName(SHARED_ROLE),
     deviceLabel: navigator.platform || 'unknown-device'
   }
 }

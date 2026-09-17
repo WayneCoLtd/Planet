@@ -154,10 +154,11 @@ function mergeCheckinDayLists(localList = [], remoteList = []) {
   return Array.from(union).filter(day => validDays.has(day) || isStarMapDay(day) || localDays.has(day)).sort((a, b) => a - b)
 }
 
-// 管理端删除/重新发布某天任务时，把该天的“已完成/已签到”状态复位（本地 + 双方云端）
+// 管理端删除/重新发布某天任务时，把该天的“已完成/已签到”状态复位（本地 + 云端）
 async function resetDayCheckinStatus(day, date) {
   const dayNumber = Number(day)
   if (!dayNumber) return
+  // 本地仍清两份 key：旧版本可能在小琛那一份留下过残留，顺手擦掉。
   for (const role of ['orange', 'pomelo']) {
     try {
       const signed = JSON.parse(localStorage.getItem(`wwcxrl-signed-days:${role}`) || '[]').filter(value => Number(value) !== dayNumber)
@@ -167,7 +168,7 @@ async function resetDayCheckinStatus(day, date) {
     } catch {}
   }
   if (cloudEnabled) {
-    await clearCloudDayStatus(dayNumber, date, 'wwcxrl-orange-main').catch(() => {})
+    // 现在全站共用同一个身份，只复位这一份，不再往小琛那一份写空记录。
     await clearCloudDayStatus(dayNumber, date, 'wwcxrl-pomelo-main').catch(() => {})
   }
   window.dispatchEvent(new Event('wwcxrl-signed-updated'))
