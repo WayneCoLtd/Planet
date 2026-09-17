@@ -6,7 +6,7 @@
 //
 // 与曲库一样，表开了 RLS 且没有匿名策略，前端只能经由这里访问。
 import { LEVEL_SITE, readLevel } from './_lib/session.js'
-import { getAdminClient, isAdminConfigured } from './_lib/supabaseAdmin.js'
+import { getAdminClient, getSupabaseTargetInfo, isAdminConfigured } from './_lib/supabaseAdmin.js'
 
 const MAX_CONTENT_LENGTH = 200
 const ROLE_NAMES = { orange: '小琛', pomelo: '小琳', guest: '神秘访客' }
@@ -100,6 +100,10 @@ export default async function handler(request, response) {
     return response.status(405).json({ ok: false, error: '不支持的请求方式' })
   } catch (error) {
     console.warn('[wwcxrl music] requests handler error', error)
-    return response.status(500).json({ ok: false, error: error.message || '服务端出错了' })
+    return response.status(500).json({
+      ok: false,
+      error: error.message || '服务端出错了',
+      target: getSupabaseTargetInfo()
+    })
   }
 }

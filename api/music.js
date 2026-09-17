@@ -12,7 +12,7 @@
 //   POST /api/music { action: ... }    管理操作：上传签名 / 新建 / 修改 / 删除
 import crypto from 'node:crypto'
 import { LEVEL_ADMIN, LEVEL_SITE, readLevel } from './_lib/session.js'
-import { MUSIC_BUCKET, getAdminClient, isAdminConfigured } from './_lib/supabaseAdmin.js'
+import { MUSIC_BUCKET, getAdminClient, getSupabaseTargetInfo, isAdminConfigured } from './_lib/supabaseAdmin.js'
 
 const PLAY_TTL_SECONDS = 4 * 60 * 60 // 播放链接 4 小时
 const COVER_TTL_SECONDS = 6 * 60 * 60 // 封面链接 6 小时
@@ -256,6 +256,10 @@ export default async function handler(request, response) {
     return response.status(405).json({ ok: false, error: '不支持的请求方式' })
   } catch (error) {
     console.warn('[wwcxrl music] handler error', error)
-    return response.status(500).json({ ok: false, error: error.message || '服务端出错了' })
+    return response.status(500).json({
+      ok: false,
+      error: error.message || '服务端出错了',
+      target: getSupabaseTargetInfo()
+    })
   }
 }

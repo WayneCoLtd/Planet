@@ -21,12 +21,29 @@ export function isAdminConfigured() {
   return Boolean(getServiceRoleKey())
 }
 
+function resolveSupabaseUrl() {
+  return String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || FALLBACK_URL).replace(/\/+$/, '')
+}
+
+// 诊断用：只返回主机名（它本来就公开在网页源码里），用来排查连不上的原因。
+// 出问题时能一眼看出是「地址不对」还是「网络不通」。
+export function getSupabaseTargetInfo() {
+  const raw = resolveSupabaseUrl()
+  const source = process.env.SUPABASE_URL
+    ? 'SUPABASE_URL'
+    : (process.env.VITE_SUPABASE_URL ? 'VITE_SUPABASE_URL' : '(内置默认值)')
+  try {
+    return { host: new URL(raw).host, source }
+  } catch {
+    return { host: '(地址无法解析)', source }
+  }
+}
+
 export function getAdminClient() {
   const key = getServiceRoleKey()
   if (!key) return null
   if (!cached) {
-    const url = String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || FALLBACK_URL).replace(/\/+$/, '')
-    cached = createClient(url, key, {
+    cached = createClient(resolveSupabaseUrl(), key, {
       auth: { persistSession: false, autoRefreshToken: false }
     })
   }
