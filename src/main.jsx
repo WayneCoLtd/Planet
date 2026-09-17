@@ -13287,7 +13287,12 @@ function musicAudioEl() {
     musicState.duration = Number.isFinite(audio.duration) ? audio.duration : 0
     musicNotify()
   })
-  audio.addEventListener('play', () => { musicState.playing = true; musicNotify() })
+  audio.addEventListener('play', () => {
+    musicState.playing = true
+    // 播起来了就把上一次的报错收掉，不然那句提示会一直挂着。
+    musicState.error = ''
+    musicNotify()
+  })
   audio.addEventListener('pause', () => { musicState.playing = false; musicNotify() })
   audio.addEventListener('ended', () => {
     musicState.playing = false
@@ -13332,7 +13337,12 @@ async function musicPlay(id) {
   // 同一首歌再点一次 = 播放/暂停切换
   if (musicState.currentId === id && audio.src) {
     if (audio.paused) {
-      try { await audio.play() } catch {}
+      try {
+        await audio.play()
+      } catch {
+        musicState.error = '浏览器拦住了播放，再点一下播放键试试'
+        musicNotify()
+      }
     } else {
       audio.pause()
     }
@@ -13366,7 +13376,12 @@ async function musicPlay(id) {
 function musicTogglePlay() {
   const audio = musicAudioEl()
   if (musicState.currentId && audio.src) {
-    if (audio.paused) audio.play().catch(() => {})
+    if (audio.paused) {
+      audio.play().catch(() => {
+        musicState.error = '浏览器拦住了播放，再点一下播放键试试'
+        musicNotify()
+      })
+    }
     else audio.pause()
     return
   }
@@ -13523,6 +13538,7 @@ function MusicDock() {
               onChange={event => musicSeek(event.target.value)}
               disabled={!current}
               aria-label="播放进度"
+              style={{ '--music-fill': `${music.duration > 0 ? Math.min(100, (music.progress / music.duration) * 100) : 0}%` }}
             />
             <span className="music-progress-time">
               <span>{formatMusicTime(music.progress)}</span>
@@ -13542,7 +13558,15 @@ function MusicDock() {
             {volumeSupported ? (
               <span className="music-volume">
                 <span aria-hidden="true">🔊</span>
-                <input type="range" min="0" max="100" value={Math.round(music.volume * 100)} onChange={event => musicSetVolume(Number(event.target.value) / 100)} aria-label="音量" />
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={Math.round(music.volume * 100)}
+                  onChange={event => musicSetVolume(Number(event.target.value) / 100)}
+                  aria-label="音量"
+                  style={{ '--music-fill': `${Math.round(music.volume * 100)}%` }}
+                />
               </span>
             ) : (
               <span className="music-volume-hint" title="iPhone 的音量只能用侧边键调">🔊 用侧边键调</span>

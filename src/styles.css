@@ -15124,7 +15124,14 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
 .music-progress input[type='range']::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: 999px;
-  background: linear-gradient(90deg, #ffb85e, #ff8fb3);
+  /* 已播部分用暖色，未播部分留淡底色，这样 0:00 时不会看着像已经播满 */
+  background: linear-gradient(
+    90deg,
+    #ffb85e 0 var(--music-fill, 0%),
+    #ff8fb3 var(--music-fill, 0%),
+    rgba(135, 84, 45, .16) var(--music-fill, 0%) 100%
+  );
+  transition: background .12s linear;
 }
 .music-progress input[type='range']::-webkit-slider-thumb {
   appearance: none;
@@ -15136,6 +15143,11 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   box-shadow: 0 2px 6px rgba(122, 71, 31, .35), 0 0 0 2px rgba(255, 173, 73, .5);
 }
 .music-progress input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(135, 84, 45, .16);
+}
+.music-progress input[type='range']::-moz-range-progress {
   height: 6px;
   border-radius: 999px;
   background: linear-gradient(90deg, #ffb85e, #ff8fb3);
@@ -15230,7 +15242,21 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
 .music-volume input[type='range']::-webkit-slider-runnable-track {
   height: 5px;
   border-radius: 999px;
-  background: rgba(135, 84, 45, .25);
+  background: linear-gradient(
+    90deg,
+    #ffb85e 0 var(--music-fill, 0%),
+    rgba(135, 84, 45, .22) var(--music-fill, 0%) 100%
+  );
+}
+.music-volume input[type='range']::-moz-range-track {
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(135, 84, 45, .22);
+}
+.music-volume input[type='range']::-moz-range-progress {
+  height: 5px;
+  border-radius: 999px;
+  background: #ffb85e;
 }
 .music-volume input[type='range']::-webkit-slider-thumb {
   appearance: none;
