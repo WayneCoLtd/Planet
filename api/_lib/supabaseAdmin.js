@@ -22,18 +22,29 @@ export function isAdminConfigured() {
 }
 
 function resolveSupabaseUrl() {
-  return String(process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || FALLBACK_URL).replace(/\/+$/, '')
+  // 顺序很关键：优先用 VITE_SUPABASE_URL —— 那是网页端正在用、且已被证明可用的项目地址。
+  // 如果把 SUPABASE_URL 放在前面，一个历史遗留的旧项目地址就会把服务端引到不存在的域上
+  // （本项目就踩过：旧地址导致服务端所有请求 fetch failed）。
+  return String(process.env.VITE_SUPABASE_URL || FALLBACK_URL).replace(/\/+$/, '')
 }
 
 // 诊断用：只返回主机名（它本来就公开在网页源码里），用来排查连不上的原因。
 // 出问题时能一眼看出是「地址不对」还是「网络不通」。
 export function getSupabaseTargetInfo() {
   const raw = resolveSupabaseUrl()
-  const source = process.env.SUPABASE_URL
-    ? 'SUPABASE_URL'
-    : (process.env.VITE_SUPABASE_URL ? 'VITE_SUPABASE_URL' : '(内置默认值)')
+  const source = process.env.VITE_SUPABASE_URL ? 'VITE_SUPABASE_URL' : '(内置默认值)'
+  // 如果环境里还躺着一个不一致的 SUPABASE_URL，只回报它的主机名，提示去清理。
+  let ignoredHost = null
+  const legacy = String(process.env.SUPABASE_URL || '').trim()
+  if (legacy && legacy !== String(process.env.VITE_SUPABASE_URL || '').trim()) {
+    try {
+      ignoredHost = new URL(legacy.replace(/\/+$/, '')).host
+    } catch {
+      ignoredHost = '(无法解析)'
+    }
+  }
   try {
-    return { host: new URL(raw).host, source }
+    return { host: new URL(raw).host, source, ignoredSupabaseHost: ignoredHost }
   } catch {
     return { host: '(地址无法解析)', source }
   }
