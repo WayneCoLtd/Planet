@@ -1,0 +1,16 @@
+{
+  "rewrites": [
+    {
+      "source": "/sb/rest/v1/:path*",
+      "destination": "https://johtzljxyzcbijlniipc.supabase.co/rest/v1/:path*"
+    },
+    {
+      "source": "/sb/storage/v1/:path*",
+      "destination": "https://johtzljxyzcbijlniipc.supabase.co/storage/v1/:path*"
+    },
+    {
+      "source": "/sb/auth/v1/:path*",
+      "destination": "https://johtzljxyzcbijlniipc.supabase.co/auth/v1/:path*"
+    }
+  ]
+}

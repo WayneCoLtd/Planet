@@ -3,8 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
 import { changelog } from './data/changelog'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog, getCloudStatus } from './cloud'
+import { installStorageGuard, safeGetItem, safeSetItem, safeRemoveItem } from './safeStorage'
 import './styles.css'
+
+// 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
+// localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
+installStorageGuard()
 
 const PASSWORD = '5201013'
 const ANNIVERSARY_VIDEO_SRC = '/videos/wwcxrl-1013-anniversary-v5.mp4'
@@ -11445,7 +11450,7 @@ function PlanetApp() {
     return () => { alive = false }
   }, [changelogOpen])
   function dismissFirstGuide() {
-    localStorage.setItem('wwcxrl-template-first-guide-seen-v1', 'yes')
+    safeSetItem('wwcxrl-template-first-guide-seen-v1', 'yes')
     setFirstGuideOpen(false)
   }
   return (
@@ -11470,6 +11475,7 @@ function PlanetApp() {
           <TemplateGuide setCurrent={next => { dismissFirstGuide(); setCurrent(next) }} />
         </div>
       </div>}
+      <CloudStatusPill />
       {toast && <div className="wwcxrl-soft-toast" role="status">{toast}</div>}
       <footer className="site-footer">
         {themeSwitchAvailable && <button type="button" className="theme-toggle-button subtle" onClick={() => setThemeMode(!voyageTheme)}>{voyageTheme ? '🍊 切回旧皮肤' : '🚀 切到新皮肤'}</button>}
@@ -11535,7 +11541,7 @@ function loadLocalAdminTasks() {
 }
 
 function saveLocalAdminTasks(list) {
-  localStorage.setItem(ADMIN_LOCAL_TASKS_KEY, JSON.stringify(list))
+  safeSetItem(ADMIN_LOCAL_TASKS_KEY, JSON.stringify(list))
 }
 
 // ---- 异地见面日历：下次见面日期 + 已见面的浪漫日子（云端优先，本地兜底） ----
@@ -11550,7 +11556,7 @@ function loadMeetingDatesLocal() {
 }
 
 function saveMeetingDatesLocal(data) {
-  localStorage.setItem(MEETING_DATES_LOCAL_KEY, JSON.stringify(data))
+  safeSetItem(MEETING_DATES_LOCAL_KEY, JSON.stringify(data))
 }
 
 async function loadMeetingDates() {
@@ -11887,7 +11893,7 @@ async function uploadNightReadingImageBlob(blob, day, sourceName = '') {
 }
 
 function AdminTaskPage() {
-  const [ok, setOk] = useState(() => typeof window !== 'undefined' && sessionStorage.getItem('wwcxrl-admin-ok') === '1')
+  const [ok, setOk] = useState(() => typeof window !== 'undefined' && safeGetItem('wwcxrl-admin-ok', null, 'sessionStorage') === '1')
   const [password, setPassword] = useState('')
   const [passwordError, setPasswordError] = useState('')
   const [tasks, setTasks] = useState([])
@@ -12067,7 +12073,7 @@ function AdminTaskPage() {
         <form className="admin-login-card sticker-card" onSubmit={event => {
           event.preventDefault()
           if (password === ADMIN_PASSWORD) {
-            sessionStorage.setItem('wwcxrl-admin-ok', '1')
+            safeSetItem('wwcxrl-admin-ok', '1', 'sessionStorage')
             setOk(true)
           } else {
             setPasswordError('密码不对哦')
@@ -12453,7 +12459,7 @@ function AdminTaskPage() {
           </nav>
           <div className="admin-sidebar-foot">
             <a className="admin-preview-link" href="/?planet=1&preview=1" target="_blank" rel="noreferrer">👀 打开站点预览</a>
-            <button type="button" className="admin-logout" onClick={() => { sessionStorage.removeItem('wwcxrl-admin-ok'); setOk(false) }}>退出管理</button>
+            <button type="button" className="admin-logout" onClick={() => { safeRemoveItem('wwcxrl-admin-ok', 'sessionStorage'); setOk(false) }}>退出管理</button>
           </div>
         </aside>
         <div className="admin-main">
@@ -12910,7 +12916,7 @@ function App() {
   if (typeof window !== 'undefined') {
     const params = new URLSearchParams(window.location.search)
     if (params.get('ownerDevice') === '1' || params.get('owner') === '1') {
-      localStorage.setItem('wwcxrl-owner-device', 'yes')
+      safeSetItem('wwcxrl-owner-device', 'yes')
       params.delete('ownerDevice')
       params.delete('owner')
       const query = params.toString()
@@ -12932,10 +12938,10 @@ function App() {
     && new URLSearchParams(window.location.search).get('planet') === '1'
   const globalState = typeof window !== 'undefined' ? loadGlobalLocalState() : GLOBAL_EMPTY_STATE
   const invitationViewRequested = typeof window !== 'undefined'
-    && sessionStorage.getItem('wwcxrl-invitation-view-requested') === 'yes'
+    && safeGetItem('wwcxrl-invitation-view-requested', null, 'sessionStorage') === 'yes'
   const initiallyOpen = typeof window !== 'undefined'
     && !invitationViewRequested
-    && (localDevBypass || localStorage.getItem('wwcxrl-camouflage-opened') === 'yes' || localStorage.getItem('wwcxrl-planet-unlocked') === 'yes' || globalState.planetUnlocked || globalState.invitationOpened)
+    && (localDevBypass || safeGetItem('wwcxrl-camouflage-opened') === 'yes' || safeGetItem('wwcxrl-planet-unlocked') === 'yes' || globalState.planetUnlocked || globalState.invitationOpened)
   const [open, setOpen] = useState(initiallyOpen)
   React.useEffect(() => {
     if (open) return
@@ -12943,7 +12949,7 @@ function App() {
     hydrateGlobalCloudState().then(next => {
       if (!alive) return
       // 用户主动点击「邀请信」回看时，停留在邀请信界面，不自动跳回主页。
-      if (sessionStorage.getItem('wwcxrl-invitation-view-requested') === 'yes') return
+      if (safeGetItem('wwcxrl-invitation-view-requested', null, 'sessionStorage') === 'yes') return
       if (next?.planetUnlocked || next?.invitationOpened) setOpen(true)
     })
     return () => { alive = false }
@@ -12952,5 +12958,60 @@ function App() {
   return <PlanetApp />
 }
 
-createRoot(document.getElementById('root')).render(<App />)
+// 渲染兜底：万一还有没预料到的异常，给一个能重试的页面，而不是白屏。
+class AppErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props)
+    this.state = { error: null }
+  }
+
+  static getDerivedStateFromError(error) {
+    return { error }
+  }
+
+  componentDidCatch(error, info) {
+    console.error('[wwcxrl] render error', error, info)
+  }
+
+  render() {
+    if (!this.state.error) return this.props.children
+    return (
+      <div className="app-error-fallback" role="alert">
+        <div className="app-error-card">
+          <span className="app-error-icon">🛠️</span>
+          <h1>小星球刚才绊了一下</h1>
+          <p>页面没能正常显示，多半是浏览器存储或网络临时出了状况。刷新一下通常就好了，签到记录都存在云端，不会丢。</p>
+          <div className="app-error-actions">
+            <button type="button" onClick={() => window.location.reload()}>刷新一下</button>
+            <button type="button" className="is-ghost" onClick={() => this.setState({ error: null })}>再试一次</button>
+          </div>
+          <small>{String((this.state.error && this.state.error.message) || this.state.error || '未知错误')}</small>
+        </div>
+      </div>
+    )
+  }
+}
+
+// 云端连不上时才出现的提示：连接正常时直接渲染 null，不占任何位置。
+function CloudStatusPill() {
+  const [down, setDown] = useState(() => getCloudStatus() === 'down')
+  React.useEffect(() => {
+    const onStatus = (event) => setDown(Boolean(event && event.detail && event.detail.state === 'down'))
+    window.addEventListener('wwcxrl-cloud-status', onStatus)
+    return () => window.removeEventListener('wwcxrl-cloud-status', onStatus)
+  }, [])
+  if (!down) return null
+  return (
+    <div className="cloud-status-pill" role="status">
+      <span>☁️ 云端暂时没连上，先看着本机记录</span>
+      <button type="button" onClick={() => window.location.reload()}>重试</button>
+    </div>
+  )
+}
+
+createRoot(document.getElementById('root')).render(
+  <AppErrorBoundary>
+    <App />
+  </AppErrorBoundary>
+)
 

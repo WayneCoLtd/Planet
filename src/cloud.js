@@ -1,8 +1,24 @@
+import { installStorageGuard, safeGetItem, safeSetItem } from './safeStorage'
+
+// 尽早装上存储保护：Safari 阻止 Cookie / 存储写满时，下面这些读写会抛异常，
+// 一抛就会把调用它的 React 渲染一起带崩。
+installStorageGuard()
+
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
 // 云端请求最长等待 15 秒：网络慢或挂起时立刻回退到本地数据，不让页面一直停在“空白/未使用”状态。
 const CLOUD_REQUEST_TIMEOUT_MS = 15000
+// 还没确定走哪条线路时，直连先只等 6 秒：很多网络是直接把 supabase.co 丢进黑洞，
+// 等满 15 秒再切换会让首屏白等，这里先快速放弃。
+const CLOUD_PROBE_TIMEOUT_MS = 6000
+// 网上诊断出「域名可达但 supabase.co 不可达」时自动切到同域代理，结果记下来，
+// 之后每次打开都直接走通的那条，不再重复试错。
+const CLOUD_TRANSPORT_KEY = 'wwcxrl-cloud-transport'
+const CLOUD_PROXY_PREFIX = '/sb'
+// 只有幂等的读取才允许自动换线路重试：写请求若在服务端已经落库、只是响应丢了，
+// 重试会造成重复插入，宁可让它按原来的方式失败。
+const CLOUD_RETRYABLE_METHODS = new Set(['GET', 'HEAD'])
 
 const FIXED_ROLE_IDS = {
   orange: 'wwcxrl-orange-main',
@@ -13,14 +29,134 @@ export const cloudEnabled = Boolean(supabaseUrl && supabaseKey)
 
 let supabasePromise = null
 
-function fetchWithTimeout(input, init = {}) {
+// ---- 云端线路：直连 supabase.co，或走站点自己的域名（/sb/* 由 vercel.json 转发） ----
+// 站点域名是唯一被证明「一定能访问」的地址：能打开网页就说明它通。
+// 因此当 supabase.co 直连不通时，改走同域代理就能把数据救回来。
+function canUseSameOriginProxy() {
+  if (!cloudEnabled || !supabaseUrl || typeof window === 'undefined') return false
+  const host = window.location.hostname
+  if (!host || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return false
+  // 本地 vite dev 没有 vercel.json 的转发规则，走了只会拿到 404。
+  return true
+}
+
+function readSavedTransport() {
+  if (!canUseSameOriginProxy()) return 'direct'
+  return safeGetItem(CLOUD_TRANSPORT_KEY) === 'proxy' ? 'proxy' : 'direct'
+}
+
+let cloudTransport = readSavedTransport()
+// 线路是用户网络环境的属性，一旦发现可用就固定下来；探明后不再来回切换。
+let cloudTransportProven = cloudTransport === 'proxy'
+
+function useSameOriginProxy(rawUrl) {
+  if (typeof rawUrl !== 'string' || !supabaseUrl) return rawUrl
+  if (rawUrl.indexOf(supabaseUrl) !== 0) return rawUrl
+  return `${window.location.origin}${CLOUD_PROXY_PREFIX}${rawUrl.slice(supabaseUrl.length)}`
+}
+
+function rememberTransport(next) {
+  cloudTransportProven = true
+  if (cloudTransport === next) return
+  cloudTransport = next
+  safeSetItem(CLOUD_TRANSPORT_KEY, next)
+}
+
+// ---- 云端连接状态 ----
+// 只有连续失败到一定次数才广播“连不上”，避免一次网络抖动就冒提示；
+// 任意一次成功立刻恢复。连接正常时不会广播任何东西，页面完全无感。
+const CLOUD_DOWN_THRESHOLD = 3
+
+let cloudFailureStreak = 0
+let cloudStatus = 'unknown'
+
+function setCloudStatus(next) {
+  if (cloudStatus === next) return
+  cloudStatus = next
+  if (typeof window === 'undefined') return
+  try {
+    window.dispatchEvent(new CustomEvent('wwcxrl-cloud-status', { detail: { state: next, failures: cloudFailureStreak } }))
+  } catch {}
+}
+
+function noteCloudReachable() {
+  cloudFailureStreak = 0
+  setCloudStatus('ok')
+}
+
+function noteCloudUnreachable() {
+  cloudFailureStreak += 1
+  if (cloudFailureStreak >= CLOUD_DOWN_THRESHOLD) setCloudStatus('down')
+}
+
+// 5xx 说明服务端本身出了问题，对用户来说同样是“数据拿不到”，一并计入。
+function noteCloudResponse(response) {
+  if (response && Number(response.status) >= 500) noteCloudUnreachable()
+  else noteCloudReachable()
+  return response
+}
+
+export function getCloudStatus() {
+  return cloudStatus
+}
+
+function fetchOnce(input, init = {}, timeoutMs = CLOUD_REQUEST_TIMEOUT_MS) {
   if (typeof window === 'undefined' || typeof AbortController === 'undefined') {
     return fetch(input, init)
   }
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), CLOUD_REQUEST_TIMEOUT_MS)
-  const { signal, ...rest } = init
-  return fetch(input, { ...rest, signal: signal || controller.signal }).finally(() => window.clearTimeout(timer))
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+  const { signal, ...rest } = init || {}
+  return fetch(input, { ...rest, signal: signal || controller.signal })
+    .finally(() => window.clearTimeout(timer))
+}
+
+function requestMethod(init) {
+  return String((init || {}).method || 'GET').toUpperCase()
+}
+
+// 万一线上还没有 /sb/* 的转发规则（例如客户端先上线、配置还没生效），
+// 请求会落到 Vercel 的 404 页而不是 Supabase。这种情况不能把线路记成“代理可用”。
+function looksLikeProxyMiss(response) {
+  if (!response || Number(response.status) !== 404) return false
+  const type = String((response.headers && response.headers.get && response.headers.get('content-type')) || '').toLowerCase()
+  return !type.includes('application/json')
+}
+
+// 所有云端请求的出口：先用当前认定可用的线路，不通就换另一条再试一次。
+// 只换一次、只对读取，既有自愈能力，又不会把写请求重复提交。
+async function cloudFetch(input, init = {}) {
+  const rawUrl = typeof input === 'string' ? input : String((input && input.url) || '')
+  const proxyAvailable = canUseSameOriginProxy() && Boolean(supabaseUrl) && rawUrl.indexOf(supabaseUrl) === 0
+  const retryable = proxyAvailable && CLOUD_RETRYABLE_METHODS.has(requestMethod(init))
+  const firstIsProxy = cloudTransport === 'proxy' && proxyAvailable
+  // 线路还没探明时先短超时：快速失败、快速换线路，避免首屏干等十几秒。
+  const firstTimeout = cloudTransportProven ? CLOUD_REQUEST_TIMEOUT_MS : CLOUD_PROBE_TIMEOUT_MS
+  try {
+    const response = await fetchOnce(firstIsProxy ? useSameOriginProxy(rawUrl) : input, init, firstTimeout)
+    if (firstIsProxy && looksLikeProxyMiss(response)) throw new Error('[wwcxrl cloud] same-origin proxy unavailable')
+    rememberTransport(firstIsProxy ? 'proxy' : 'direct')
+    return noteCloudResponse(response)
+  } catch (error) {
+    if (!retryable) {
+      noteCloudUnreachable()
+      throw error
+    }
+    const secondIsProxy = !firstIsProxy
+    try {
+      const response = await fetchOnce(secondIsProxy ? useSameOriginProxy(rawUrl) : input, init, CLOUD_REQUEST_TIMEOUT_MS)
+      if (secondIsProxy && looksLikeProxyMiss(response)) throw new Error('[wwcxrl cloud] same-origin proxy unavailable')
+      rememberTransport(secondIsProxy ? 'proxy' : 'direct')
+      return noteCloudResponse(response)
+    } catch (secondError) {
+      noteCloudUnreachable()
+      throw secondError
+    }
+  }
+}
+
+export function getCloudTransport() {
+  return cloudTransport
 }
 
 export async function getSupabase() {
@@ -28,7 +164,7 @@ export async function getSupabase() {
   if (!supabasePromise) {
     supabasePromise = import('@supabase/supabase-js').then(({ createClient }) => createClient(supabaseUrl, supabaseKey, {
       auth: { persistSession: false, autoRefreshToken: false },
-      global: { fetch: fetchWithTimeout }
+      global: { fetch: cloudFetch }
     }))
   }
   return supabasePromise
@@ -55,10 +191,10 @@ function getRoleFromUrl() {
   const params = new URLSearchParams(window.location.search)
   const role = params.get('user') || params.get('role')
   if (role === 'orange' || role === 'pomelo') {
-    localStorage.setItem('wwcxrl-cloud-role', role)
+    safeSetItem('wwcxrl-cloud-role', role)
     return role
   }
-  return localStorage.getItem('wwcxrl-cloud-role') || 'pomelo'
+  return safeGetItem('wwcxrl-cloud-role') || 'pomelo'
 }
 
 function getDisplayName(role) {
@@ -74,8 +210,8 @@ export function getCloudIdentity() {
   if (typeof window === 'undefined') return null
   const role = getRoleFromUrl()
   const id = FIXED_ROLE_IDS[role] || FIXED_ROLE_IDS.pomelo
-  localStorage.setItem('wwcxrl-cloud-role', role)
-  localStorage.setItem(`wwcxrl-cloud-user-id-${role}`, id)
+  safeSetItem('wwcxrl-cloud-role', role)
+  safeSetItem(`wwcxrl-cloud-user-id-${role}`, id)
   return {
     id,
     role,
@@ -309,7 +445,7 @@ export async function removeCloudBackpackItems(itemIds, targetUserId = null) {
 }
 
 export function getLocalJson(key, fallback) {
-  return safeJson(localStorage.getItem(key), fallback)
+  return safeJson(safeGetItem(key), fallback)
 }
 
 // ---- 管理页：未来签到任务（wwcxrl_daily_tasks） ----
