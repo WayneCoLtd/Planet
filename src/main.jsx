@@ -49,6 +49,7 @@ const ADMIN_TASK_TYPES = [
 const ADMIN_SECTIONS = [
   { id: 'form', icon: '✏️', label: '布置任务' },
   { id: 'tasks', icon: '📋', label: '任务列表' },
+  { id: 'music', icon: '🎵', label: '音乐管理' },
   { id: 'meeting', icon: '💌', label: '见面日历' },
   { id: 'energy', icon: '⚡', label: '能量管理' },
   { id: 'changelog', icon: '📜', label: '更新日志' }
@@ -1095,6 +1096,7 @@ function Nav({ current, setCurrent }) {
     ['home', '首页', '🏠'],
     ['checkin', '每日签到', '📮'],
     ['album', '相册', '📷'],
+    ['music', '音乐室', '🎵'],
     ...(observatoryNavOpen ? [['telescope', '星空观测站', '🔭']] : []),
     ['backpack', '小背包', '🎒'],
     ['messages', '小信箱', '💬'],
@@ -11385,6 +11387,8 @@ function PlanetApp() {
     let alive = true
     const refresh = () => setVoyageTheme(readVoyageTheme())
     hydrateGlobalCloudState().then(() => { if (alive) refresh() })
+    // 曲库在进站后就安静地拉一次，顶栏的小控制才有歌可放。
+    musicLoadTracks()
     loadCloudBackpack().then(cloudBag => {
       if (!alive || !cloudBag) return
       const next = { ...loadBackpack(), ...(cloudBag || {}) }
@@ -11459,10 +11463,12 @@ function PlanetApp() {
       <header className="top-bar">
         <button className="brand" onClick={() => setCurrent('home')}><span>琛❤️琳</span></button>
         <Nav current={current} setCurrent={setCurrent} />
+        <MusicDock />
       </header>
       {current === 'home' && <Hero setCurrent={setCurrent} />}
       {current === 'guide' && <TemplateGuide setCurrent={setCurrent} />}
       {current === 'checkin' && <CheckIn />}
+      {current === 'music' && <MusicRoom />}
       {(current === 'album' || current === 'gallery') && <PhotoWall />}
       {current === 'telescope' && <TelescopeWorkshop />}
       {current === 'backpack' && <BackpackView />}
@@ -12784,6 +12790,9 @@ function AdminTaskPage() {
       </section>
 
           )}
+          {adminSection === 'music' && (
+            <AdminMusicPanel />
+          )}
           {adminSection === 'meeting' && (
       <section id="admin-meeting" className="admin-meeting-dates sticker-card">
         <h2>💌 异地见面日历</h2>
@@ -13160,6 +13169,687 @@ function CloudStatusPill() {
   )
 }
 
+// ============================================================
+// 音乐室 · 数据层与播放核心
+// ============================================================
+// 全部经站点自己的接口读写：曲库表对匿名关闭、音频在私有桶里，
+// 只有服务端能签发限时链接，浏览器拿不到任何永久地址。
+
+const MUSIC_API = '/api/music'
+const MUSIC_REQUESTS_API = '/api/music-requests'
+const MUSIC_MODE_KEY = 'wwcxrl-music-mode'
+const MUSIC_VOLUME_KEY = 'wwcxrl-music-volume'
+
+const MUSIC_MODES = [
+  { id: 'list', icon: '🔁', label: '顺序播放' },
+  { id: 'single', icon: '🔂', label: '单曲循环' },
+  { id: 'shuffle', icon: '🔀', label: '随机播放' }
+]
+
+async function musicRequest(path, options = {}) {
+  try {
+    const response = await fetch(path, {
+      credentials: 'same-origin',
+      ...options,
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
+    })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) return { ok: false, error: (data && data.error) || `请求失败（${response.status}）` }
+    return data
+  } catch {
+    return { ok: false, error: '连不上服务器，检查一下网络' }
+  }
+}
+
+function formatMusicTime(seconds) {
+  const value = Number(seconds)
+  if (!Number.isFinite(value) || value <= 0) return '0:00'
+  const total = Math.floor(value)
+  const mins = Math.floor(total / 60)
+  const secs = String(total % 60).padStart(2, '0')
+  return `${mins}:${secs}`
+}
+
+// iOS 上 audio.volume 是只读的，音量条拖了没用 —— 用一个独立的探针元素判断，
+// 避免碰到正在播放的那个元素造成一闪的音量跳变。
+function detectVolumeSupport() {
+  try {
+    const probe = new Audio()
+    probe.volume = 0.42
+    const usable = Math.abs(probe.volume - 0.42) < 0.01
+    return usable
+  } catch {
+    return false
+  }
+}
+
+const musicState = {
+  tracks: [],
+  currentId: null,
+  playing: false,
+  loadingId: null,
+  progress: 0,
+  duration: 0,
+  volume: 0.8,
+  mode: 'list',
+  error: '',
+  loaded: false
+}
+
+let musicVolumeSupported = null
+let musicAudio = null
+let musicSnapshot = { ...musicState }
+const musicListeners = new Set()
+let musicLastSecond = -1
+
+function musicNotify() {
+  musicSnapshot = { ...musicState }
+  musicListeners.forEach(listener => listener())
+}
+
+function musicSubscribe(listener) {
+  musicListeners.add(listener)
+  return () => { musicListeners.delete(listener) }
+}
+
+function musicGetSnapshot() {
+  return musicSnapshot
+}
+
+function useMusicState() {
+  return React.useSyncExternalStore(musicSubscribe, musicGetSnapshot, musicGetSnapshot)
+}
+
+function musicIsVolumeSupported() {
+  if (musicVolumeSupported === null) musicVolumeSupported = detectVolumeSupport()
+  return musicVolumeSupported
+}
+
+function musicCurrentTrack() {
+  return musicState.tracks.find(track => track.id === musicState.currentId) || null
+}
+
+function musicAudioEl() {
+  if (musicAudio) return musicAudio
+  const audio = new Audio()
+  audio.preload = 'metadata'
+  try { audio.volume = musicState.volume } catch {}
+  audio.addEventListener('timeupdate', () => {
+    musicState.progress = audio.currentTime || 0
+    const second = Math.floor(musicState.progress)
+    // 每秒只通知一次，避免进度条把整棵面板刷太多次。
+    if (second !== musicLastSecond) {
+      musicLastSecond = second
+      musicNotify()
+    }
+  })
+  audio.addEventListener('loadedmetadata', () => {
+    musicState.duration = Number.isFinite(audio.duration) ? audio.duration : 0
+    musicNotify()
+  })
+  audio.addEventListener('play', () => { musicState.playing = true; musicNotify() })
+  audio.addEventListener('pause', () => { musicState.playing = false; musicNotify() })
+  audio.addEventListener('ended', () => {
+    musicState.playing = false
+    musicNotify()
+    musicPlayStep(1)
+  })
+  audio.addEventListener('error', () => {
+    if (!audio.src) return
+    musicState.playing = false
+    musicState.loadingId = null
+    musicState.error = '这首暂时放不出来，换一首试试'
+    musicNotify()
+  })
+  musicAudio = audio
+  return audio
+}
+
+// 把签名地址接到当前可用的线路上：直连能用就直连，直连不通时改走站点域名。
+function musicPlayableUrl(url) {
+  return resolveCloudAssetUrl(url) || url
+}
+
+async function musicLoadTracks() {
+  const data = await musicRequest(MUSIC_API)
+  musicState.loaded = true
+  if (!data.ok) {
+    musicState.error = data.error || '曲库暂时拿不到'
+    musicNotify()
+    return
+  }
+  musicState.tracks = Array.isArray(data.tracks) ? data.tracks : []
+  if (musicState.currentId && !musicState.tracks.some(track => track.id === musicState.currentId)) {
+    musicState.currentId = null
+  }
+  musicNotify()
+}
+
+async function musicPlay(id) {
+  const track = musicState.tracks.find(item => item.id === id)
+  if (!track) return
+  const audio = musicAudioEl()
+  // 同一首歌再点一次 = 播放/暂停切换
+  if (musicState.currentId === id && audio.src) {
+    if (audio.paused) {
+      try { await audio.play() } catch {}
+    } else {
+      audio.pause()
+    }
+    return
+  }
+  musicState.currentId = id
+  musicState.loadingId = id
+  musicState.error = ''
+  musicState.progress = 0
+  musicState.duration = Number(track.duration) || 0
+  musicNotify()
+
+  const data = await musicRequest(`${MUSIC_API}?sign=${encodeURIComponent(id)}`)
+  if (!data.ok || !data.url) {
+    musicState.loadingId = null
+    musicState.error = data.error || '拿不到播放地址'
+    musicNotify()
+    return
+  }
+  audio.src = musicPlayableUrl(data.url)
+  audio.loop = musicState.mode === 'single'
+  try {
+    await audio.play()
+  } catch {
+    musicState.error = '浏览器拦住了播放，再点一下播放键试试'
+  }
+  musicState.loadingId = null
+  musicNotify()
+}
+
+function musicTogglePlay() {
+  const audio = musicAudioEl()
+  if (musicState.currentId && audio.src) {
+    if (audio.paused) audio.play().catch(() => {})
+    else audio.pause()
+    return
+  }
+  if (musicState.tracks.length) musicPlay(musicState.tracks[0].id)
+}
+
+function musicNextId(step) {
+  const list = musicState.tracks
+  if (!list.length) return null
+  const index = list.findIndex(track => track.id === musicState.currentId)
+  if (musicState.mode === 'shuffle' && list.length > 1) {
+    let pick = index
+    while (pick === index) pick = Math.floor(Math.random() * list.length)
+    return list[pick].id
+  }
+  if (index < 0) return step > 0 ? list[0].id : list[list.length - 1].id
+  return list[(index + step + list.length) % list.length].id
+}
+
+function musicPlayStep(step) {
+  const nextId = musicNextId(step)
+  if (nextId) musicPlay(nextId)
+}
+
+function musicSeek(seconds) {
+  const audio = musicAudioEl()
+  if (!audio.src) return
+  try {
+    audio.currentTime = Math.max(0, Math.min(Number(seconds) || 0, audio.duration || 0))
+    musicNotify()
+  } catch {}
+}
+
+function musicSetVolume(value) {
+  const volume = Math.max(0, Math.min(1, Number(value)))
+  musicState.volume = volume
+  try { musicAudioEl().volume = volume } catch {}
+  safeSetItem(MUSIC_VOLUME_KEY, String(volume))
+  musicNotify()
+}
+
+function musicSetMode(mode) {
+  if (!MUSIC_MODES.some(item => item.id === mode)) return
+  musicState.mode = mode
+  safeSetItem(MUSIC_MODE_KEY, mode)
+  try { musicAudioEl().loop = mode === 'single' } catch {}
+  musicNotify()
+}
+
+function musicBootstrap() {
+  const savedMode = safeGetItem(MUSIC_MODE_KEY)
+  if (MUSIC_MODES.some(item => item.id === savedMode)) musicState.mode = savedMode
+  const savedVolume = Number(safeGetItem(MUSIC_VOLUME_KEY))
+  if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 1) musicState.volume = savedVolume
+}
+
+function musicNextMode(mode) {
+  const index = MUSIC_MODES.findIndex(item => item.id === mode)
+  return MUSIC_MODES[(index + 1) % MUSIC_MODES.length].id
+}
+
+// 顶栏上的小控制：没在播时是一个安静的图标，在播时变成缓慢转动的小唱片。
+// 点开是从顶栏下方滑出的面板，不占页面底部、也不遮挡内容。
+function MusicDock() {
+  const music = useMusicState()
+  const [open, setOpen] = useState(false)
+  const volumeSupported = React.useMemo(() => musicIsVolumeSupported(), [])
+  const dockRef = React.useRef(null)
+  const current = music.tracks.find(track => track.id === music.currentId) || null
+  const mode = MUSIC_MODES.find(item => item.id === music.mode) || MUSIC_MODES[0]
+
+  React.useEffect(() => {
+    if (!open) return
+    const onPointerDown = event => {
+      if (dockRef.current && !dockRef.current.contains(event.target)) setOpen(false)
+    }
+    const onKeyDown = event => { if (event.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open])
+
+  return (
+    <div className={`music-dock ${open ? 'is-open' : ''} ${music.playing ? 'is-playing' : ''}`} ref={dockRef}>
+      <button
+        type="button"
+        className="music-dock-trigger"
+        onClick={() => setOpen(value => !value)}
+        aria-expanded={open}
+        aria-label={open ? '收起播放器' : '打开播放器'}
+        title={current ? `${current.title}${current.artist ? ' · ' + current.artist : ''}` : '音乐室'}
+      >
+        <span className="music-disc" aria-hidden="true">
+          {current && current.coverUrl ? <img src={musicPlayableUrl(current.coverUrl)} alt="" /> : <i>🎵</i>}
+        </span>
+        {current && <span className="music-dock-label">{current.title}</span>}
+      </button>
+
+      {open && (
+        <div className="music-dock-panel" role="dialog" aria-label="播放器">
+          <div className="music-panel-head">
+            <span className="music-panel-cover" aria-hidden="true">
+              {current && current.coverUrl ? <img src={musicPlayableUrl(current.coverUrl)} alt="" /> : <i>🎵</i>}
+            </span>
+            <span className="music-panel-meta">
+              <strong>{current ? current.title : '还没选歌'}</strong>
+              <small>{current ? (current.artist || current.mood || '我们的音乐室') : '去音乐室挑一首吧'}</small>
+            </span>
+            <button type="button" className="music-panel-close" onClick={() => setOpen(false)} aria-label="收起播放器">✕</button>
+          </div>
+
+          {music.error && <p className="music-panel-error">{music.error}</p>}
+
+          <div className="music-progress">
+            <input
+              type="range"
+              min="0"
+              max={Math.max(1, Math.floor(music.duration || 0))}
+              value={Math.min(Math.floor(music.progress || 0), Math.max(1, Math.floor(music.duration || 0)))}
+              onChange={event => musicSeek(event.target.value)}
+              disabled={!current}
+              aria-label="播放进度"
+            />
+            <span className="music-progress-time">
+              <span>{formatMusicTime(music.progress)}</span>
+              <span>{formatMusicTime(music.duration)}</span>
+            </span>
+          </div>
+
+          <div className="music-controls">
+            <button type="button" className="music-mode-button" onClick={() => musicSetMode(musicNextMode(music.mode))} title={mode.label} aria-label={`切换播放模式，当前${mode.label}`}>{mode.icon}</button>
+            <button type="button" className="music-step-button" onClick={() => musicPlayStep(-1)} disabled={!music.tracks.length} aria-label="上一首">⏮</button>
+            <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing ? '暂停' : '播放'}>
+              {music.loadingId ? '⋯' : (music.playing ? '⏸️' : '▶️')}
+            </button>
+            <button type="button" className="music-step-button" onClick={() => musicPlayStep(1)} disabled={!music.tracks.length} aria-label="下一首">⏭</button>
+            {volumeSupported ? (
+              <span className="music-volume">
+                <span aria-hidden="true">🔊</span>
+                <input type="range" min="0" max="100" value={Math.round(music.volume * 100)} onChange={event => musicSetVolume(Number(event.target.value) / 100)} aria-label="音量" />
+              </span>
+            ) : (
+              <span className="music-volume-hint" title="iPhone 的音量只能用侧边键调">🔊 用侧边键调</span>
+            )}
+          </div>
+
+          {music.tracks.length > 0 ? (
+            <ul className="music-panel-list">
+              {music.tracks.map((track, index) => (
+                <li key={track.id} className={track.id === music.currentId ? 'is-current' : ''}>
+                  <button type="button" onClick={() => musicPlay(track.id)}>
+                    <span className="music-panel-index" aria-hidden="true">
+                      {track.id === music.currentId && music.playing ? '♪' : index + 1}
+                    </span>
+                    <span className="music-panel-title">{track.title}</span>
+                    <small>{formatMusicTime(track.duration)}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="music-panel-empty">{music.loaded ? '曲库还是空的，先去管理页放一首吧。' : '正在加载曲库…'}</p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 音乐室页面：左边唱片架，右边点歌台。
+function MusicRoom() {
+  const music = useMusicState()
+  const [requests, setRequests] = useState([])
+  const [draft, setDraft] = useState('')
+  const [sending, setSending] = useState(false)
+  const [note, setNote] = useState('')
+  const [senderRole, setSenderRole] = useState(() => {
+    const saved = safeGetItem('wwcxrl-message-sender-role')
+    return saved === 'orange' || saved === 'pomelo' ? saved : 'pomelo'
+  })
+
+  React.useEffect(() => {
+    if (!music.loaded) musicLoadTracks()
+  }, [music.loaded])
+
+  React.useEffect(() => {
+    let alive = true
+    musicRequest(MUSIC_REQUESTS_API).then(data => {
+      if (alive && data.ok) setRequests(data.requests || [])
+    })
+    return () => { alive = false }
+  }, [])
+
+  async function submitRequest(event) {
+    event.preventDefault()
+    const content = draft.trim()
+    if (!content || sending) return
+    setSending(true)
+    setNote('')
+    const data = await musicRequest(MUSIC_REQUESTS_API, {
+      method: 'POST',
+      body: JSON.stringify({ content, role: senderRole })
+    })
+    setSending(false)
+    if (!data.ok) {
+      setNote(data.error || '没写进去，再试一次')
+      return
+    }
+    setRequests(previous => [data.request, ...previous])
+    setDraft('')
+  }
+
+  async function removeRequest(id) {
+    const data = await musicRequest(`${MUSIC_REQUESTS_API}?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (data.ok) setRequests(previous => previous.filter(item => item.id !== id))
+  }
+
+  const current = music.tracks.find(track => track.id === music.currentId) || null
+
+  return (
+    <section className="content-section music-room">
+      <header className="section-heading playful-heading">
+        <span>🎵 我们的歌</span>
+        <h2>音乐室</h2>
+        <p>把想一起听的歌放进来，随时点开就能放。切到别的页面也不会停。</p>
+      </header>
+
+      <div className="music-room-layout">
+        <div className="music-shelf sticker-card">
+          <div className={`music-turntable ${music.playing ? 'is-playing' : ''}`}>
+            <span className="music-turntable-disc" aria-hidden="true">
+              {current && current.coverUrl ? <img src={musicPlayableUrl(current.coverUrl)} alt="" /> : <i>🎶</i>}
+            </span>
+            <div className="music-turntable-info">
+              <strong>{current ? current.title : '唱针还没落下'}</strong>
+              <small>{current ? (current.artist || current.mood || '我们的音乐室') : '从下面挑一首开始吧'}</small>
+            </div>
+          </div>
+
+          {music.error && <p className="music-room-error">{music.error}</p>}
+
+          {music.tracks.length > 0 ? (
+            <ul className="music-track-list">
+              {music.tracks.map((track, index) => (
+                <li key={track.id} className={track.id === music.currentId ? 'is-current' : ''}>
+                  <button type="button" onClick={() => musicPlay(track.id)} aria-label={`播放 ${track.title}`}>
+                    <span className="music-track-cover" aria-hidden="true">
+                      {track.coverUrl ? <img src={musicPlayableUrl(track.coverUrl)} alt="" loading="lazy" /> : <i>🎵</i>}
+                    </span>
+                    <span className="music-track-text">
+                      <strong>{track.title}</strong>
+                      <small>{[track.artist, track.mood].filter(Boolean).join(' · ') || '未标注'}</small>
+                    </span>
+                    <span className="music-track-side">
+                      {track.id === music.currentId && music.playing ? <em>♪</em> : <em>{index + 1}</em>}
+                      <small>{formatMusicTime(track.duration)}</small>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="music-room-empty">
+              {music.loaded ? '曲库还是空的。到管理页（?admin=1）的「🎵 音乐管理」上传第一首歌吧。' : '正在加载曲库…'}
+            </p>
+          )}
+        </div>
+
+        <aside className="music-request-card sticker-card">
+          <h3>📮 点歌台</h3>
+          <p className="music-request-hint">想听什么写在这里，另一边刷新就能看到。</p>
+          <form onSubmit={submitRequest}>
+            <div className="music-request-roles">
+              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => setSenderRole('orange')}>🌞 小琛</button>
+              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => setSenderRole('pomelo')}>🌟 小琳</button>
+            </div>
+            <textarea
+              value={draft}
+              onChange={event => { setDraft(event.target.value); setNote('') }}
+              rows={3}
+              maxLength={200}
+              placeholder="例如：想听《后来的我们》"
+              aria-label="点歌内容"
+            />
+            <button type="submit" className="music-request-submit" disabled={sending || !draft.trim()}>
+              {sending ? '正在写…' : '写进点歌台'}
+            </button>
+            {note && <p className="music-request-note">{note}</p>}
+          </form>
+          <ul className="music-request-list">
+            {requests.map(item => (
+              <li key={item.id} className={item.role === 'orange' ? 'is-orange' : 'is-pomelo'}>
+                <span className="music-request-who">{item.role === 'orange' ? '🌞' : '🌟'} {item.displayName}</span>
+                <p>{item.content}</p>
+                <button type="button" onClick={() => removeRequest(item.id)} aria-label="删除这条点歌">✕</button>
+              </li>
+            ))}
+            {!requests.length && <li className="music-request-none">还没有人点歌，写第一条吧。</li>}
+          </ul>
+        </aside>
+      </div>
+    </section>
+  )
+}
+
+// 管理端「音乐管理」：上传 MP3 + 封面，发布或存草稿，也能下架和删除。
+function AdminMusicPanel() {
+  const [tracks, setTracks] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [title, setTitle] = useState('')
+  const [artist, setArtist] = useState('')
+  const [mood, setMood] = useState('')
+  const [audioFile, setAudioFile] = useState(null)
+  const [coverFile, setCoverFile] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const [status, setStatus] = useState('')
+  const [error, setError] = useState('')
+  const audioInputRef = React.useRef(null)
+  const coverInputRef = React.useRef(null)
+
+  const refresh = React.useCallback(async () => {
+    const data = await musicRequest(`${MUSIC_API}?all=1`)
+    if (data.ok) {
+      setTracks(data.tracks || [])
+      setError('')
+    } else {
+      setError(data.error || '拿不到曲库')
+    }
+    setLoading(false)
+  }, [])
+
+  React.useEffect(() => { refresh() }, [refresh])
+
+  async function uploadOne(file, kind) {
+    const contentType = file.type || (kind === 'cover' ? 'image/jpeg' : 'audio/mpeg')
+    const sign = await musicRequest(MUSIC_API, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'sign-upload', kind, contentType })
+    })
+    if (!sign.ok || !sign.uploadUrl) throw new Error(sign.error || '拿不到上传地址')
+    const response = await fetch(musicPlayableUrl(sign.uploadUrl), {
+      method: 'PUT',
+      headers: { 'Content-Type': contentType },
+      body: file
+    })
+    if (!response.ok) throw new Error(`上传失败（HTTP ${response.status}）`)
+    return sign.path
+  }
+
+  function readDuration(file) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file)
+      const probe = new Audio()
+      probe.preload = 'metadata'
+      const done = value => { URL.revokeObjectURL(url); resolve(value) }
+      probe.addEventListener('loadedmetadata', () => done(Number.isFinite(probe.duration) ? Math.round(probe.duration) : 0))
+      probe.addEventListener('error', () => done(0))
+      probe.src = url
+    })
+  }
+
+  async function submit(event, nextStatus) {
+    event.preventDefault()
+    if (busy) return
+    if (!title.trim()) { setError('先写个歌名吧'); return }
+    if (!audioFile) { setError('先选一个音频文件'); return }
+    setBusy(true)
+    setError('')
+    try {
+      setStatus('正在上传音频…')
+      const audioPath = await uploadOne(audioFile, 'audio')
+      let coverPath = ''
+      if (coverFile) {
+        setStatus('正在上传封面…')
+        coverPath = await uploadOne(coverFile, 'cover')
+      }
+      setStatus('正在读取时长…')
+      const duration = await readDuration(audioFile)
+      setStatus('正在保存…')
+      const created = await musicRequest(MUSIC_API, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'create', title: title.trim(), artist, mood, audioPath, coverPath, duration, status: nextStatus })
+      })
+      if (!created.ok) throw new Error(created.error || '保存失败')
+      setStatus(nextStatus === 'published' ? '已经发布啦 ✓' : '已存为草稿 ✓')
+      setTitle('')
+      setArtist('')
+      setMood('')
+      setAudioFile(null)
+      setCoverFile(null)
+      if (audioInputRef.current) audioInputRef.current.value = ''
+      if (coverInputRef.current) coverInputRef.current.value = ''
+      await refresh()
+      musicLoadTracks()
+    } catch (err) {
+      setError(err.message || '出错了，再试一次')
+      setStatus('')
+    }
+    setBusy(false)
+  }
+
+  async function toggleStatus(track) {
+    const next = track.status === 'published' ? 'draft' : 'published'
+    const data = await musicRequest(MUSIC_API, { method: 'POST', body: JSON.stringify({ action: 'update', id: track.id, status: next }) })
+    if (!data.ok) { setError(data.error || '改不动'); return }
+    await refresh()
+    musicLoadTracks()
+  }
+
+  async function removeTrack(track) {
+    const data = await musicRequest(MUSIC_API, { method: 'POST', body: JSON.stringify({ action: 'delete', id: track.id }) })
+    if (!data.ok) { setError(data.error || '删不掉'); return }
+    await refresh()
+    musicLoadTracks()
+  }
+
+  return (
+    <>
+      <section className="admin-block sticker-card">
+        <h2>🎵 添加一首歌</h2>
+        <p className="admin-hint">音频会存进私有存储桶，只有通过站点口令的人能听到。</p>
+        <form className="admin-music-form" onSubmit={event => submit(event, 'published')}>
+          <label>歌名
+            <input value={title} onChange={event => setTitle(event.target.value)} maxLength={80} placeholder="例如：夏天的风" />
+          </label>
+          <label>歌手 / 来源
+            <input value={artist} onChange={event => setArtist(event.target.value)} maxLength={60} placeholder="选填" />
+          </label>
+          <label>心情标签
+            <input value={mood} onChange={event => setMood(event.target.value)} maxLength={60} placeholder="选填，例如：睡前听" />
+          </label>
+          <label>音频文件
+            <input id="admin-music-audio" ref={audioInputRef} type="file" accept="audio/mpeg,audio/mp4,audio/wav,.mp3,.m4a,.wav" onChange={event => setAudioFile(event.target.files?.[0] || null)} />
+            <small>支持 MP3 / M4A / WAV，单个建议不超过 30MB</small>
+          </label>
+          <label>封面图（选填）
+            <input id="admin-music-cover" ref={coverInputRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={event => setCoverFile(event.target.files?.[0] || null)} />
+            <small>支持 JPG / PNG / WebP，会自动用在你看到的唱片上</small>
+          </label>
+          <div className="admin-music-actions">
+            <button type="submit" className="admin-save-publish" disabled={busy}>{busy ? '处理中…' : '发布'}</button>
+            <button type="button" className="admin-save-draft" disabled={busy} onClick={event => submit(event, 'draft')}>存为草稿</button>
+          </div>
+          {status && <p className="admin-music-status">{status}</p>}
+          {error && <p className="admin-error">{error}</p>}
+        </form>
+      </section>
+
+      <section className="admin-block sticker-card">
+        <h2>📀 曲库（{tracks.length} 首）</h2>
+        {loading ? <p>加载中…</p> : tracks.length === 0 ? <p>还没有歌。上面添加第一首吧。</p> : (
+          <ul className="admin-music-list">
+            {tracks.map(track => (
+              <li key={track.id}>
+                <span className="admin-music-cover" aria-hidden="true">
+                  {track.coverUrl ? <img src={musicPlayableUrl(track.coverUrl)} alt="" loading="lazy" /> : '🎵'}
+                </span>
+                <span className="admin-music-text">
+                  <strong>{track.title}</strong>
+                  <small>{[track.artist, track.mood, formatMusicTime(track.duration)].filter(Boolean).join(' · ') || '未标注'}</small>
+                </span>
+                <span className={`admin-music-badge ${track.status === 'published' ? 'is-live' : ''}`}>
+                  {track.status === 'published' ? '已发布' : '草稿'}
+                </span>
+                <span className="admin-music-row-actions">
+                  <button type="button" onClick={() => toggleStatus(track)}>{track.status === 'published' ? '下架' : '发布'}</button>
+                  <button type="button" className="is-danger" onClick={() => removeTrack(track)}>删除</button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </>
+  )
+}
+
+// 播放器全局初始化放在最后执行：确保上面这些常量都已经就位。
+musicBootstrap()
+
 createRoot(document.getElementById('root')).render(
   <AppErrorBoundary>
     <AccessGate>
@@ -13167,4 +13857,3 @@ createRoot(document.getElementById('root')).render(
     </AccessGate>
   </AppErrorBoundary>
 )
-
