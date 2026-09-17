@@ -62,6 +62,40 @@ function rememberTransport(next) {
   safeSetItem(CLOUD_TRANSPORT_KEY, next)
 }
 
+// 图片是浏览器直接向 supabase.co 取的，不走上面的请求出口。
+// 如果数据换了线路、图片还指向原地址，就会出现“数据有了、图全是裂的”，所以一并改写。
+export function resolveCloudAssetUrl(url) {
+  if (typeof url !== 'string' || !url) return url
+  if (!canUseSameOriginProxy() || cloudTransport !== 'proxy') return url
+  if (url.indexOf(supabaseUrl) !== 0) return url
+  return `${window.location.origin}${CLOUD_PROXY_PREFIX}${url.slice(supabaseUrl.length)}`
+}
+
+// 写回数据库前还原成 Supabase 原始地址，避免把站点域名写进数据里。
+export function toCanonicalCloudUrl(url) {
+  if (typeof url !== 'string' || !url) return url
+  if (typeof window === 'undefined' || !supabaseUrl) return url
+  const prefix = `${window.location.origin}${CLOUD_PROXY_PREFIX}`
+  if (url.indexOf(prefix) !== 0) return url
+  return `${supabaseUrl}${url.slice(prefix.length)}`
+}
+
+// 夜读的图集藏在 gameConfig 里，一起处理，保证图片和数据走同一条线路。
+function mapCloudAssetUrls(gameConfig, mapper) {
+  if (!gameConfig || typeof gameConfig !== 'object') return gameConfig
+  const blocks = Array.isArray(gameConfig.blocks) ? gameConfig.blocks : null
+  const gallery = Array.isArray(gameConfig.gallery) ? gameConfig.gallery : null
+  if (!blocks && !gallery) return gameConfig
+  const next = { ...gameConfig }
+  if (blocks) {
+    next.blocks = blocks.map(block => (block && typeof block === 'object' && block.url) ? { ...block, url: mapper(block.url) } : block)
+  }
+  if (gallery) {
+    next.gallery = gallery.map(item => (typeof item === 'string' ? mapper(item) : item))
+  }
+  return next
+}
+
 // ---- 云端连接状态 ----
 // 只有连续失败到一定次数才广播“连不上”，避免一次网络抖动就冒提示；
 // 任意一次成功立刻恢复。连接正常时不会广播任何东西，页面完全无感。
@@ -461,12 +495,12 @@ function normalizeCloudTask(row) {
     prompt: row.prompt || '',
     secret: row.secret || '',
     answer: row.answer || '',
-    image: row.image || '',
-    memoryTitle: row.memory_title || '',
-    memoryCaption: row.memory_caption || '',
-    chatMessages: Array.isArray(row.chat_messages) ? row.chat_messages : [],
-    gameId: row.game_id || '',
-    gameConfig: row.game_config || {},
+      image: resolveCloudAssetUrl(row.image),
+      memoryTitle: row.memory_title || '',
+      memoryCaption: row.memory_caption || '',
+      chatMessages: Array.isArray(row.chat_messages) ? row.chat_messages : [],
+      gameId: row.game_id || '',
+      gameConfig: mapCloudAssetUrls(row.game_config || {}, resolveCloudAssetUrl),
     status: row.status || 'draft',
     updatedAt: row.updated_at || ''
   }
@@ -505,12 +539,12 @@ export async function saveCloudDailyTask(task) {
       prompt: task.prompt || '',
       secret: task.secret || '',
       answer: task.answer || '',
-      image: task.image || '',
+      image: toCanonicalCloudUrl(task.image) || '',
       memory_title: task.memoryTitle || '',
       memory_caption: task.memoryCaption || '',
       chat_messages: Array.isArray(task.chatMessages) ? task.chatMessages : [],
       game_id: task.gameId || '',
-      game_config: task.gameConfig || {},
+      game_config: mapCloudAssetUrls(task.gameConfig || {}, toCanonicalCloudUrl),
       status: task.status || 'draft',
       created_by: identity.role,
       updated_at: new Date().toISOString()
@@ -731,8 +765,8 @@ function normalizeMessageRow(row) {
     role: row.role,
     displayName: row.display_name,
     content: row.content,
-    imageUrl: row.image_url,
-    parentId: row.parent_id || null,
+      imageUrl: resolveCloudAssetUrl(row.image_url),
+      parentId: row.parent_id || null,
     createdAt: row.created_at
   }
 }
@@ -771,7 +805,7 @@ export async function saveCloudMessage({ content = '', imageUrl = '', parentId =
         role,
         display_name: String(displayName || ''),
         content: String(content || '').trim(),
-        image_url: String(imageUrl || ''),
+        image_url: String(toCanonicalCloudUrl(imageUrl) || ''),
         parent_id: parentId || null
       })
       .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
@@ -808,7 +842,7 @@ export async function updateCloudMessage(id, { content = '', imageUrl = '' }) {
   try {
     const supabase = await getSupabase()
     if (!supabase || !id) return { ok: false, error: '未连接云端' }
-    const payload = { content: String(content || '').trim(), image_url: String(imageUrl || '') }
+    const payload = { content: String(content || '').trim(), image_url: String(toCanonicalCloudUrl(imageUrl) || '') }
     const { data, error } = await supabase
       .from('wwcxrl_messages')
       .update(payload)
@@ -831,7 +865,7 @@ export async function updateCloudMessage(id, { content = '', imageUrl = '' }) {
         role: original.role,
         display_name: original.displayName,
         content: String(content || '').trim(),
-        image_url: String(imageUrl || ''),
+        image_url: String(toCanonicalCloudUrl(imageUrl) || ''),
         parent_id: original.parentId,
         created_at: original.createdAt
       })
