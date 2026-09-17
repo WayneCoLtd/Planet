@@ -12076,15 +12076,13 @@ function AdminTaskPage() {
           if (adminChecking) return
           setAdminChecking(true)
           setPasswordError('')
-          verifyAdminPassword(password).then(passed => {
+          verifyAdminPassword(password).then(result => {
             setAdminChecking(false)
-            if (passed) {
+            if (result.ok) {
               safeSetItem('wwcxrl-admin-ok', '1', 'sessionStorage')
               setOk(true)
             } else {
-              setPasswordError(import.meta.env.VITE_ADMIN_PASSWORD || !isLocalDevHost()
-                ? '密码不对哦'
-                : '本地开发：请在 .env.local 里设置 VITE_ADMIN_PASSWORD')
+              setPasswordError(result.error || '密码不对哦')
             }
           })
         }}>
@@ -12995,14 +12993,19 @@ async function callAccessApi(options = {}) {
 async function verifyAdminPassword(password) {
   if (isLocalDevHost()) {
     const local = import.meta.env.VITE_ADMIN_PASSWORD
-    return Boolean(local) && String(password) === String(local)
+    if (!local) return { ok: false, error: '本地开发：请在 .env.local 里设置 VITE_ADMIN_PASSWORD' }
+    return String(password) === String(local) ? { ok: true } : { ok: false, error: '密码不对哦' }
   }
   const result = await callAccessApi({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ password, scope: 'admin' })
   })
-  return result.reached && result.status === 200
+  if (!result.reached) return { ok: false, error: '连不上服务器，检查一下网络再试' }
+  if (result.status === 200) return { ok: true }
+  // 把服务端真正的原因显示出来：分清「密码不对」「还没过站点门」「试太多次被限速」，
+  // 而不是一律说成密码错误。
+  return { ok: false, error: (result.data && result.data.error) || '密码不对哦' }
 }
 
 // 密码门：通过之前不渲染站点的任何内容。
