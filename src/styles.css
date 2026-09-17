@@ -14596,7 +14596,8 @@ html { overflow-x: hidden; }
   }
   .checkin-layout.is-sidebar-collapsed,
   .checkin-layout.is-sidebar-collapsed:has(.type-serialRiddleFirework) {
-    grid-template-columns: 84px minmax(0, 1fr);
+    /* 96px：减去卡片内边距后还能容下「▶ 展开」不换行（原来的 84px 会被挤断行） */
+    grid-template-columns: 96px minmax(0, 1fr);
   }
   .checkin-layout > .calendar-card {
     position: sticky;
@@ -14644,17 +14645,21 @@ html { overflow-x: hidden; }
     box-shadow: 0 6px 14px rgba(255, 111, 145, .18);
     font-size: .9rem;
     font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
   }
   .calendar-card.is-collapsed {
     display: grid;
     justify-items: center;
     gap: 10px;
-    padding: 14px 10px;
+    padding: 14px 8px;
     overflow: hidden;
     max-height: none;
   }
   .calendar-card.is-collapsed .checkin-sidebar-toggle {
     margin: 0 auto 2px;
+    padding: 0 9px;
+    font-size: .82rem;
   }
   .checkin-sidebar-collapsed {
     display: grid;
@@ -15005,7 +15010,7 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   animation: musicDiscSpin 6.5s linear infinite;
 }
 .music-dock-label {
-  max-width: 150px;
+  max-width: 130px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -15022,15 +15027,22 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   right: 0;
   z-index: 90;
   width: min(380px, calc(100vw - 28px));
-  max-height: min(72vh, 620px);
-  overflow-y: auto;
-  padding: 16px;
+  padding: 0;
   border-radius: 26px;
   background: linear-gradient(150deg, rgba(255, 253, 244, .98), rgba(255, 240, 246, .96));
   border: 2px solid rgba(255, 255, 255, .92);
   box-shadow: 0 24px 60px rgba(122, 71, 31, .26);
   animation: musicPanelIn .22s cubic-bezier(.2, .9, .2, 1) both;
   text-align: left;
+}
+/* 内容单独滚动，这样面板顶部那个小箭头不会跟着滚走 */
+.music-panel-scroll {
+  max-height: min(72vh, 620px);
+  padding: 16px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  border-radius: inherit;
+  scrollbar-width: thin;
 }
 .music-panel-head {
   display: grid;
@@ -15074,13 +15086,21 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   white-space: nowrap;
 }
 .music-panel-close {
+  display: inline-grid;
+  place-items: center;
   width: 30px;
   height: 30px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   color: #8a684f;
   background: rgba(101, 63, 38, .08);
-  font-size: .85rem;
+  line-height: 1;
+  transition: background .16s ease, color .16s ease;
+}
+.music-panel-close:hover {
+  color: #7b4335;
+  background: rgba(255, 173, 73, .26);
 }
 .music-panel-error {
   margin: 0 0 10px;
@@ -15145,13 +15165,40 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   margin: 10px 0 12px;
 }
 .music-controls button {
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: rgba(101, 63, 38, .07);
   color: #7b4335;
   min-width: 40px;
   height: 40px;
-  font-size: 1rem;
+  line-height: 1;
+  transition: transform .16s ease, background .16s ease, box-shadow .16s ease;
+}
+.music-controls button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  background: rgba(255, 173, 73, .26);
+}
+.music-controls button:active:not(:disabled) {
+  transform: translateY(0) scale(.96);
+}
+.music-mode-glyph {
+  display: block;
+  font-size: .95rem;
+  line-height: 1;
+}
+.music-spinner {
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 2.5px solid rgba(123, 67, 53, .22);
+  border-top-color: #7b4335;
+  animation: musicSpinnerSpin .7s linear infinite;
+}
+@keyframes musicSpinnerSpin {
+  to { transform: rotate(360deg); }
 }
 .music-mode-button {
   min-width: 40px;
@@ -15159,9 +15206,12 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
 .music-play-button {
   min-width: 54px !important;
   height: 54px !important;
-  font-size: 1.35rem !important;
   background: linear-gradient(135deg, #ffe39a, #ffb0c8) !important;
   box-shadow: 0 10px 22px rgba(255, 111, 145, .26) !important;
+}
+.music-play-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #ffe9ad, #ffbcd0) !important;
+  box-shadow: 0 14px 28px rgba(255, 111, 145, .34) !important;
 }
 .music-volume {
   display: flex;
@@ -15508,13 +15558,21 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   position: absolute;
   top: 8px;
   right: 8px;
+  display: inline-grid;
+  place-items: center;
   width: 24px;
   height: 24px;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   color: #b09079;
   background: rgba(101, 63, 38, .07);
-  font-size: .7rem;
+  line-height: 1;
+  transition: background .16s ease, color .16s ease;
+}
+.music-request-list li > button:hover {
+  color: #c2485f;
+  background: rgba(255, 111, 145, .2);
 }
 .music-request-none {
   border-left-color: rgba(135, 84, 45, .18) !important;
@@ -15529,9 +15587,6 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   }
 }
 @media (max-width: 700px) {
-  .music-dock-label {
-    display: none;
-  }
   .music-dock-trigger {
     padding: 5px;
   }
@@ -15546,6 +15601,15 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   .music-track-list li button {
     padding: 10px;
     gap: 10px;
+  }
+}
+/* 导航项本来就多，窄一点的屏幕上只留那枚小唱片，不显示歌名，免得把导航挤到第二行 */
+@media (max-width: 1100px) {
+  .music-dock-label {
+    display: none;
+  }
+  .music-dock-trigger {
+    padding: 5px;
   }
 }
 
@@ -15631,4 +15695,272 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   .music-track-list li button {
     transition: none;
   }
+  .music-spinner {
+    animation-duration: 1.8s;
+  }
+}
+
+/* 键盘可达性：所有播放控件都要看得见焦点 */
+.music-dock-trigger:focus-visible,
+.music-controls button:focus-visible,
+.music-panel-close:focus-visible,
+.music-panel-list li button:focus-visible,
+.music-track-list li button:focus-visible,
+.music-request-roles button:focus-visible,
+.music-request-submit:focus-visible,
+.music-request-list li > button:focus-visible,
+.music-progress input[type='range']:focus-visible,
+.music-volume input[type='range']:focus-visible,
+.music-request-card textarea:focus-visible {
+  outline: 3px solid rgba(255, 143, 77, .85);
+  outline-offset: 2px;
+}
+.interstellar-voyage-theme .music-dock-trigger:focus-visible,
+.interstellar-voyage-theme .music-controls button:focus-visible,
+.interstellar-voyage-theme .music-panel-close:focus-visible,
+.interstellar-voyage-theme .music-panel-list li button:focus-visible,
+.interstellar-voyage-theme .music-track-list li button:focus-visible,
+.interstellar-voyage-theme .music-request-roles button:focus-visible,
+.interstellar-voyage-theme .music-request-submit:focus-visible,
+.interstellar-voyage-theme .music-request-list li > button:focus-visible,
+.interstellar-voyage-theme .music-request-card textarea:focus-visible {
+  outline-color: rgba(126, 246, 255, .9);
+}
+
+/* 面板上方的小箭头，让它是从顶栏那枚唱片「长出来」的 */
+.music-dock-panel::before {
+  content: '';
+  position: absolute;
+  top: -7px;
+  right: 22px;
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  background: inherit;
+  border-left: 2px solid rgba(255, 255, 255, .92);
+  border-top: 2px solid rgba(255, 255, 255, .92);
+  transform: rotate(45deg);
+}
+.interstellar-voyage-theme .music-dock-panel::before {
+  border-color: rgba(141, 242, 255, .26);
+}
+@media (max-width: 700px) {
+  .music-dock-panel::before {
+    right: 16px;
+  }
+}
+
+/* ===== 管理端「音乐管理」 ===== */
+.admin-block {
+  margin-bottom: clamp(16px, 2.4vw, 24px);
+  padding: clamp(18px, 2.6vw, 28px);
+}
+.admin-block h2 {
+  margin: 0 0 6px;
+  color: #653f26;
+  font-size: clamp(1.1rem, 2.4vw, 1.4rem);
+}
+.admin-hint {
+  margin: 0 0 16px;
+  color: #8a684f;
+  font-size: .86rem;
+  line-height: 1.7;
+}
+.admin-music-form {
+  display: grid;
+  gap: 12px;
+}
+.admin-music-form label {
+  display: grid;
+  gap: 6px;
+  color: #7b4335;
+  font-size: .88rem;
+  font-weight: 700;
+}
+.admin-music-form input[type='text'],
+.admin-music-form input:not([type]) {
+  padding: 11px 14px;
+  border: 2px solid rgba(135, 84, 45, .18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .86);
+  color: #653f26;
+}
+.admin-music-form label > input:not([type='file']),
+.admin-music-form label > input[type='text'] {
+  padding: 11px 14px;
+  border: 2px solid rgba(135, 84, 45, .18);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .86);
+  color: #653f26;
+  font-weight: 400;
+}
+.admin-music-form label > input:focus {
+  outline: none;
+  border-color: rgba(255, 143, 77, .6);
+  box-shadow: 0 0 0 4px rgba(255, 173, 73, .16);
+}
+.admin-music-form small {
+  color: #a98a72;
+  font-size: .76rem;
+  font-weight: 400;
+  line-height: 1.6;
+}
+.admin-music-form input[type='file'] {
+  padding: 10px 12px;
+  border: 2px dashed rgba(135, 84, 45, .3);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .6);
+  color: #8a684f;
+  font-size: .82rem;
+  font-weight: 400;
+  cursor: pointer;
+}
+.admin-music-form input[type='file']::file-selector-button {
+  margin-right: 12px;
+  padding: 7px 15px;
+  border: 0;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  font-weight: 900;
+  font-size: .82rem;
+  cursor: pointer;
+}
+.admin-music-form input[type='file']:hover {
+  border-color: rgba(255, 143, 77, .55);
+  background: rgba(255, 250, 232, .9);
+}
+.admin-music-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.admin-music-status {
+  margin: 0;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: #4c7a5c;
+  background: rgba(141, 231, 194, .28);
+  font-size: .84rem;
+}
+.admin-music-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+.admin-music-list li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 18px;
+  background: rgba(255, 253, 244, .8);
+  border: 2px solid rgba(255, 255, 255, .7);
+}
+.admin-music-cover {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #ffe9a8, #ffc9d8);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, .7);
+  font-size: 1.05rem;
+}
+.admin-music-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.admin-music-text {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.admin-music-text strong {
+  color: #653f26;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-music-text small {
+  color: #8a684f;
+  font-size: .78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.admin-music-badge {
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #8a684f;
+  background: rgba(101, 63, 38, .09);
+  font-size: .74rem;
+  white-space: nowrap;
+}
+.admin-music-badge.is-live {
+  color: #3f7a5c;
+  background: rgba(141, 231, 194, .34);
+}
+.admin-music-row-actions {
+  display: flex;
+  gap: 6px;
+}
+.admin-music-row-actions button {
+  padding: 6px 14px;
+  border: 0;
+  border-radius: 999px;
+  color: #7b4335;
+  background: linear-gradient(135deg, #fff2a8, #ffd4e2);
+  font-size: .78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.admin-music-row-actions button.is-danger {
+  color: #b3405a;
+  background: rgba(255, 214, 224, .7);
+}
+@media (max-width: 700px) {
+  .admin-music-list li {
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: 'cover text' 'badge actions';
+    row-gap: 10px;
+  }
+  .admin-music-cover { grid-area: cover; }
+  .admin-music-text { grid-area: text; }
+  .admin-music-badge { grid-area: badge; justify-self: start; }
+  .admin-music-row-actions { grid-area: actions; justify-self: end; }
+}
+.interstellar-voyage-theme .admin-block h2,
+.interstellar-voyage-theme .admin-music-text strong {
+  color: #eafcff;
+}
+.interstellar-voyage-theme .admin-music-form label {
+  color: #9fe6f5;
+}
+.interstellar-voyage-theme .admin-music-form label > input:not([type='file']),
+.interstellar-voyage-theme .admin-music-form input[type='text'] {
+  color: #eafcff;
+  background: rgba(6, 16, 36, .8);
+  border-color: rgba(141, 242, 255, .26);
+}
+.interstellar-voyage-theme .admin-music-list li {
+  background: rgba(12, 26, 52, .8);
+  border-color: rgba(141, 242, 255, .18);
+}
+.interstellar-voyage-theme .admin-music-form input[type='file'] {
+  color: #9fc4d8;
+  background: rgba(6, 16, 36, .6);
+  border-color: rgba(141, 242, 255, .3);
+}
+.admin-music-form label > input:focus-visible,
+.admin-music-form input[type='file']:focus-visible,
+.admin-music-row-actions button:focus-visible {
+  outline: 3px solid rgba(255, 143, 77, .85);
+  outline-offset: 2px;
 }

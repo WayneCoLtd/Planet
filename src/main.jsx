@@ -13428,6 +13428,36 @@ function musicNextMode(mode) {
   return MUSIC_MODES[(index + 1) % MUSIC_MODES.length].id
 }
 
+// 播放控件用内联 SVG，而不是 emoji 字形。
+// 原因：emoji（▶️ ⏸️ ⏮ ⏭）在不同系统上字号、基线、内边距都不一样，
+// 塞进圆形按钮里总会看着偏一点；SVG 靠网格居中，每个平台都精准对齐。
+function MusicIcon({ name, size = 18 }) {
+  const common = {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'currentColor',
+    'aria-hidden': 'true',
+    focusable: 'false'
+  }
+  if (name === 'play') {
+    return <svg {...common}><path d="M8.4 4.9c0-.9 1-1.5 1.8-1l10 6.1a1.2 1.2 0 0 1 0 2.1l-10 6.1c-.8.5-1.8-.1-1.8-1V4.9Z" /></svg>
+  }
+  if (name === 'pause') {
+    return <svg {...common}><rect x="6.6" y="4.6" width="4.1" height="14.8" rx="2" /><rect x="13.3" y="4.6" width="4.1" height="14.8" rx="2" /></svg>
+  }
+  if (name === 'prev') {
+    return <svg {...common}><rect x="4.1" y="4.6" width="2.9" height="14.8" rx="1.45" /><path d="M19.7 6.2v11.6a1 1 0 0 1-1.6.8l-8.3-5.8a1 1 0 0 1 0-1.6l8.3-5.8a1 1 0 0 1 1.6.8Z" /></svg>
+  }
+  if (name === 'next') {
+    return <svg {...common}><rect x="17" y="4.6" width="2.9" height="14.8" rx="1.45" /><path d="M4.3 6.2v11.6a1 1 0 0 0 1.6.8l8.3-5.8a1 1 0 0 0 0-1.6L5.9 5.4a1 1 0 0 0-1.6.8Z" /></svg>
+  }
+  if (name === 'close') {
+    return <svg {...common}><path d="M6.2 6.2a1.1 1.1 0 0 1 1.6 0L12 10.4l4.2-4.2a1.1 1.1 0 1 1 1.6 1.6L13.6 12l4.2 4.2a1.1 1.1 0 0 1-1.6 1.6L12 13.6l-4.2 4.2a1.1 1.1 0 0 1-1.6-1.6L10.4 12 6.2 7.8a1.1 1.1 0 0 1 0-1.6Z" /></svg>
+  }
+  return null
+}
+
 // 顶栏上的小控制：没在播时是一个安静的图标，在播时变成缓慢转动的小唱片。
 // 点开是从顶栏下方滑出的面板，不占页面底部、也不遮挡内容。
 function MusicDock() {
@@ -13470,6 +13500,7 @@ function MusicDock() {
 
       {open && (
         <div className="music-dock-panel" role="dialog" aria-label="播放器">
+          <div className="music-panel-scroll">
           <div className="music-panel-head">
             <span className="music-panel-cover" aria-hidden="true">
               {current && current.coverUrl ? <img src={musicPlayableUrl(current.coverUrl)} alt="" /> : <i>🎵</i>}
@@ -13478,7 +13509,7 @@ function MusicDock() {
               <strong>{current ? current.title : '还没选歌'}</strong>
               <small>{current ? (current.artist || current.mood || '我们的音乐室') : '去音乐室挑一首吧'}</small>
             </span>
-            <button type="button" className="music-panel-close" onClick={() => setOpen(false)} aria-label="收起播放器">✕</button>
+            <button type="button" className="music-panel-close" onClick={() => setOpen(false)} aria-label="收起播放器"><MusicIcon name="close" size={14} /></button>
           </div>
 
           {music.error && <p className="music-panel-error">{music.error}</p>}
@@ -13500,12 +13531,14 @@ function MusicDock() {
           </div>
 
           <div className="music-controls">
-            <button type="button" className="music-mode-button" onClick={() => musicSetMode(musicNextMode(music.mode))} title={mode.label} aria-label={`切换播放模式，当前${mode.label}`}>{mode.icon}</button>
-            <button type="button" className="music-step-button" onClick={() => musicPlayStep(-1)} disabled={!music.tracks.length} aria-label="上一首">⏮</button>
-            <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing ? '暂停' : '播放'}>
-              {music.loadingId ? '⋯' : (music.playing ? '⏸️' : '▶️')}
+            <button type="button" className="music-mode-button" onClick={() => musicSetMode(musicNextMode(music.mode))} title={mode.label} aria-label={`切换播放模式，当前${mode.label}`}>
+              <span className="music-mode-glyph" aria-hidden="true">{mode.icon}</span>
             </button>
-            <button type="button" className="music-step-button" onClick={() => musicPlayStep(1)} disabled={!music.tracks.length} aria-label="下一首">⏭</button>
+            <button type="button" className="music-step-button" onClick={() => musicPlayStep(-1)} disabled={!music.tracks.length} aria-label="上一首"><MusicIcon name="prev" /></button>
+            <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing ? '暂停' : '播放'}>
+              {music.loadingId ? <span className="music-spinner" aria-hidden="true" /> : <MusicIcon name={music.playing ? 'pause' : 'play'} size={22} />}
+            </button>
+            <button type="button" className="music-step-button" onClick={() => musicPlayStep(1)} disabled={!music.tracks.length} aria-label="下一首"><MusicIcon name="next" /></button>
             {volumeSupported ? (
               <span className="music-volume">
                 <span aria-hidden="true">🔊</span>
@@ -13533,6 +13566,7 @@ function MusicDock() {
           ) : (
             <p className="music-panel-empty">{music.loaded ? '曲库还是空的，先去管理页放一首吧。' : '正在加载曲库…'}</p>
           )}
+          </div>
         </div>
       )}
     </div>
@@ -13664,7 +13698,7 @@ function MusicRoom() {
               <li key={item.id} className={item.role === 'orange' ? 'is-orange' : 'is-pomelo'}>
                 <span className="music-request-who">{item.role === 'orange' ? '🌞' : '🌟'} {item.displayName}</span>
                 <p>{item.content}</p>
-                <button type="button" onClick={() => removeRequest(item.id)} aria-label="删除这条点歌">✕</button>
+                <button type="button" onClick={() => removeRequest(item.id)} aria-label="删除这条点歌"><MusicIcon name="close" size={11} /></button>
               </li>
             ))}
             {!requests.length && <li className="music-request-none">还没有人点歌，写第一条吧。</li>}
