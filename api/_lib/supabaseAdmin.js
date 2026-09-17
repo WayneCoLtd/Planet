@@ -14,7 +14,9 @@ export const MUSIC_BUCKET = 'wwcxrl-music'
 let cached = null
 
 export function getServiceRoleKey() {
-  return String(process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+  // WWCXRL_SERVICE_ROLE_KEY 是给「不想去动旧变量」准备的备用名：
+  // Vercel 里敏感变量的编辑入口不好找时，直接新增这一条即可，代码会优先用它。
+  return String(process.env.WWCXRL_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
 }
 
 export function isAdminConfigured() {
@@ -55,7 +57,10 @@ export function getSupabaseTargetInfo() {
 export function getServiceKeyInfo() {
   const key = getServiceRoleKey()
   if (!key) return { present: false }
-  const info = { present: true, length: key.length, shape: '未知形式' }
+  const envName = String(process.env.WWCXRL_SERVICE_ROLE_KEY || '').trim()
+    ? 'WWCXRL_SERVICE_ROLE_KEY'
+    : 'SUPABASE_SERVICE_ROLE_KEY'
+  const info = { present: true, envName, length: key.length, shape: '未知形式' }
   if (key.startsWith('sb_secret_')) {
     info.shape = 'sb_secret_（新版服务端密钥）'
   } else if (key.startsWith('sb_publishable_')) {
