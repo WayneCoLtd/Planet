@@ -14025,14 +14025,6 @@ html { overflow-x: hidden; }
   margin-left: auto;
   font-size: .72rem;
 }
-.message-comment-floor {
-  padding: 2px 8px;
-  border-radius: 999px;
-  color: #8a5a35;
-  background: linear-gradient(135deg, #fff1a8, #ffd9e5);
-  font-size: .72rem;
-  font-weight: 900;
-}
 .message-comment-target {
   padding: 2px 8px;
   border-radius: 999px;
@@ -14040,6 +14032,12 @@ html { overflow-x: hidden; }
   background: rgba(255, 255, 255, .78);
   border: 1px solid rgba(255, 159, 189, .34);
   font-size: .72rem;
+}
+/* 回复对象写在正文开头（参考小红书：「回复 某某：正文」），头部只留名字和时间 */
+.message-reply-prefix {
+  margin-right: 2px;
+  color: var(--rose);
+  font-weight: 700;
 }
 .message-comment-edit,
 .message-comment-delete {

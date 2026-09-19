@@ -10830,7 +10830,7 @@ function MessageBoard() {
       patchReply(targetId, { status: '写一句回复，或加一张照片吧 💬' })
       return
     }
-    patchReply(targetId, { sending: true, status: '正在盖楼…' })
+    patchReply(targetId, { sending: true, status: '正在发送…' })
     try {
       const resolved = await awaitWithReplyHint(targetId, resolveComposeImageUrls(items, role), '照片上传有点慢，再稍等一下…')
       if (!resolved.ok) {
@@ -10842,7 +10842,7 @@ function MessageBoard() {
           content: text,
           imageUrls: resolved.urls,
           parentId: targetId
-        }, sender), '盖楼有点慢，如果已经出现，说明成功了，稍后会自动刷新。')
+        }, sender), '发送有点慢，如果已经出现，说明成功了，稍后会自动刷新。')
         if (!saved?.ok) {
           patchReply(targetId, { status: `回复失败：${saved?.error || '请稍后再试。'}` })
           return
@@ -10864,13 +10864,13 @@ function MessageBoard() {
         saveMessagesLocal(next)
         setMessages(next)
       }
-      patchReply(targetId, { text: '', items: [], sender: role, status: '回复好啦 💬' })
+      patchReply(targetId, { text: '', items: [], sender: role, status: '评论好啦 💬' })
       // 新回复排在最后一条：把这一层展开，免得自己刚发出去的话正好落在折叠区里看不见
       setExpandedThreads(previous => new Set(previous).add(targetId))
       setReplyOpenId(null)
     } catch (error) {
       console.warn('[wwcxrl messages] comment send failed', error.message)
-      patchReply(targetId, { status: '回复寄出失败，请稍后再试。' })
+      patchReply(targetId, { status: '评论发送失败，请稍后再试。' })
     } finally {
       patchReply(targetId, { sending: false })
     }
@@ -11081,7 +11081,7 @@ function MessageBoard() {
           onChange={event => patchReply(targetId, { text: event.target.value })}
           rows={2}
           maxLength={500}
-          placeholder="写一句回复，也可以带上照片…"
+          placeholder="写一条评论，也可以带上照片…"
           aria-label={`回复 ${targetName}`}
         />
         <MessageImagePicker
@@ -11093,7 +11093,7 @@ function MessageBoard() {
         <div className="message-compose-bar message-comment-bar">
           <span className="message-compose-count">{textValue.length}/500</span>
           <button type="button" className="message-send message-comment-send" disabled={state.sending} onClick={() => sendComment(targetId)}>
-            {state.sending ? '盖楼中…' : '💬 回复'}
+            {state.sending ? '发送中…' : '💬 回复'}
           </button>
           <button type="button" className="message-comment-cancel" onClick={() => setReplyOpenId(null)}>收起</button>
         </div>
@@ -11162,7 +11162,6 @@ function MessageBoard() {
     const level = depth >= 2 ? 2 : 1
     const mine = comment.userId === senderUserId || !cloudEnabled
     const isEditingThis = inlineEdit?.id === comment.id
-    const childCount = countThreadReplies(node)
     const images = messageImageList(comment)
     return (
       <div className={`message-thread-node is-level-${level}`} key={comment.id}>
@@ -11170,24 +11169,26 @@ function MessageBoard() {
           <header className="message-comment-head">
             <span className="message-avatar">{comment.role === 'orange' ? '🌞' : '🌟'}</span>
             <strong>{nameOf(comment)}</strong>
-            {level === 1
-              ? <span className="message-comment-floor">{index + 1} 楼</span>
-              : <span className="message-comment-target">回复 {nameOf(parentMessage)}</span>}
             <time>{formatMessageTime(comment.createdAt)}</time>
             {mine && !isEditingThis && (
               <>
-                <button type="button" className="message-edit message-comment-edit" onClick={() => startCommentEdit(comment)} aria-label="编辑这层回复">✏️</button>
-                <button type="button" className="message-delete message-comment-delete" onClick={() => setCommentDeleteTarget(comment)} aria-label="删除这层回复">🗑</button>
+                <button type="button" className="message-edit message-comment-edit" onClick={() => startCommentEdit(comment)} aria-label="编辑这条评论">✏️</button>
+                <button type="button" className="message-delete message-comment-delete" onClick={() => setCommentDeleteTarget(comment)} aria-label="删除这条评论">🗑</button>
               </>
             )}
           </header>
           {isEditingThis ? renderInlineEditor() : (
             <>
               {images.length > 0 && <MessageMedia images={images} compact onOpen={openLightbox} />}
-              {comment.content && <p className="message-content">{comment.content}</p>}
+              {(comment.content || level >= 2) && (
+                <p className="message-content">
+                  {level >= 2 && <span className="message-reply-prefix">回复 {nameOf(parentMessage)}：</span>}
+                  {comment.content}
+                </p>
+              )}
               <div className="message-comment-actions">
                 <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(comment.id)}>
-                  {childCount ? `💬 回复 · ${childCount} 条` : '💬 回复'}
+                  💬 回复
                 </button>
               </div>
             </>
@@ -11230,17 +11231,17 @@ function MessageBoard() {
         )}
         <div className="message-thread">
           <div className="message-thread-head">
-            <span>💬 楼中楼</span>
-            <span>{totalReplies ? `${totalReplies} 条回复` : '还没有回复'}</span>
+            <span>💬 评论</span>
+            {totalReplies > 0 && <span>共 {totalReplies} 条评论</span>}
           </div>
           {node.children.length > 0
             ? <div className="message-thread-list">{renderReplyList(message.id, node.children, message, 1)}</div>
-            : <p className="message-comments-empty">还没有回复，来留第一层吧。</p>}
+            : <p className="message-comments-empty">还没有评论，来说第一句吧。</p>}
           {replyOpenId === message.id
             ? renderReplyComposer(message.id, nameOf(message), true)
             : (
               <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(message.id)}>
-                {totalReplies ? `💬 回复 · 已有 ${totalReplies} 条` : '💬 来盖第一楼'}
+                💬 回复
               </button>
             )}
         </div>
@@ -11324,7 +11325,7 @@ function MessageBoard() {
         <div className="message-confirm-backdrop" role="presentation" onClick={() => setCommentDeleteTarget(null)}>
           <div className="message-confirm-modal sticker-card" role="alertdialog" aria-modal="true" aria-labelledby="comment-confirm-title" onClick={event => event.stopPropagation()}>
             <span className="message-confirm-icon">🗑</span>
-            <h3 id="comment-confirm-title">删除这层回复？</h3>
+            <h3 id="comment-confirm-title">删除这条评论？</h3>
             <p>它下面的回复会一起删掉，原留言还会保留。确定要删除吗？</p>
             <div className="message-confirm-actions">
               <button type="button" className="message-confirm-cancel" onClick={() => setCommentDeleteTarget(null)}>再想想</button>
