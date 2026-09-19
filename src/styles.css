@@ -591,7 +591,10 @@
 }
 .content-section,
 .hero-section {
-  animation: wwcxrl-soft-page-in .46s cubic-bezier(.2,.78,.18,1) both;
+  /* 用 backwards 而不是 both：both 会把结束帧的 transform / filter 永久留在板块上，
+     而带 transform 或 filter 的祖先会接管 position: fixed，弹窗就会被摆到「整个板块的中心」，
+     页面越长越要往下翻很久才找得到。这里不需要保留结束帧，动画本身完全一样。 */
+  animation: wwcxrl-soft-page-in .46s cubic-bezier(.2,.78,.18,1) backwards;
 }
 @keyframes wwcxrl-soft-page-in {
   from { opacity: 0; transform: translateY(10px) scale(.992); filter: blur(3px); }
@@ -13358,7 +13361,7 @@ html { overflow-x: hidden; }
 .message-confirm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 70;
+  z-index: 2500;
   display: grid;
   place-items: center;
   padding: 20px;
@@ -14133,7 +14136,7 @@ html { overflow-x: hidden; }
 .message-lightbox {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: 2510;
   display: grid;
   place-items: center;
   padding: 18px;

@@ -11275,7 +11275,7 @@ function MessageBoard() {
         ) : thread.roots.map(node => renderRootCard(node))}
       </div>
 
-      {deleteTarget && (
+      {deleteTarget && typeof document !== 'undefined' && createPortal(
         <div className="message-confirm-backdrop" role="presentation" onClick={() => setDeleteTarget(null)}>
           <div className="message-confirm-modal sticker-card" role="alertdialog" aria-modal="true" aria-labelledby="message-confirm-title" onClick={event => event.stopPropagation()}>
             <span className="message-confirm-icon">🗑</span>
@@ -11286,9 +11286,10 @@ function MessageBoard() {
               <button type="button" className="message-confirm-ok" onClick={() => { removeMessage(deleteTarget); setDeleteTarget(null) }}>确认删除</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-      {commentDeleteTarget && (
+      {commentDeleteTarget && typeof document !== 'undefined' && createPortal(
         <div className="message-confirm-backdrop" role="presentation" onClick={() => setCommentDeleteTarget(null)}>
           <div className="message-confirm-modal sticker-card" role="alertdialog" aria-modal="true" aria-labelledby="comment-confirm-title" onClick={event => event.stopPropagation()}>
             <span className="message-confirm-icon">🗑</span>
@@ -11299,15 +11300,17 @@ function MessageBoard() {
               <button type="button" className="message-confirm-ok" onClick={() => { removeComment(commentDeleteTarget); setCommentDeleteTarget(null) }}>确认删除</button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
-      {lightbox && (
+      {lightbox && typeof document !== 'undefined' && createPortal(
         <MessageLightbox
           images={lightbox.images}
           index={lightbox.index}
           onClose={() => setLightbox(null)}
           onChangeIndex={next => setLightbox(previous => (previous ? { ...previous, index: next } : previous))}
-        />
+        />,
+        document.body
       )}
     </section>
   )
