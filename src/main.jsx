@@ -10779,11 +10779,17 @@ function MessageBoard() {
 
   // 收起时页面会变矮，若不补偿，视口就等于顺势跳到了更靠下的位置，
   // 要往回翻才能找回刚刚那条帖子之后的内容。
+  // 展开时反过来不补：新出现的回复正好顶在按钮原来的位置，
+  // 下面的内容顺势下移才是自然预期，补偿反而会把视口甩到很远的下方。
   function toggleThreadExpanded(parentId, buttonEl) {
-    const listEl = buttonEl?.closest?.('.message-thread-list, .message-thread-children')
-    const anchorEl = listEl ? findScrollAnchorElement(listEl) : null
-    if (anchorEl) {
-      pendingScrollAnchorRef.current = { el: anchorEl, top: anchorEl.getBoundingClientRect().top }
+    if (expandedThreads.has(parentId)) {
+      const listEl = buttonEl?.closest?.('.message-thread-list, .message-thread-children')
+      const anchorEl = listEl ? findScrollAnchorElement(listEl) : null
+      if (anchorEl) {
+        pendingScrollAnchorRef.current = { el: anchorEl, top: anchorEl.getBoundingClientRect().top }
+      }
+    } else {
+      pendingScrollAnchorRef.current = null
     }
     setExpandedThreads(previous => {
       const next = new Set(previous)
