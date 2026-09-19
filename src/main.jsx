@@ -10593,14 +10593,9 @@ function MessageBoard() {
   // 折叠/展开会改变页面高度：记下「被折叠区域之后的内容」，改完 DOM 后把它钉回原来的屏幕位置。
   const pendingScrollAnchorRef = React.useRef(null)
   const refreshInFlightRef = React.useRef(false)
-  const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
-  const [senderRole, setSenderRole] = useState(() => {
-    try {
-      return localStorage.getItem('wwcxrl-message-sender-role') || identity?.role || 'pomelo'
-    } catch {
-      return 'pomelo'
-    }
-  })
+  // 进小信箱时的默认署名固定是小琳（🌟）：不沿用上次切换过的身份。
+  // 这样小琳打开就能直接发言；小琛自己点一下「🌞 小琛」就能切过去。
+  const [senderRole, setSenderRole] = useState('pomelo')
   const senderName = senderRole === 'orange' ? '小琛' : '小琳'
   const senderUserId = `wwcxrl-${senderRole}-main`
   const thread = React.useMemo(() => buildMessageThread(messages), [messages])
