@@ -10590,6 +10590,8 @@ function MessageBoard() {
   // 评论就地编辑：{ id, text, items, saving, status }
   const [inlineEdit, setInlineEdit] = useState(null)
   const [lightbox, setLightbox] = useState(null)
+  // 折叠/展开会改变页面高度：记下「被折叠区域之后的内容」，改完 DOM 后把它钉回原来的屏幕位置。
+  const pendingScrollAnchorRef = React.useRef(null)
   const refreshInFlightRef = React.useRef(false)
   const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
   const [senderRole, setSenderRole] = useState(() => {
@@ -10653,6 +10655,17 @@ function MessageBoard() {
       window.clearInterval(timer)
     }
   }, [refresh])
+
+  // 折叠/展开提交后，把锚点元素拉回原来的屏幕位置：
+  // 页面高度变化不会再把视口甩到别的楼层去。
+  React.useLayoutEffect(() => {
+    const pending = pendingScrollAnchorRef.current
+    if (!pending) return
+    pendingScrollAnchorRef.current = null
+    if (!pending.el || !pending.el.isConnected) return
+    const delta = pending.el.getBoundingClientRect().top - pending.top
+    if (Math.abs(delta) > 0.5) window.scrollBy(0, delta)
+  }, [expandedThreads])
 
   // 选照片：先压缩再进草稿（本地模式的数据全存在 localStorage 里，原图很容易把存储写满）
   async function addComposeImages(files, currentItems, apply) {
@@ -10753,7 +10766,25 @@ function MessageBoard() {
     setReplyState(previous => (previous[targetId] ? previous : { ...previous, [targetId]: { sender: senderRole, status: '' } }))
   }
 
-  function toggleThreadExpanded(parentId) {
+  function findScrollAnchorElement(listEl) {
+    let node = listEl
+    while (node) {
+      if (node.nextElementSibling) return node.nextElementSibling
+      const parent = node.parentElement
+      if (!parent || parent === document.body) return null
+      node = parent
+    }
+    return null
+  }
+
+  // 收起时页面会变矮，若不补偿，视口就等于顺势跳到了更靠下的位置，
+  // 要往回翻才能找回刚刚那条帖子之后的内容。
+  function toggleThreadExpanded(parentId, buttonEl) {
+    const listEl = buttonEl?.closest?.('.message-thread-list, .message-thread-children')
+    const anchorEl = listEl ? findScrollAnchorElement(listEl) : null
+    if (anchorEl) {
+      pendingScrollAnchorRef.current = { el: anchorEl, top: anchorEl.getBoundingClientRect().top }
+    }
     setExpandedThreads(previous => {
       const next = new Set(previous)
       if (next.has(parentId)) next.delete(parentId)
@@ -11114,12 +11145,12 @@ function MessageBoard() {
       <>
         {visible.map((node, index) => renderReplyNode(node, index, parentMessage, depth))}
         {hiddenCount > 0 && (
-          <button type="button" className="message-thread-more" onClick={() => toggleThreadExpanded(parentId)}>
+          <button type="button" className="message-thread-more" onClick={event => toggleThreadExpanded(parentId, event.currentTarget)}>
             {hiddenCount >= MESSAGE_REPLY_MANY ? `展开更多回复（还有 ${hiddenCount} 条）` : `展开 ${hiddenCount} 条回复`}
           </button>
         )}
         {expanded && nodes.length > MESSAGE_REPLY_PREVIEW && (
-          <button type="button" className="message-thread-more is-collapse" onClick={() => toggleThreadExpanded(parentId)}>收起回复</button>
+          <button type="button" className="message-thread-more is-collapse" onClick={event => toggleThreadExpanded(parentId, event.currentTarget)}>收起回复</button>
         )}
       </>
     )
