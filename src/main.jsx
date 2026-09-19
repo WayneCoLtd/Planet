@@ -10834,6 +10834,8 @@ function MessageBoard() {
         setMessages(next)
       }
       patchReply(targetId, { text: '', items: [], sender: role, status: '回复好啦 💬' })
+      // 新回复排在最后一条：把这一层展开，免得自己刚发出去的话正好落在折叠区里看不见
+      setExpandedThreads(previous => new Set(previous).add(targetId))
       setReplyOpenId(null)
     } catch (error) {
       console.warn('[wwcxrl messages] comment send failed', error.message)
@@ -11101,15 +11103,16 @@ function MessageBoard() {
     )
   }
 
-  // 折叠规则：默认只显示最新 MESSAGE_REPLY_PREVIEW 条；
+  // 折叠规则：按时间顺序显示最早的 MESSAGE_REPLY_PREVIEW 条，后面的折起来；
   // 折叠得多就写「展开更多回复」，只剩几条时写「展开 N 条回复」。
   function renderReplyList(parentId, nodes, parentMessage, depth) {
     if (!nodes.length) return null
     const expanded = expandedThreads.has(parentId)
     const hiddenCount = expanded ? 0 : Math.max(0, nodes.length - MESSAGE_REPLY_PREVIEW)
-    const visible = expanded ? nodes : nodes.slice(-MESSAGE_REPLY_PREVIEW)
+    const visible = expanded ? nodes : nodes.slice(0, MESSAGE_REPLY_PREVIEW)
     return (
       <>
+        {visible.map((node, index) => renderReplyNode(node, index, parentMessage, depth))}
         {hiddenCount > 0 && (
           <button type="button" className="message-thread-more" onClick={() => toggleThreadExpanded(parentId)}>
             {hiddenCount >= MESSAGE_REPLY_MANY ? `展开更多回复（还有 ${hiddenCount} 条）` : `展开 ${hiddenCount} 条回复`}
@@ -11118,7 +11121,6 @@ function MessageBoard() {
         {expanded && nodes.length > MESSAGE_REPLY_PREVIEW && (
           <button type="button" className="message-thread-more is-collapse" onClick={() => toggleThreadExpanded(parentId)}>收起回复</button>
         )}
-        {visible.map((node, index) => renderReplyNode(node, index, parentMessage, depth))}
       </>
     )
   }
