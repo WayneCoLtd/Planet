@@ -13125,11 +13125,17 @@ html { overflow-x: hidden; }
   font-size: .9rem;
   font-weight: 900;
 }
-.message-image-preview {
+.message-picker {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.message-picker-thumb {
   position: relative;
   display: inline-flex;
 }
-.message-image-preview img {
+.message-picker-thumb img {
   width: 72px;
   height: 72px;
   object-fit: cover;
@@ -13137,7 +13143,19 @@ html { overflow-x: hidden; }
   border: 2px solid #fff;
   box-shadow: 0 8px 16px rgba(112, 70, 36, .18);
 }
-.message-image-preview button {
+.message-picker-cover {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(60, 34, 20, .5);
+  font-size: .64rem;
+  font-style: normal;
+  font-weight: 900;
+}
+.message-picker-thumb button {
   position: absolute;
   top: -6px;
   right: -6px;
@@ -13149,6 +13167,11 @@ html { overflow-x: hidden; }
   background: #ff6f91;
   font-size: .68rem;
   line-height: 1;
+}
+.message-picker-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
 }
 .message-compose-count {
   margin-left: auto;
@@ -13235,32 +13258,102 @@ html { overflow-x: hidden; }
   white-space: pre-wrap;
   word-break: break-word;
 }
-.message-image {
-  width: min(100%, 360px);
-  border-radius: 16px;
-  border: 2px solid #fff;
-  box-shadow: 0 10px 22px rgba(112, 70, 36, .18);
-}
 .message-body {
   display: grid;
   gap: 10px;
 }
-.message-body.has-both {
-  grid-template-columns: minmax(150px, 210px) 1fr;
-  align-items: start;
+/* 单图：按原比例完整显示，不裁切 */
+.message-media.is-single {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  justify-self: start;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: zoom-in;
 }
-.message-body.has-both .message-image {
+.message-media.is-single img {
+  display: block;
+  width: auto;
+  max-width: min(100%, 420px);
+  max-height: min(56vh, 420px);
+  object-fit: contain;
+  border-radius: 16px;
+  border: 2px solid #fff;
+  box-shadow: 0 10px 22px rgba(112, 70, 36, .18);
+}
+.message-media.is-single.is-compact img {
+  max-width: min(100%, 300px);
+  max-height: min(42vh, 300px);
+}
+/* 多图：横向滑动的相册 + 张数角标 + 小圆点 */
+.message-media.is-gallery {
+  position: relative;
   width: 100%;
-  max-height: 220px;
+}
+.message-media-track {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  border-radius: 16px;
+}
+.message-media-track::-webkit-scrollbar {
+  display: none;
+}
+.message-media-slide {
+  flex: 0 0 min(78%, 320px);
+  aspect-ratio: 4 / 5;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 2px solid #fff;
+  background: #fff;
+  box-shadow: 0 10px 22px rgba(112, 70, 36, .16);
+  scroll-snap-align: center;
+  cursor: zoom-in;
+}
+.message-media.is-compact .message-media-slide {
+  flex-basis: min(70%, 240px);
+}
+.message-media-slide img {
+  display: block;
+  width: 100%;
+  height: 100%;
   object-fit: cover;
 }
-.message-body.has-both .message-content {
-  margin: 0;
-  padding: 12px 14px;
-  border-radius: 16px 16px 16px 4px;
-  background: linear-gradient(135deg, #fffdf6, #fff2f6);
-  border: 1px dashed rgba(255, 111, 145, .32);
-  box-shadow: 0 8px 18px rgba(112, 70, 36, .08);
+.message-media-counter {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(60, 34, 20, .55);
+  font-size: .72rem;
+  font-weight: 900;
+}
+.message-media-dots {
+  display: flex;
+  justify-content: center;
+  gap: 5px;
+  margin-top: 7px;
+}
+.message-media-dots i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(255, 111, 145, .28);
+}
+.message-media-dots i.is-active {
+  width: 16px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ffb46b, #ff6f91);
 }
 .message-confirm-backdrop {
   position: fixed;
@@ -13325,8 +13418,9 @@ html { overflow-x: hidden; }
   .message-compose-count {
     margin-left: 0;
   }
-  .message-body.has-both {
-    grid-template-columns: 1fr;
+  .message-picker-thumb img {
+    width: 62px;
+    height: 62px;
   }
 }
 
@@ -13833,15 +13927,17 @@ html { overflow-x: hidden; }
   border-radius: 14px;
 }
 
-/* ===== 小信箱：楼中楼评论 ===== */
-.message-comments {
+/* ===== 小信箱：楼中楼（一级不缩进 / 更深一级缩进 / 折叠展开） ===== */
+.message-thread {
   display: grid;
-  gap: 8px;
-  margin-top: 4px;
-  padding-top: 10px;
-  border-top: 1px dashed rgba(255, 159, 189, .28);
+  gap: 10px;
+  margin-top: 6px;
+  padding: 12px 14px 14px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, .5);
+  border: 1px solid rgba(255, 159, 189, .22);
 }
-.message-comments-head {
+.message-thread-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -13849,7 +13945,7 @@ html { overflow-x: hidden; }
   color: var(--soft-ink);
   font-size: .82rem;
 }
-.message-comments-head span:first-child {
+.message-thread-head span:first-child {
   font-weight: 900;
   color: var(--rose);
 }
@@ -13859,22 +13955,46 @@ html { overflow-x: hidden; }
   font-size: .84rem;
   line-height: 1.6;
 }
-.message-comment {
+.message-thread-list,
+.message-thread-children {
   display: grid;
   gap: 8px;
-  padding: 10px 12px;
-  border-radius: 16px;
-  background: rgba(255, 255, 255, .56);
-  border: 1px solid rgba(255, 159, 189, .2);
-  box-shadow: 0 6px 14px rgba(112, 70, 36, .06);
 }
-.message-comment.is-orange {
-  background: rgba(255, 245, 226, .72);
-  border-color: rgba(255, 173, 77, .26);
+/* 同一层里，上一条和下一条之间用一条发丝线分开，不再糊成一片 */
+.message-thread-list > .message-thread-node + .message-thread-node,
+.message-thread-children > .message-thread-node + .message-thread-node {
+  margin-top: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 159, 189, .24);
 }
-.message-comment.is-pomelo {
-  background: rgba(255, 241, 246, .72);
-  border-color: rgba(255, 159, 189, .24);
+/* 二级及更深的回复：缩进一级，并用一条浅色竖线表示从属关系 */
+.message-thread-children {
+  margin: 8px 0 2px 10px;
+  padding-left: 10px;
+  border-left: 2px solid rgba(255, 159, 189, .3);
+}
+.message-thread-more {
+  justify-self: start;
+  padding: 4px 12px;
+  border-radius: 999px;
+  color: #8a5a35;
+  background: rgba(255, 255, 255, .74);
+  border: 1px dashed rgba(255, 159, 189, .5);
+  box-shadow: none;
+  font-size: .8rem;
+  font-weight: 700;
+}
+.message-thread-more:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 14px rgba(255, 111, 145, .12);
+}
+.message-thread-more.is-collapse {
+  color: var(--soft-ink);
+  border-style: solid;
+}
+.message-comment {
+  display: grid;
+  gap: 6px;
 }
 .message-comment-head {
   display: flex;
@@ -13888,6 +14008,12 @@ html { overflow-x: hidden; }
 .message-comment-head strong {
   font-size: .9rem;
 }
+.message-comment.is-orange .message-comment-head strong {
+  color: #b06a25;
+}
+.message-comment.is-pomelo .message-comment-head strong {
+  color: #c04a76;
+}
 .message-comment-head time {
   margin-left: auto;
   font-size: .72rem;
@@ -13900,13 +14026,27 @@ html { overflow-x: hidden; }
   font-size: .72rem;
   font-weight: 900;
 }
+.message-comment-target {
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: #7b4335;
+  background: rgba(255, 255, 255, .78);
+  border: 1px solid rgba(255, 159, 189, .34);
+  font-size: .72rem;
+}
+.message-comment-edit,
 .message-comment-delete {
   padding: 3px 6px;
   font-size: .76rem;
 }
+.message-comment-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
 .message-comment-reply {
   justify-self: start;
-  padding: 7px 13px;
+  padding: 6px 12px;
   border-radius: 999px;
   color: #7b4335;
   background: linear-gradient(135deg, #fff7d9, #ffe7f0);
@@ -13918,7 +14058,8 @@ html { overflow-x: hidden; }
   transform: translateY(-1px);
   box-shadow: 0 6px 14px rgba(255, 111, 145, .14);
 }
-.message-comment-compose {
+.message-comment-compose,
+.message-inline-editor {
   display: grid;
   gap: 10px;
   padding: 12px;
@@ -13941,7 +14082,8 @@ html { overflow-x: hidden; }
   padding: 5px 11px;
   font-size: .8rem;
 }
-.message-comment-compose textarea {
+.message-comment-compose textarea,
+.message-inline-editor textarea {
   width: 100%;
   min-height: 72px;
   resize: vertical;
@@ -13954,15 +14096,23 @@ html { overflow-x: hidden; }
   line-height: 1.7;
   outline: none;
 }
-.message-comment-compose textarea:focus {
+.message-comment-compose textarea:focus,
+.message-inline-editor textarea:focus {
   border-color: rgba(255, 111, 145, .68);
   box-shadow: 0 0 0 3px rgba(255, 159, 189, .18);
+}
+.message-comment-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 .message-comment-bar .message-image-button {
   padding: 7px 12px;
   font-size: .84rem;
 }
 .message-comment-bar .message-compose-count {
+  margin-left: auto;
   font-size: .78rem;
 }
 .message-comment-send {
@@ -13979,46 +14129,103 @@ html { overflow-x: hidden; }
   font-size: .84rem;
 }
 
-/* ===== 留言 / 评论：图文并存时的协调排版 ===== */
-.message-body.has-both {
-  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
-  align-items: center;
-  gap: clamp(12px, 2.2vw, 20px);
-  padding: 12px;
-  border-radius: 18px;
-  background: rgba(255, 255, 255, .52);
+/* ===== 小信箱：点开看大图 ===== */
+.message-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(28, 16, 10, .78);
+  backdrop-filter: blur(4px);
 }
-.message-body.has-both .message-image {
+.message-lightbox-inner {
+  position: relative;
+  display: grid;
+  place-items: center;
+  max-width: min(96vw, 900px);
+  max-height: 92vh;
+}
+.message-lightbox-inner img {
   display: block;
-  width: auto;
   max-width: 100%;
-  max-height: min(58vh, 440px);
-  aspect-ratio: auto;
-  object-fit: contain;
-  margin-inline: auto;
-  border-radius: 14px;
+  max-height: 86vh;
+  border-radius: 16px;
+  box-shadow: 0 30px 70px rgba(0, 0, 0, .45);
 }
-.message-body.comment-message-body.has-both {
-  padding: 10px;
+.message-lightbox-close,
+.message-lightbox-nav {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  color: #fff;
+  background: rgba(255, 255, 255, .18);
+  border: 1px solid rgba(255, 255, 255, .3);
+  box-shadow: none;
 }
-.message-body.comment-message-body.has-both .message-image {
-  max-height: min(52vh, 340px);
+.message-lightbox-close {
+  top: -14px;
+  right: -6px;
+  width: 34px;
+  height: 34px;
+  font-size: .9rem;
 }
-.message-body.has-both .message-content {
-  min-width: 0;
+.message-lightbox-nav {
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  transform: translateY(-50%);
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.message-lightbox-nav.is-prev {
+  left: 8px;
+}
+.message-lightbox-nav.is-next {
+  right: 8px;
+}
+.message-lightbox-nav:hover,
+.message-lightbox-close:hover {
+  transform: none;
+}
+.message-lightbox-nav:hover {
+  transform: translateY(-50%);
+}
+.message-lightbox-nav:disabled {
+  opacity: .28;
+}
+.message-lightbox-counter {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 12px;
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(0, 0, 0, .45);
+  font-size: .78rem;
 }
 
 @media (max-width: 640px) {
-  .message-body.has-both {
-    grid-template-columns: 1fr;
-    align-items: start;
+  .message-thread {
+    padding: 10px 10px 12px;
+    border-radius: 16px;
   }
-  .message-body.has-both .message-image {
-    width: auto;
-    max-width: min(100%, 320px);
-    margin-inline: auto;
+  .message-thread-children {
+    margin-left: 4px;
+    padding-left: 8px;
   }
-  .message-comment-compose textarea {
+  .message-media-slide {
+    flex-basis: 80%;
+  }
+  .message-media.is-compact .message-media-slide {
+    flex-basis: 78%;
+  }
+  .message-comment-compose textarea,
+  .message-inline-editor textarea {
     min-height: 64px;
   }
 }

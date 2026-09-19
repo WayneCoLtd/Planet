@@ -617,6 +617,12 @@ function resizeImageFile(file, maxSide = 1200, quality = 0.84) {
   })
 }
 
+// 选图时先用同一套规则压一遍：本地模式的数据全存在 localStorage 里，
+// 原图直接塞进去很容易把存储写满（之后所有读写都会失败）。
+export function compressImageFile(file, maxSide = 1200, quality = 0.84) {
+  return resizeImageFile(file, maxSide, quality)
+}
+
 export async function uploadCloudTaskImage(file, day) {
   try {
     const { supabase, identity } = await ensureProfile()
@@ -767,16 +773,94 @@ export async function saveCloudMeetingDates({ next = '', past = [] }) {
 }
 
 // ============ 留言板（wwcxrl_messages）：异地想对对方说的话 ============
+// 多图存在 image_urls(jsonb)；线上库若还没执行多图 SQL，下面的读写会自动退回 image_url 单图，
+// 保证“留言板整块打不开”这种事不会发生。
+const MESSAGE_COLUMNS_LEGACY = 'id,user_id,role,display_name,content,image_url,parent_id,created_at'
+const MESSAGE_COLUMNS = 'id,user_id,role,display_name,content,image_url,image_urls,parent_id,created_at'
+const MESSAGE_MAX_IMAGES = 9
+const MESSAGE_MULTI_IMAGE_HINT = '这条带了多张照片，但线上库还没开启多图字段。请在 Supabase SQL Editor 执行 image_urls 那一句 SQL，然后再发一次。'
+
+// null = 还没探测过；true/false = 线上库是否已支持 image_urls
+let messageMultiImageSupported = null
+
+export function isMessageMultiImageReady() {
+  return messageMultiImageSupported !== false
+}
+
+// PostgREST 在“列不存在”时会给 42703 / PGRST204，并把列名写进 message，
+// 这里统一识别，避免把可降级的问题报成“留言加载失败”。
+function isMissingMessageImageColumn(error) {
+  if (!error) return false
+  const text = `${error.code || ''} ${error.message || ''} ${error.details || ''} ${error.hint || ''}`
+  return text.includes('image_urls') || text.includes('42703') || text.includes('PGRST204')
+}
+
+function parseImageUrlList(raw) {
+  const list = []
+  const push = value => {
+    if (typeof value !== 'string') return
+    const text = value.trim()
+    if (text) list.push(text)
+  }
+  if (Array.isArray(raw)) raw.forEach(push)
+  else if (typeof raw === 'string' && raw.trim().charAt(0) === '[') {
+    // 兜底形态：有人把数组当字符串存了。解析失败就按单张图处理。
+    try {
+      const parsed = JSON.parse(raw)
+      if (Array.isArray(parsed)) parsed.forEach(push)
+      else push(raw)
+    } catch {
+      push(raw)
+    }
+  } else push(raw)
+  return list
+}
+
+function uniqueImageUrls(list = []) {
+  return list.filter((url, index) => list.indexOf(url) === index)
+}
+
+// 读：image_urls 优先，image_url 兜底；两种都归一成 images 数组，渲染层只认 images。
 function normalizeMessageRow(row) {
+  const canonical = parseImageUrlList(row.image_urls).map(url => toCanonicalCloudUrl(url))
+  const legacy = parseImageUrlList(row.image_url).map(url => toCanonicalCloudUrl(url))
+  const images = uniqueImageUrls([...canonical, ...legacy])
+    .slice(0, MESSAGE_MAX_IMAGES)
+    .map(url => resolveCloudAssetUrl(url))
+    .filter(Boolean)
   return {
     id: row.id,
     userId: row.user_id,
     role: row.role,
     displayName: row.display_name,
     content: row.content,
-      imageUrl: resolveCloudAssetUrl(row.image_url),
-      parentId: row.parent_id || null,
+    images,
+    imageUrl: images[0] || '',
+    parentId: row.parent_id || null,
     createdAt: row.created_at
+  }
+}
+
+function normalizeOutgoingImageUrls({ imageUrl = '', imageUrls = null }) {
+  const raw = Array.isArray(imageUrls) ? imageUrls : (imageUrls ? [imageUrls] : [])
+  return uniqueImageUrls([...raw, imageUrl].map(url => toCanonicalCloudUrl(url)).filter(Boolean))
+    .slice(0, MESSAGE_MAX_IMAGES)
+}
+
+function messagePayload({ content = '', imageUrls = [] }) {
+  const list = imageUrls.slice(0, MESSAGE_MAX_IMAGES)
+  return {
+    content: String(content || '').trim(),
+    // image_url 保留第一张：老客户端、老代码、SQL 直查都还能看到一张图。
+    image_url: list[0] || '',
+    image_urls: list
+  }
+}
+
+function messagePayloadLegacy({ content = '', imageUrls = [] }) {
+  return {
+    content: String(content || '').trim(),
+    image_url: imageUrls[0] || ''
   }
 }
 
@@ -784,11 +868,18 @@ export async function loadCloudMessages() {
   try {
     const supabase = await getSupabase()
     if (!supabase) return null
-    const { data, error } = await supabase
+    const runQuery = columns => supabase
       .from('wwcxrl_messages')
-      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
+      .select(columns)
       .order('created_at', { ascending: false })
       .limit(500)
+    let { data, error } = await runQuery(MESSAGE_COLUMNS)
+    if (error && isMissingMessageImageColumn(error)) {
+      messageMultiImageSupported = false
+      ;({ data, error } = await runQuery(MESSAGE_COLUMNS_LEGACY))
+    } else if (!error) {
+      messageMultiImageSupported = true
+    }
     if (error) {
       console.warn('[wwcxrl cloud] messages load failed', error.message)
       return null
@@ -800,25 +891,43 @@ export async function loadCloudMessages() {
   }
 }
 
-export async function saveCloudMessage({ content = '', imageUrl = '', parentId = null }, sender = null) {
+export async function saveCloudMessage({ content = '', imageUrl = '', imageUrls = null, parentId = null }, sender = null) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return { ok: false, error: '未连接云端' }
     const role = sender?.role || identity.role
     const userId = sender?.userId || identity.id
     const displayName = sender?.displayName || identity.displayName
-    const { data, error } = await supabase
+    const list = normalizeOutgoingImageUrls({ imageUrl, imageUrls })
+    if (list.length > 1 && messageMultiImageSupported === false) {
+      return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
+    }
+    const base = {
+      user_id: userId,
+      role,
+      display_name: String(displayName || ''),
+      parent_id: parentId || null
+    }
+    let { data, error } = await supabase
       .from('wwcxrl_messages')
       .insert({
-        user_id: userId,
-        role,
-        display_name: String(displayName || ''),
-        content: String(content || '').trim(),
-        image_url: String(toCanonicalCloudUrl(imageUrl) || ''),
-        parent_id: parentId || null
+        ...base,
+        ...messagePayload({ content, imageUrls: list })
       })
-      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
+      .select(MESSAGE_COLUMNS)
       .single()
+    if (error && isMissingMessageImageColumn(error)) {
+      messageMultiImageSupported = false
+      if (list.length > 1) return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
+      ;({ data, error } = await supabase
+        .from('wwcxrl_messages')
+        .insert({
+          ...base,
+          ...messagePayloadLegacy({ content, imageUrls: list })
+        })
+        .select(MESSAGE_COLUMNS_LEGACY)
+        .single())
+    }
     if (error) {
       console.warn('[wwcxrl cloud] message save failed', error.message)
       return { ok: false, error: error.message }
@@ -834,11 +943,18 @@ async function loadCloudMessageById(id) {
   try {
     const supabase = await getSupabase()
     if (!supabase || !id) return null
-    const { data, error } = await supabase
+    let { data, error } = await supabase
       .from('wwcxrl_messages')
-      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
+      .select(MESSAGE_COLUMNS)
       .eq('id', id)
       .maybeSingle()
+    if (error && isMissingMessageImageColumn(error)) {
+      ;({ data, error } = await supabase
+        .from('wwcxrl_messages')
+        .select(MESSAGE_COLUMNS_LEGACY)
+        .eq('id', id)
+        .maybeSingle())
+    }
     if (error || !data) return null
     return normalizeMessageRow(data)
   } catch (error) {
@@ -847,17 +963,26 @@ async function loadCloudMessageById(id) {
   }
 }
 
-export async function updateCloudMessage(id, { content = '', imageUrl = '' }) {
+export async function updateCloudMessage(id, { content = '', imageUrl = '', imageUrls = null }) {
   try {
     const supabase = await getSupabase()
     if (!supabase || !id) return { ok: false, error: '未连接云端' }
-    const payload = { content: String(content || '').trim(), image_url: String(toCanonicalCloudUrl(imageUrl) || '') }
-    const { data, error } = await supabase
+    const list = normalizeOutgoingImageUrls({ imageUrl, imageUrls })
+    if (list.length > 1 && messageMultiImageSupported === false) {
+      return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
+    }
+    const runUpdate = (payload, columns) => supabase
       .from('wwcxrl_messages')
       .update(payload)
       .eq('id', id)
-      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
+      .select(columns)
       .maybeSingle()
+    let { data, error } = await runUpdate(messagePayload({ content, imageUrls: list }), MESSAGE_COLUMNS)
+    if (error && isMissingMessageImageColumn(error)) {
+      messageMultiImageSupported = false
+      if (list.length > 1) return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
+      ;({ data, error } = await runUpdate(messagePayloadLegacy({ content, imageUrls: list }), MESSAGE_COLUMNS_LEGACY))
+    }
     if (!error && data) return { ok: true, message: normalizeMessageRow(data) }
     // 老库可能缺少 update 策略：改用“删除旧行 + 原样重插”兜底（保留发送人与时间），
     // 这样即使不改 Supabase 策略，修改也能真正写进云端，而不是刷新后消失。
@@ -866,20 +991,33 @@ export async function updateCloudMessage(id, { content = '', imageUrl = '' }) {
     if (!original) return { ok: false, error: error?.message || '未找到这条留言' }
     const { error: deleteError } = await supabase.from('wwcxrl_messages').delete().eq('id', id)
     if (deleteError) return { ok: false, error: deleteError.message }
-    const { data: inserted, error: insertError } = await supabase
+    // 重插沿用原 id：这条留言下面的所有回复仍然挂在同一个 parent_id 上，不会掉。
+    const fallbackBase = {
+      id: original.id,
+      user_id: original.userId,
+      role: original.role,
+      display_name: original.displayName,
+      parent_id: original.parentId,
+      created_at: original.createdAt
+    }
+    let { data: inserted, error: insertError } = await supabase
       .from('wwcxrl_messages')
       .insert({
-        id: original.id,
-        user_id: original.userId,
-        role: original.role,
-        display_name: original.displayName,
-        content: String(content || '').trim(),
-        image_url: String(toCanonicalCloudUrl(imageUrl) || ''),
-        parent_id: original.parentId,
-        created_at: original.createdAt
+        ...fallbackBase,
+        ...messagePayload({ content, imageUrls: list })
       })
-      .select('id,user_id,role,display_name,content,image_url,parent_id,created_at')
+      .select(MESSAGE_COLUMNS)
       .single()
+    if (insertError && isMissingMessageImageColumn(insertError)) {
+      ;({ data: inserted, error: insertError } = await supabase
+        .from('wwcxrl_messages')
+        .insert({
+          ...fallbackBase,
+          ...messagePayloadLegacy({ content, imageUrls: list })
+        })
+        .select(MESSAGE_COLUMNS_LEGACY)
+        .single())
+    }
     if (insertError) return { ok: false, error: insertError.message }
     return { ok: true, message: normalizeMessageRow(inserted) }
   } catch (error) {
@@ -892,21 +1030,50 @@ export async function deleteCloudMessage(id) {
   try {
     const { supabase } = await ensureProfile()
     if (!supabase || !id) return false
-    // 先清理这条留言下面的“楼中楼”评论，再删主留言；
-    // 即使线上库还没建外键/级联，也不会留下孤儿评论。
-    const { data: replies, error: repliesError } = await supabase
+    // 楼中楼可以有多级：先把这条以及它下面所有层级的回复收集出来，再一起删除，
+    // 否则删掉中间某一层，更深的回复就会变成孤儿。
+    let descendantIds = []
+    const { data: rows, error: rowsError } = await supabase
       .from('wwcxrl_messages')
-      .select('id')
-      .eq('parent_id', id)
-      .limit(1000)
-    if (!repliesError && Array.isArray(replies) && replies.length) {
+      .select('id,parent_id')
+      .limit(5000)
+    if (!rowsError && Array.isArray(rows)) {
+      const childrenByParent = new Map()
+      rows.forEach(row => {
+        if (!row.parent_id || row.id === id) return
+        const list = childrenByParent.get(row.parent_id) || []
+        list.push(row.id)
+        childrenByParent.set(row.parent_id, list)
+      })
+      const seen = new Set([id])
+      const queue = [id]
+      while (queue.length && descendantIds.length < 2000) {
+        const current = queue.shift()
+        ;(childrenByParent.get(current) || []).forEach(childId => {
+          if (seen.has(childId)) return
+          seen.add(childId)
+          descendantIds.push(childId)
+          queue.push(childId)
+        })
+      }
+    } else {
+      // 拿不到全量关系时退回「至少删掉直接子级」，比留下孤儿好。
+      const { data: direct, error: directError } = await supabase
+        .from('wwcxrl_messages')
+        .select('id')
+        .eq('parent_id', id)
+        .limit(1000)
+      if (directError) console.warn('[wwcxrl cloud] message children load failed', directError.message)
+      descendantIds = (direct || []).map(row => row.id)
+    }
+    const chunkSize = 100
+    for (let index = 0; index < descendantIds.length; index += chunkSize) {
+      const chunk = descendantIds.slice(index, index + chunkSize)
       const { error: childDeleteError } = await supabase
         .from('wwcxrl_messages')
         .delete()
-        .in('id', replies.map(reply => reply.id))
-      if (childDeleteError) {
-        console.warn('[wwcxrl cloud] message children delete failed', childDeleteError.message)
-      }
+        .in('id', chunk)
+      if (childDeleteError) console.warn('[wwcxrl cloud] message children delete failed', childDeleteError.message)
     }
     const { error } = await supabase.from('wwcxrl_messages').delete().eq('id', id)
     if (error) {
@@ -927,7 +1094,9 @@ export async function uploadMessageImage(file, role = null) {
     const dataUrl = await resizeImageFile(file)
     const blob = dataUrlToBlob(dataUrl)
     const safeName = String(file.name || 'message.jpg').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-40)
-    const path = `message-images/${role || identity.role}-${Date.now()}-${safeName}.jpg`
+    // 多图是连续上传，同一毫秒内可能出现同名文件，这里加随机后缀避免互相覆盖。
+    const unique = Math.random().toString(36).slice(2, 8)
+    const path = `message-images/${role || identity.role}-${Date.now()}-${unique}-${safeName}.jpg`
     const { error: uploadError } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
       contentType: 'image/jpeg',
       upsert: true
@@ -939,6 +1108,22 @@ export async function uploadMessageImage(file, role = null) {
     console.warn('[wwcxrl cloud] message image upload failed', error)
     return { ok: false, error: error.message || '图片上传失败' }
   }
+}
+
+// 一次上传多张：逐张进行，失败时明确告诉用户是第几张出的问题，
+// 已经传成功的图片地址一并返回，方便上层决定是否继续保存文字。
+export async function uploadMessageImages(files, role = null) {
+  const list = (Array.isArray(files) ? files : [files]).filter(Boolean)
+  if (!list.length) return { ok: true, urls: [] }
+  const urls = []
+  for (let index = 0; index < list.length; index += 1) {
+    const result = await uploadMessageImage(list[index], role)
+    if (!result?.ok) {
+      return { ok: false, error: `第 ${index + 1} 张照片上传失败：${result?.error || '请稍后再试。'}`, urls }
+    }
+    urls.push(result.url)
+  }
+  return { ok: true, urls }
 }
 
 // ============ 网站建议箱（wwcxrl_feedback）：给小琳/小琛提网站建设建议 ============

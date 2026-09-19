@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
 import { changelog } from './data/changelog'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog, getCloudStatus, resolveCloudAssetUrl } from './cloud'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, compressImageFile, isMessageMultiImageReady, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog, getCloudStatus, resolveCloudAssetUrl } from './cloud'
 import { installStorageGuard, safeGetItem, safeSetItem, safeRemoveItem } from './safeStorage'
 import './styles.css'
 
@@ -10388,24 +10388,208 @@ function MeetingCountdownCalendar() {
   )
 }
 
-// ---- 异地留言板：文字 + 图片，同步到双方设备 ----
+// ---- 小信箱：多图 + 楼中楼（一级不缩进 / 更深一级缩进 / 折叠展开） ----
+const MESSAGE_IMAGE_LIMIT = 9
+// 每个父节点默认显示最新几条回复，其余折叠起来
+const MESSAGE_REPLY_PREVIEW = 2
+// 折叠数量达到这个数，按钮文案换成「展开更多回复」
+const MESSAGE_REPLY_MANY = 5
+
+// 一条留言/评论的照片列表：新数据是 images 数组，老数据和老缓存只有 imageUrl。
+function messageImageList(item) {
+  if (!item) return []
+  if (Array.isArray(item.images) && item.images.length) return item.images.filter(Boolean).slice(0, MESSAGE_IMAGE_LIMIT)
+  return item.imageUrl ? [item.imageUrl] : []
+}
+
+function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onerror = reject
+    reader.onload = () => resolve(reader.result)
+    reader.readAsDataURL(file)
+  })
+}
+
+// 把扁平的 parent_id 列表拼成楼中楼树。
+// 关键点：父级不在当前列表里的回复会被单独拎成顶层卡片，绝不吞数据。
+function buildMessageThread(messages = []) {
+  const childrenByParent = new Map()
+  messages.forEach(item => {
+    if (!item || !item.parentId) return
+    const list = childrenByParent.get(item.parentId) || []
+    list.push(item)
+    childrenByParent.set(item.parentId, list)
+  })
+  childrenByParent.forEach(list => list.sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || ''))))
+  const placed = new Set()
+  const makeNode = (message, depth) => {
+    if (!message || placed.has(message.id)) return null
+    placed.add(message.id)
+    const children = (childrenByParent.get(message.id) || [])
+      .map(child => makeNode(child, depth + 1))
+      .filter(Boolean)
+    return { message, depth, children }
+  }
+  const roots = messages
+    .filter(item => item && !item.parentId)
+    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')))
+    .map(root => makeNode(root, 0))
+    .filter(Boolean)
+  messages
+    .filter(item => item && item.parentId && !placed.has(item.id))
+    .forEach(orphan => {
+      const node = makeNode(orphan, 0)
+      if (!node) return
+      node.detached = true
+      roots.push(node)
+    })
+  return { roots }
+}
+
+function countThreadReplies(node) {
+  if (!node) return 0
+  return node.children.reduce((sum, child) => sum + 1 + countThreadReplies(child), 0)
+}
+
+// 选图区：缩略图（可单张删除）+ 一个「加照片」按钮，支持一次选多张。
+function MessageImagePicker({ items = [], onAdd, onRemove, disabled = false }) {
+  const inputRef = React.useRef(null)
+  return (
+    <div className="message-picker">
+      {items.map((item, index) => (
+        <span className="message-picker-thumb" key={item.key}>
+          <img src={item.dataUrl || item.url} alt={`已选第 ${index + 1} 张照片`} />
+          {index === 0 && items.length > 1 && <em className="message-picker-cover">封面</em>}
+          {!disabled && (
+            <button type="button" onClick={() => onRemove(item.key)} aria-label={`移除第 ${index + 1} 张照片`}>✕</button>
+          )}
+        </span>
+      ))}
+      {!disabled && items.length < MESSAGE_IMAGE_LIMIT && (
+        <>
+          <button type="button" className="message-image-button message-picker-add" onClick={() => inputRef.current?.click()}>
+            📷 {items.length ? `再加照片（${items.length}/${MESSAGE_IMAGE_LIMIT}）` : '加照片'}
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            hidden
+            onChange={event => {
+              onAdd(Array.from(event.target.files || []))
+              event.target.value = ''
+            }}
+          />
+        </>
+      )}
+    </div>
+  )
+}
+
+// 图片区：单图按原比例显示；多图是横向滑动相册（右下角张数角标 + 底部小圆点），点开看大图。
+function MessageMedia({ images = [], compact = false, onOpen }) {
+  const list = images.filter(Boolean).slice(0, MESSAGE_IMAGE_LIMIT)
+  const [activeIndex, setActiveIndex] = useState(0)
+  if (!list.length) return null
+
+  if (list.length === 1) {
+    return (
+      <button
+        type="button"
+        className={`message-media is-single ${compact ? 'is-compact' : ''}`}
+        onClick={() => onOpen(list, 0)}
+        aria-label="查看大图"
+      >
+        <img src={list[0]} alt="配图" loading="lazy" />
+      </button>
+    )
+  }
+
+  function handleScroll(event) {
+    const track = event.currentTarget
+    const slideWidth = track.scrollWidth / list.length
+    if (!slideWidth) return
+    const next = Math.max(0, Math.min(list.length - 1, Math.round(track.scrollLeft / slideWidth)))
+    if (next !== activeIndex) setActiveIndex(next)
+  }
+
+  return (
+    <div className={`message-media is-gallery ${compact ? 'is-compact' : ''}`}>
+      <div className="message-media-track" onScroll={handleScroll}>
+        {list.map((url, index) => (
+          <button
+            type="button"
+            key={`slide-${index}-${String(url).slice(-24)}`}
+            className="message-media-slide"
+            onClick={() => onOpen(list, index)}
+            aria-label={`查看第 ${index + 1} 张图片`}
+          >
+            <img src={url} alt={`第 ${index + 1} 张配图`} loading="lazy" />
+          </button>
+        ))}
+      </div>
+      <span className="message-media-counter" aria-hidden="true">{activeIndex + 1}/{list.length}</span>
+      <span className="message-media-dots" aria-hidden="true">
+        {list.map((url, index) => <i key={`dot-${index}`} className={index === activeIndex ? 'is-active' : ''} />)}
+      </span>
+    </div>
+  )
+}
+
+// 大图查看：左右切换、Esc 关闭、点背景关闭。
+function MessageLightbox({ images = [], index = 0, onClose, onChangeIndex }) {
+  React.useEffect(() => {
+    function onKey(event) {
+      if (event.key === 'Escape') onClose()
+      else if (event.key === 'ArrowRight' && index < images.length - 1) onChangeIndex(index + 1)
+      else if (event.key === 'ArrowLeft' && index > 0) onChangeIndex(index - 1)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [images.length, index, onClose, onChangeIndex])
+
+  const current = images[index] || images[0]
+  if (!current) return null
+  return (
+    <div className="message-lightbox" role="dialog" aria-modal="true" aria-label="查看大图" onClick={onClose}>
+      <div className="message-lightbox-inner" onClick={event => event.stopPropagation()}>
+        <img src={current} alt={`第 ${index + 1} 张图片`} />
+        {images.length > 1 && (
+          <>
+            <button type="button" className="message-lightbox-nav is-prev" disabled={index === 0} onClick={() => onChangeIndex(index - 1)} aria-label="上一张">‹</button>
+            <button type="button" className="message-lightbox-nav is-next" disabled={index === images.length - 1} onClick={() => onChangeIndex(index + 1)} aria-label="下一张">›</button>
+            <span className="message-lightbox-counter">{index + 1}/{images.length}</span>
+          </>
+        )}
+        <button type="button" className="message-lightbox-close" onClick={onClose} aria-label="关闭大图">✕</button>
+      </div>
+    </div>
+  )
+}
+
+// ---- 异地留言板：文字 + 多图，同步到双方设备 ----
 function MessageBoard() {
   // 本地优先渲染：先显示本机缓存，云端回来后自动覆盖成最新列表，
   // 避免云端慢/挂起时信箱看起来像“从未用过”。
   const [messages, setMessages] = useState(() => loadMessagesLocal())
   const [content, setContent] = useState('')
-  const [imageData, setImageData] = useState(null)
+  // 草稿里的照片：{ key, file, dataUrl }；编辑已有留言时是 { key, file: null, dataUrl, url }
+  const [composeItems, setComposeItems] = useState([])
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
-  const [replyOpenRootId, setReplyOpenRootId] = useState(null)
-  const [replyDrafts, setReplyDrafts] = useState({})
-  const [replyImages, setReplyImages] = useState({})
-  const [replySenders, setReplySenders] = useState({})
-  const [replySendingRootId, setReplySendingRootId] = useState(null)
-  const [replyStatusByRoot, setReplyStatusByRoot] = useState({})
   const [commentDeleteTarget, setCommentDeleteTarget] = useState(null)
+  // 回复草稿：按「被回复的那条」存，主留言和评论共用同一套
+  const [replyOpenId, setReplyOpenId] = useState(null)
+  const [replyState, setReplyState] = useState({})
+  // 点过「展开」的节点
+  const [expandedThreads, setExpandedThreads] = useState(() => new Set())
+  // 评论就地编辑：{ id, text, items, saving, status }
+  const [inlineEdit, setInlineEdit] = useState(null)
+  const [lightbox, setLightbox] = useState(null)
   const refreshInFlightRef = React.useRef(false)
   const identity = typeof window !== 'undefined' ? getCloudIdentity() : null
   const [senderRole, setSenderRole] = useState(() => {
@@ -10417,20 +10601,17 @@ function MessageBoard() {
   })
   const senderName = senderRole === 'orange' ? '小琛' : '小琳'
   const senderUserId = `wwcxrl-${senderRole}-main`
-  const rootMessages = React.useMemo(() => messages
-    .filter(item => !item.parentId)
-    .sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))), [messages])
-  const commentsByRootId = React.useMemo(() => {
-    const grouped = {}
-    messages
-      .filter(item => Boolean(item.parentId))
-      .sort((a, b) => String(a.createdAt || '').localeCompare(String(b.createdAt || '')))
-      .forEach(item => {
-        grouped[item.parentId] = grouped[item.parentId] || []
-        grouped[item.parentId].push(item)
-      })
-    return grouped
-  }, [messages])
+  const thread = React.useMemo(() => buildMessageThread(messages), [messages])
+  // 每个节点下面有多少条回复（含更深层级），用来显示「N 条回复」
+  const replyTotals = React.useMemo(() => {
+    const totals = new Map()
+    const walk = node => {
+      totals.set(node.message.id, countThreadReplies(node))
+      node.children.forEach(walk)
+    }
+    thread.roots.forEach(root => walk(root))
+    return totals
+  }, [thread])
 
   // 云端请求偶尔会很慢：超过 18 秒就换一条提示，避免一直卡在“正在寄出…”，但不会中断请求造成重复发送
   function awaitWithSlowHint(promise, slowText) {
@@ -10473,35 +10654,91 @@ function MessageBoard() {
     }
   }, [refresh])
 
-  function handleFile(file) {
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => setImageData({ file, dataUrl: reader.result, name: file.name })
-    reader.readAsDataURL(file)
+  // 选照片：先压缩再进草稿（本地模式的数据全存在 localStorage 里，原图很容易把存储写满）
+  async function addComposeImages(files, currentItems, apply) {
+    const incoming = Array.from(files || []).filter(file => file && String(file.type || '').startsWith('image/'))
+    if (!incoming.length) return
+    const room = Math.max(0, MESSAGE_IMAGE_LIMIT - currentItems.length)
+    if (!room) {
+      setStatus(`一条最多放 ${MESSAGE_IMAGE_LIMIT} 张照片哦`)
+      return
+    }
+    const accepted = []
+    for (const file of incoming.slice(0, room)) {
+      const key = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      try {
+        accepted.push({ key, file, dataUrl: await compressImageFile(file) })
+      } catch (error) {
+        // canvas 解不开的格式（比如某些 HEIC）用原图兜底，至少不会选不上
+        try {
+          accepted.push({ key, file, dataUrl: await fileToDataUrl(file) })
+        } catch {}
+      }
+    }
+    if (!accepted.length) return
+    apply([...currentItems, ...accepted])
+    if (incoming.length > room) setStatus(`最多放 ${MESSAGE_IMAGE_LIMIT} 张照片，多出来的没有加进来`)
+  }
+
+  // 把草稿里的照片换成能入库的地址：新选的先上传，已有的原样带回
+  async function resolveComposeImageUrls(items, role) {
+    const urls = []
+    for (let index = 0; index < items.length; index += 1) {
+      const item = items[index]
+      if (!item) continue
+      if (item.file && cloudEnabled) {
+        const upload = await uploadMessageImage(item.file, role)
+        if (!upload?.ok) {
+          return { ok: false, error: `第 ${index + 1} 张照片上传失败：${upload?.error || '请稍后再试。'}` }
+        }
+        urls.push(upload.url)
+      } else {
+        const url = item.url || item.dataUrl || ''
+        if (url) urls.push(url)
+      }
+    }
+    return { ok: true, urls }
   }
 
   function startEdit(message) {
+    setInlineEdit(null)
     setEditingId(message.id)
     setContent(message.content || '')
-    setImageData(message.imageUrl ? { file: null, dataUrl: message.imageUrl, name: '' } : null)
+    setComposeItems(messageImageList(message).map((url, index) => ({
+      key: `keep-${index}-${String(url).slice(-16)}`,
+      file: null,
+      dataUrl: url,
+      url
+    })))
     setStatus('')
   }
 
   function cancelEdit() {
     setEditingId(null)
     setContent('')
-    setImageData(null)
+    setComposeItems([])
     setStatus('')
   }
 
-  function setReplyStatus(rootId, text) {
-    setReplyStatusByRoot(previous => ({ ...previous, [rootId]: text }))
+  function replyOf(targetId) {
+    return {
+      text: '',
+      items: [],
+      sender: senderRole,
+      sending: false,
+      status: '',
+      ...(replyState[targetId] || {})
+    }
   }
 
-  function awaitWithReplyHint(rootId, promise, slowText) {
+  function patchReply(targetId, patch) {
+    setReplyState(previous => ({ ...previous, [targetId]: { ...previous[targetId], ...patch } }))
+  }
+
+  function awaitWithReplyHint(targetId, promise, slowText) {
     let settled = false
     const timer = window.setTimeout(() => {
-      if (!settled) setReplyStatus(rootId, slowText)
+      if (!settled) patchReply(targetId, { status: slowText })
     }, 18000)
     return Promise.resolve(promise).finally(() => {
       settled = true
@@ -10509,113 +10746,186 @@ function MessageBoard() {
     })
   }
 
-  function getReplySender(rootId) {
-    const role = replySenders[rootId] || senderRole
-    return {
-      role,
-      name: role === 'orange' ? '小琛' : '小琳',
-      userId: `wwcxrl-${role}-main`
-    }
+  // 回复的对象可以是主留言，也可以是任意一层评论；再点一次收起。
+  function toggleReplyComposer(targetId) {
+    setInlineEdit(null)
+    setReplyOpenId(previous => (previous === targetId ? null : targetId))
+    setReplyState(previous => (previous[targetId] ? previous : { ...previous, [targetId]: { sender: senderRole, status: '' } }))
   }
 
-  function changeReplySender(rootId, role) {
-    setReplySenders(previous => ({ ...previous, [rootId]: role }))
-  }
-
-  function toggleReplyComposer(message) {
-    if (!message || message.parentId) return
-    if (replyOpenRootId === message.id) {
-      setReplyOpenRootId(null)
-      return
-    }
-    setReplyOpenRootId(message.id)
-    setReplySenders(previous => previous[message.id] ? previous : { ...previous, [message.id]: senderRole })
-    setReplyStatusByRoot(previous => ({ ...previous, [message.id]: '' }))
-  }
-
-  function handleReplyFile(rootId, file) {
-    if (!file) return
-    const reader = new FileReader()
-    reader.onload = () => setReplyImages(previous => ({ ...previous, [rootId]: { file, dataUrl: reader.result, name: file.name } }))
-    reader.readAsDataURL(file)
-  }
-
-  function removeReplyImage(rootId) {
-    setReplyImages(previous => {
-      const next = { ...previous }
-      delete next[rootId]
+  function toggleThreadExpanded(parentId) {
+    setExpandedThreads(previous => {
+      const next = new Set(previous)
+      if (next.has(parentId)) next.delete(parentId)
+      else next.add(parentId)
       return next
     })
   }
 
-  async function sendComment(rootId) {
-    const rootMessage = messages.find(item => item.id === rootId && !item.parentId)
-    if (!rootMessage) return
-    const sender = getReplySender(rootId)
-    const text = String(replyDrafts[rootId] || '').trim()
-    const image = replyImages[rootId] || null
-    if (!text && !image) {
-      setReplyStatus(rootId, '写一句评论，或选一张照片吧 💬')
+  function openLightbox(images, index) {
+    if (!images?.length) return
+    setLightbox({ images, index })
+  }
+
+  // 删中间某一层时，把它的子回复一起收进来，避免删完还剩一堆孤儿
+  function collectDescendantIds(id) {
+    const ids = new Set([id])
+    let changed = true
+    while (changed) {
+      changed = false
+      messages.forEach(item => {
+        if (item.parentId && ids.has(item.parentId) && !ids.has(item.id)) {
+          ids.add(item.id)
+          changed = true
+        }
+      })
+    }
+    return ids
+  }
+
+  async function sendComment(targetId) {
+    const target = messages.find(item => item.id === targetId)
+    if (!target) return
+    const state = replyOf(targetId)
+    const role = state.sender || senderRole
+    const sender = {
+      role,
+      name: role === 'orange' ? '小琛' : '小琳',
+      userId: `wwcxrl-${role}-main`
+    }
+    const text = String(state.text || '').trim()
+    const items = state.items || []
+    if (!text && !items.length) {
+      patchReply(targetId, { status: '写一句回复，或加一张照片吧 💬' })
       return
     }
-    setReplySendingRootId(rootId)
-    setReplyStatus(rootId, '正在盖楼…')
+    patchReply(targetId, { sending: true, status: '正在盖楼…' })
     try {
+      const resolved = await awaitWithReplyHint(targetId, resolveComposeImageUrls(items, role), '照片上传有点慢，再稍等一下…')
+      if (!resolved.ok) {
+        patchReply(targetId, { status: resolved.error })
+        return
+      }
       if (cloudEnabled) {
-        let imageUrl = ''
-        if (image?.file) {
-          const upload = await awaitWithReplyHint(rootId, uploadMessageImage(image.file, sender.role), '照片上传有点慢，再稍等一下…')
-          if (!upload?.ok) {
-            setReplyStatus(rootId, `评论照片失败：${upload?.error || '请稍后再试。'}`)
-            return
-          }
-          imageUrl = upload.url
-        }
-        const saved = await awaitWithReplyHint(rootId, saveCloudMessage({
+        const saved = await awaitWithReplyHint(targetId, saveCloudMessage({
           content: text,
-          imageUrl,
-          parentId: rootId
-        }, { role: sender.role, userId: sender.userId, displayName: sender.name }), '盖楼有点慢，如果已经出现，说明成功了，稍后会自动刷新。')
+          imageUrls: resolved.urls,
+          parentId: targetId
+        }, sender), '盖楼有点慢，如果已经出现，说明成功了，稍后会自动刷新。')
         if (!saved?.ok) {
-          setReplyStatus(rootId, `评论失败：${saved?.error || '请稍后再试。'}`)
+          patchReply(targetId, { status: `回复失败：${saved?.error || '请稍后再试。'}` })
           return
         }
         setMessages(previous => [saved.message, ...previous.filter(item => item.id !== saved.message.id)])
-        setReplyStatus(rootId, '评论盖好一层啦 💬')
       } else {
         const localComment = {
           id: `local-comment-${Date.now()}`,
-          parentId: rootId,
+          parentId: targetId,
           userId: sender.userId,
           role: sender.role,
           displayName: sender.name,
           content: text,
-          imageUrl: image?.dataUrl || '',
+          images: resolved.urls,
+          imageUrl: resolved.urls[0] || '',
           createdAt: new Date().toISOString()
         }
         const next = [localComment, ...loadMessagesLocal()]
         saveMessagesLocal(next)
         setMessages(next)
-        setReplyStatus(rootId, '已经盖上一层楼啦 💬')
       }
-      setReplyDrafts(previous => ({ ...previous, [rootId]: '' }))
-      removeReplyImage(rootId)
+      patchReply(targetId, { text: '', items: [], sender: role, status: '回复好啦 💬' })
+      setReplyOpenId(null)
     } catch (error) {
       console.warn('[wwcxrl messages] comment send failed', error.message)
-      setReplyStatus(rootId, '评论寄出失败，请稍后再试。')
+      patchReply(targetId, { status: '回复寄出失败，请稍后再试。' })
     } finally {
-      setReplySendingRootId(null)
+      patchReply(targetId, { sending: false })
+    }
+  }
+
+  // 评论就地编辑：二级及更深的回复都能改文字和照片，不用删了重发。
+  function startCommentEdit(comment) {
+    setReplyOpenId(null)
+    setInlineEdit({
+      id: comment.id,
+      text: comment.content || '',
+      items: messageImageList(comment).map((url, index) => ({
+        key: `keep-${index}-${String(url).slice(-16)}`,
+        file: null,
+        dataUrl: url,
+        url
+      })),
+      saving: false,
+      status: ''
+    })
+  }
+
+  function cancelCommentEdit() {
+    setInlineEdit(null)
+  }
+
+  async function saveCommentEdit() {
+    if (!inlineEdit) return
+    const comment = messages.find(item => item.id === inlineEdit.id)
+    if (!comment) {
+      setInlineEdit(null)
+      return
+    }
+    const text = String(inlineEdit.text || '').trim()
+    const items = inlineEdit.items || []
+    if (!text && !items.length) {
+      setInlineEdit(previous => previous && { ...previous, status: '写一句回复，或留一张照片吧 💬' })
+      return
+    }
+    setInlineEdit(previous => previous && { ...previous, saving: true, status: '正在保存改动…' })
+    try {
+      const resolved = await resolveComposeImageUrls(items, comment.role || senderRole)
+      if (!resolved.ok) {
+        setInlineEdit(previous => previous && { ...previous, saving: false, status: resolved.error })
+        return
+      }
+      const urls = resolved.urls
+      if (cloudEnabled) {
+        const res = await updateCloudMessage(comment.id, { content: text, imageUrls: urls })
+        if (!res?.ok) {
+          setInlineEdit(previous => previous && { ...previous, saving: false, status: `保存失败：${res?.error || '请稍后再试。'}` })
+          return
+        }
+        setMessages(previous => {
+          const updated = res.message
+            ? previous.map(item => (item.id === comment.id ? res.message : item))
+            : previous.map(item => (item.id === comment.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
+          saveMessagesLocal(updated)
+          return updated
+        })
+      } else {
+        const updated = loadMessagesLocal().map(item => (item.id === comment.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
+        saveMessagesLocal(updated)
+        setMessages(updated)
+      }
+      setInlineEdit(null)
+    } catch (error) {
+      console.warn('[wwcxrl messages] comment edit failed', error.message)
+      setInlineEdit(previous => previous && { ...previous, saving: false, status: '保存失败，请稍后再试。' })
     }
   }
 
   async function removeComment(comment) {
     const mine = comment.userId === senderUserId || !cloudEnabled
     if (!mine) return
+    const doomed = collectDescendantIds(comment.id)
+    if (inlineEdit && doomed.has(inlineEdit.id)) setInlineEdit(null)
     if (cloudEnabled) {
       const ok = await deleteCloudMessage(comment.id)
-      if (ok) setMessages(previous => previous.filter(item => item.id !== comment.id))
+      if (ok) {
+        setMessages(previous => {
+          const updated = previous.filter(item => !doomed.has(item.id))
+          saveMessagesLocal(updated)
+          return updated
+        })
+      }
     } else {
-      const next = loadMessagesLocal().filter(item => item.id !== comment.id)
+      const next = loadMessagesLocal().filter(item => !doomed.has(item.id))
       saveMessagesLocal(next)
       setMessages(next)
     }
@@ -10624,27 +10934,22 @@ function MessageBoard() {
   async function sendMessage() {
     const text = content.trim()
     const editing = editingId ? messages.find(item => item.id === editingId) : null
-    if (!text && !imageData) {
+    if (!text && !composeItems.length) {
       setStatus('写点想说的话，或选一张照片吧 💌')
       return
     }
     setSending(true)
     setStatus(editing ? '正在保存修改…' : '正在寄出…')
     try {
+      const resolved = await awaitWithSlowHint(resolveComposeImageUrls(composeItems, senderRole), '照片上传有点慢，再稍等一下…')
+      if (!resolved.ok) {
+        setStatus(resolved.error)
+        return
+      }
+      const urls = resolved.urls
       if (editing) {
         if (cloudEnabled) {
-          let imageUrl = ''
-          if (imageData?.file) {
-            const upload = await awaitWithSlowHint(uploadMessageImage(imageData.file, senderRole), '照片上传有点慢，再稍等一下…')
-            if (!upload?.ok) {
-              setStatus(`照片保存失败：${upload?.error || '请稍后再试。'}`)
-              return
-            }
-            imageUrl = upload.url
-          } else if (imageData?.dataUrl) {
-            imageUrl = editing.imageUrl || ''
-          }
-          const res = await awaitWithSlowHint(updateCloudMessage(editing.id, { content: text, imageUrl }), '保存有点慢，如果已经改好会自动刷新…')
+          const res = await awaitWithSlowHint(updateCloudMessage(editing.id, { content: text, imageUrls: urls }), '保存有点慢，如果已经改好会自动刷新…')
           if (!res?.ok) {
             setStatus(`保存失败：${res?.error || '请稍后再试。'}`)
             return
@@ -10652,27 +10957,18 @@ function MessageBoard() {
           setMessages(previous => {
             const updated = res.message
               ? [res.message, ...previous.filter(item => item.id !== editing.id)]
-              : previous.map(item => (item.id === editing.id ? { ...item, content: text, imageUrl } : item))
+              : previous.map(item => (item.id === editing.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
             saveMessagesLocal(updated)
             return updated
           })
         } else {
-          const updated = loadMessagesLocal().map(item => (item.id === editing.id ? { ...item, content: text, imageUrl: imageData?.dataUrl || '' } : item))
+          const updated = loadMessagesLocal().map(item => (item.id === editing.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
           saveMessagesLocal(updated)
           setMessages(updated)
         }
         setStatus('修改已保存 💌')
       } else if (cloudEnabled) {
-        let imageUrl = ''
-        if (imageData?.file) {
-          const upload = await awaitWithSlowHint(uploadMessageImage(imageData.file, senderRole), '照片上传有点慢，再稍等一下…')
-          if (!upload?.ok) {
-            setStatus(`照片寄出失败：${upload?.error || '请稍后再试。'}`)
-            return
-          }
-          imageUrl = upload.url
-        }
-        const saved = await awaitWithSlowHint(saveCloudMessage({ content: text, imageUrl }, { role: senderRole, userId: senderUserId, displayName: senderName }), '寄出有点慢，如果列表里已经出现，说明成功了，稍后会自动刷新。')
+        const saved = await awaitWithSlowHint(saveCloudMessage({ content: text, imageUrls: urls }, { role: senderRole, userId: senderUserId, displayName: senderName }), '寄出有点慢，如果列表里已经出现，说明成功了，稍后会自动刷新。')
         if (!saved?.ok) {
           setStatus(`寄出失败：${saved?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行留言板建表 SQL）`)
           return
@@ -10686,7 +10982,9 @@ function MessageBoard() {
           role: senderRole,
           displayName: senderName,
           content: text,
-          imageUrl: imageData?.dataUrl || '',
+          images: urls,
+          imageUrl: urls[0] || '',
+          parentId: null,
           createdAt: new Date().toISOString()
         }
         const next = [localMessage, ...loadMessagesLocal()]
@@ -10696,7 +10994,7 @@ function MessageBoard() {
       }
       setEditingId(null)
       setContent('')
-      setImageData(null)
+      setComposeItems([])
     } catch (error) {
       console.warn('[wwcxrl messages] send failed', error.message)
       setStatus('寄出失败，请稍后再试。')
@@ -10708,14 +11006,213 @@ function MessageBoard() {
   async function removeMessage(message) {
     const mine = message.userId === senderUserId || !cloudEnabled
     if (!mine) return
+    const doomed = collectDescendantIds(message.id)
+    if (inlineEdit && doomed.has(inlineEdit.id)) setInlineEdit(null)
     if (cloudEnabled) {
       const ok = await deleteCloudMessage(message.id)
-      if (ok) setMessages(prev => prev.filter(item => item.id !== message.id && item.parentId !== message.id))
+      if (ok) {
+        setMessages(previous => {
+          const updated = previous.filter(item => !doomed.has(item.id))
+          saveMessagesLocal(updated)
+          return updated
+        })
+      }
     } else {
-      const next = loadMessagesLocal().filter(item => item.id !== message.id && item.parentId !== message.id)
+      const next = loadMessagesLocal().filter(item => !doomed.has(item.id))
       saveMessagesLocal(next)
       setMessages(next)
     }
+  }
+
+  function nameOf(item) {
+    return item?.displayName || (item?.role === 'orange' ? '小琛' : '小琳')
+  }
+
+  function renderReplyComposer(targetId, targetName, isRoot = false) {
+    const state = replyOf(targetId)
+    const role = state.sender || senderRole
+    const items = state.items || []
+    const textValue = String(state.text || '')
+    return (
+      <div className="message-comment-compose">
+        <div className="message-comment-title">回复 {targetName}{isRoot ? ' 的留言' : ''}</div>
+        <div className="message-sender-row message-comment-sender">
+          <span className="message-sender-label">我是</span>
+          <div className="message-sender-toggle" role="group" aria-label="回复身份">
+            <button type="button" className={role === 'orange' ? 'is-active' : ''} onClick={() => patchReply(targetId, { sender: 'orange' })}>🌞 小琛</button>
+            <button type="button" className={role === 'pomelo' ? 'is-active' : ''} onClick={() => patchReply(targetId, { sender: 'pomelo' })}>🌟 小琳</button>
+          </div>
+        </div>
+        <textarea
+          value={textValue}
+          onChange={event => patchReply(targetId, { text: event.target.value })}
+          rows={2}
+          maxLength={500}
+          placeholder="写一句回复，也可以带上照片…"
+          aria-label={`回复 ${targetName}`}
+        />
+        <MessageImagePicker
+          items={items}
+          disabled={state.sending}
+          onAdd={files => addComposeImages(files, items, next => patchReply(targetId, { items: next }))}
+          onRemove={key => patchReply(targetId, { items: items.filter(item => item.key !== key) })}
+        />
+        <div className="message-compose-bar message-comment-bar">
+          <span className="message-compose-count">{textValue.length}/500</span>
+          <button type="button" className="message-send message-comment-send" disabled={state.sending} onClick={() => sendComment(targetId)}>
+            {state.sending ? '盖楼中…' : '💬 回复'}
+          </button>
+          <button type="button" className="message-comment-cancel" onClick={() => setReplyOpenId(null)}>收起</button>
+        </div>
+        {state.status && <p className="message-status">{state.status}</p>}
+      </div>
+    )
+  }
+
+  // 评论就地编辑：就在这一层楼下换成输入框，改完点保存，不用删了重发。
+  function renderInlineEditor() {
+    const items = inlineEdit?.items || []
+    const textValue = String(inlineEdit?.text || '')
+    return (
+      <div className="message-inline-editor">
+        <textarea
+          value={textValue}
+          onChange={event => setInlineEdit(previous => previous && { ...previous, text: event.target.value })}
+          rows={2}
+          maxLength={500}
+          placeholder="改一改这句话…"
+          aria-label="编辑这层回复"
+        />
+        <MessageImagePicker
+          items={items}
+          disabled={Boolean(inlineEdit?.saving)}
+          onAdd={files => addComposeImages(files, items, next => setInlineEdit(previous => previous && { ...previous, items: next }))}
+          onRemove={key => setInlineEdit(previous => previous && { ...previous, items: previous.items.filter(item => item.key !== key) })}
+        />
+        <div className="message-comment-bar">
+          <span className="message-compose-count">{textValue.length}/500</span>
+          <button type="button" className="message-send message-comment-send" disabled={inlineEdit?.saving} onClick={saveCommentEdit}>
+            {inlineEdit?.saving ? '保存中…' : '💾 保存'}
+          </button>
+          <button type="button" className="message-comment-cancel" onClick={cancelCommentEdit}>取消</button>
+        </div>
+        {inlineEdit?.status && <p className="message-status">{inlineEdit.status}</p>}
+      </div>
+    )
+  }
+
+  // 折叠规则：默认只显示最新 MESSAGE_REPLY_PREVIEW 条；
+  // 折叠得多就写「展开更多回复」，只剩几条时写「展开 N 条回复」。
+  function renderReplyList(parentId, nodes, parentMessage, depth) {
+    if (!nodes.length) return null
+    const expanded = expandedThreads.has(parentId)
+    const hiddenCount = expanded ? 0 : Math.max(0, nodes.length - MESSAGE_REPLY_PREVIEW)
+    const visible = expanded ? nodes : nodes.slice(-MESSAGE_REPLY_PREVIEW)
+    return (
+      <>
+        {hiddenCount > 0 && (
+          <button type="button" className="message-thread-more" onClick={() => toggleThreadExpanded(parentId)}>
+            {hiddenCount >= MESSAGE_REPLY_MANY ? `展开更多回复（还有 ${hiddenCount} 条）` : `展开 ${hiddenCount} 条回复`}
+          </button>
+        )}
+        {expanded && nodes.length > MESSAGE_REPLY_PREVIEW && (
+          <button type="button" className="message-thread-more is-collapse" onClick={() => toggleThreadExpanded(parentId)}>收起回复</button>
+        )}
+        {visible.map((node, index) => renderReplyNode(node, index, parentMessage, depth))}
+      </>
+    )
+  }
+
+  // 一级回复不缩进；二级及更深统一样式缩进一级，并在前面标出「回复 @谁」。
+  function renderReplyNode(node, index, parentMessage, depth) {
+    const comment = node.message
+    const level = depth >= 2 ? 2 : 1
+    const mine = comment.userId === senderUserId || !cloudEnabled
+    const isEditingThis = inlineEdit?.id === comment.id
+    const childCount = countThreadReplies(node)
+    const images = messageImageList(comment)
+    return (
+      <div className={`message-thread-node is-level-${level}`} key={comment.id}>
+        <article className={`message-comment ${comment.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
+          <header className="message-comment-head">
+            <span className="message-avatar">{comment.role === 'orange' ? '🌞' : '🌟'}</span>
+            <strong>{nameOf(comment)}</strong>
+            {level === 1
+              ? <span className="message-comment-floor">{index + 1} 楼</span>
+              : <span className="message-comment-target">回复 {nameOf(parentMessage)}</span>}
+            <time>{formatMessageTime(comment.createdAt)}</time>
+            {mine && !isEditingThis && (
+              <>
+                <button type="button" className="message-edit message-comment-edit" onClick={() => startCommentEdit(comment)} aria-label="编辑这层回复">✏️</button>
+                <button type="button" className="message-delete message-comment-delete" onClick={() => setCommentDeleteTarget(comment)} aria-label="删除这层回复">🗑</button>
+              </>
+            )}
+          </header>
+          {isEditingThis ? renderInlineEditor() : (
+            <>
+              {images.length > 0 && <MessageMedia images={images} compact onOpen={openLightbox} />}
+              {comment.content && <p className="message-content">{comment.content}</p>}
+              <div className="message-comment-actions">
+                <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(comment.id)}>
+                  {childCount ? `💬 回复 · ${childCount} 条` : '💬 回复'}
+                </button>
+              </div>
+            </>
+          )}
+        </article>
+        {replyOpenId === comment.id && renderReplyComposer(comment.id, nameOf(comment))}
+        {node.children.length > 0 && (
+          <div className="message-thread-children">
+            {renderReplyList(comment.id, node.children, comment, depth + 1)}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  function renderRootCard(node) {
+    const message = node.message
+    const mine = message.userId === senderUserId || !cloudEnabled
+    const totalReplies = replyTotals.get(message.id) || 0
+    const images = messageImageList(message)
+    return (
+      <article key={message.id} className={`message-card sticker-card ${message.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
+        <header className="message-card-head">
+          <span className="message-avatar">{message.role === 'orange' ? '🌞' : '🌟'}</span>
+          <strong>{nameOf(message)}</strong>
+          {node.detached && <span className="message-comment-target">原留言已不在</span>}
+          <time>{formatMessageTime(message.createdAt)}</time>
+          {mine && (
+            <>
+              <button type="button" className="message-edit" onClick={() => startEdit(message)} aria-label="编辑这条留言">✏️</button>
+              <button type="button" className="message-delete" onClick={() => setDeleteTarget(message)} aria-label="删除这条留言">🗑</button>
+            </>
+          )}
+        </header>
+        {(message.content || images.length > 0) && (
+          <div className="message-body">
+            {images.length > 0 && <MessageMedia images={images} onOpen={openLightbox} />}
+            {message.content && <p className="message-content">{message.content}</p>}
+          </div>
+        )}
+        <div className="message-thread">
+          <div className="message-thread-head">
+            <span>💬 楼中楼</span>
+            <span>{totalReplies ? `${totalReplies} 条回复` : '还没有回复'}</span>
+          </div>
+          {node.children.length > 0
+            ? <div className="message-thread-list">{renderReplyList(message.id, node.children, message, 1)}</div>
+            : <p className="message-comments-empty">还没有回复，来留第一层吧。</p>}
+          {replyOpenId === message.id
+            ? renderReplyComposer(message.id, nameOf(message), true)
+            : (
+              <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(message.id)}>
+                {totalReplies ? `💬 回复 · 已有 ${totalReplies} 条` : '💬 来盖第一楼'}
+              </button>
+            )}
+        </div>
+      </article>
+    )
   }
 
   return (
@@ -10729,7 +11226,7 @@ function MessageBoard() {
       <div className="message-compose sticker-card">
         {editingId && (
           <div className="message-editing-banner">
-            <span>✏️ 正在编辑这条留言</span>
+            <span>✏️ 正在编辑这条留言{composeItems.length > 1 ? `（${composeItems.length} 张照片）` : ''}</span>
             <button type="button" onClick={cancelEdit}>取消</button>
           </div>
         )}
@@ -10750,18 +11247,19 @@ function MessageBoard() {
           placeholder="写下此刻想对 TA 说的话…（想念的话、路上的云、今天的饭，都可以）"
           aria-label="留言内容"
         />
+        <MessageImagePicker
+          items={composeItems}
+          disabled={sending}
+          onAdd={files => addComposeImages(files, composeItems, setComposeItems)}
+          onRemove={key => setComposeItems(items => items.filter(item => item.key !== key))}
+        />
+        {!isMessageMultiImageReady() && composeItems.length > 1 && (
+          <p className="message-status">线上库还没开启多图字段：先在 Supabase 执行 image_urls 那句 SQL，再发多张照片。</p>
+        )}
         <div className="message-compose-bar">
-          <label className="message-image-button">
-            📷 {imageData ? '换一张' : '加一张照片'}
-            <input type="file" accept="image/*" hidden onChange={event => { const file = event.target.files?.[0]; if (file) handleFile(file); event.target.value = '' }} />
-          </label>
-          {imageData && (
-            <span className="message-image-preview">
-              <img src={imageData.dataUrl} alt="留言图片预览" />
-              <button type="button" onClick={() => setImageData(null)} aria-label="移除图片">✕</button>
-            </span>
-          )}
-          <span className="message-compose-count">{content.length}/500</span>
+          <span className="message-compose-count">
+            {content.length}/500{composeItems.length ? ` · ${composeItems.length}/${MESSAGE_IMAGE_LIMIT} 张` : ''}
+          </span>
           <button type="button" className="message-send" disabled={sending} onClick={sendMessage}>
             {sending ? (editingId ? '保存中…' : '寄出中…') : (editingId ? '💾 保存修改' : '💌 寄出')}
           </button>
@@ -10770,106 +11268,9 @@ function MessageBoard() {
       </div>
 
       <div className="message-list">
-        {rootMessages.length === 0 ? (
+        {thread.roots.length === 0 ? (
           <div className="message-empty sticker-card"><span>🕊️</span><p>还没有留言，写第一句吧。</p></div>
-        ) : rootMessages.map(message => {
-          const comments = commentsByRootId[message.id] || []
-          const replySender = getReplySender(message.id)
-          const replyDraftText = replyDrafts[message.id] || ''
-          const replyImage = replyImages[message.id] || null
-          return (
-            <article key={message.id} className={`message-card sticker-card ${message.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
-              <header className="message-card-head">
-                <span className="message-avatar">{message.role === 'orange' ? '🌞' : '🌟'}</span>
-                <strong>{message.displayName || (message.role === 'orange' ? '小琛' : '小琳')}</strong>
-                <time>{formatMessageTime(message.createdAt)}</time>
-                {(message.userId === senderUserId || !cloudEnabled) && (
-                  <>
-                    <button type="button" className="message-edit" onClick={() => startEdit(message)} aria-label="编辑这条留言">✏️</button>
-                    <button type="button" className="message-delete" onClick={() => setDeleteTarget(message)} aria-label="删除这条留言">🗑</button>
-                  </>
-                )}
-              </header>
-              {(message.content || message.imageUrl) && (
-                <div className={`message-body ${message.content && message.imageUrl ? 'has-both' : ''}`}>
-                  {message.imageUrl && <img className="message-image" src={message.imageUrl} alt="留言图片" loading="lazy" />}
-                  {message.content && <p className="message-content">{message.content}</p>}
-                </div>
-              )}
-              <div className="message-comments">
-                {comments.length > 0 ? (
-                  <div className="message-comments-head">
-                    <span>💬 楼中楼</span>
-                    <span>{comments.length} 条评论</span>
-                  </div>
-                ) : (
-                  <p className="message-comments-empty">还没有评论，来留第一层吧。</p>
-                )}
-                {comments.map((comment, index) => (
-                  <article key={comment.id} className={`message-comment ${comment.role === 'orange' ? 'is-orange' : 'is-pomelo'}`}>
-                    <header className="message-comment-head">
-                      <span className="message-avatar">{comment.role === 'orange' ? '🌞' : '🌟'}</span>
-                      <strong>{comment.displayName || (comment.role === 'orange' ? '小琛' : '小琳')}</strong>
-                      <span className="message-comment-floor">{index + 1} 楼</span>
-                      <time>{formatMessageTime(comment.createdAt)}</time>
-                      {(comment.userId === senderUserId || !cloudEnabled) && (
-                        <button type="button" className="message-delete message-comment-delete" onClick={() => setCommentDeleteTarget(comment)} aria-label="删除这条评论">🗑</button>
-                      )}
-                    </header>
-                    {(comment.content || comment.imageUrl) && (
-                      <div className={`message-body comment-message-body ${comment.content && comment.imageUrl ? 'has-both' : ''}`}>
-                        {comment.imageUrl && <img className="message-image" src={comment.imageUrl} alt="评论图片" loading="lazy" />}
-                        {comment.content && <p className="message-content">{comment.content}</p>}
-                      </div>
-                    )}
-                  </article>
-                ))}
-                {replyOpenRootId === message.id ? (
-                  <div className="message-comment-compose">
-                    <div className="message-comment-title">回复 {message.displayName || (message.role === 'orange' ? '小琛' : '小琳')} 的留言</div>
-                    <div className="message-sender-row message-comment-sender">
-                      <span className="message-sender-label">我是</span>
-                      <div className="message-sender-toggle" role="group" aria-label="评论身份">
-                        <button type="button" className={replySender.role === 'orange' ? 'is-active' : ''} onClick={() => changeReplySender(message.id, 'orange')}>🌞 小琛</button>
-                        <button type="button" className={replySender.role === 'pomelo' ? 'is-active' : ''} onClick={() => changeReplySender(message.id, 'pomelo')}>🌟 小琳</button>
-                      </div>
-                    </div>
-                    <textarea
-                      value={replyDraftText}
-                      onChange={event => setReplyDrafts(previous => ({ ...previous, [message.id]: event.target.value }))}
-                      rows={2}
-                      maxLength={500}
-                      placeholder="写一句评论，或带上一张照片…"
-                      aria-label={`回复 ${message.displayName || '对方'} 的留言`}
-                    />
-                    <div className="message-compose-bar message-comment-bar">
-                      <label className="message-image-button">
-                        📷 {replyImage ? '换一张' : '加一张照片'}
-                        <input type="file" accept="image/*" hidden onChange={event => { const file = event.target.files?.[0]; if (file) handleReplyFile(message.id, file); event.target.value = '' }} />
-                      </label>
-                      {replyImage && (
-                        <span className="message-image-preview">
-                          <img src={replyImage.dataUrl} alt="评论图片预览" />
-                          <button type="button" onClick={() => removeReplyImage(message.id)} aria-label="移除图片">✕</button>
-                        </span>
-                      )}
-                      <span className="message-compose-count">{replyDraftText.length}/500</span>
-                      <button type="button" className="message-send message-comment-send" disabled={replySendingRootId === message.id} onClick={() => sendComment(message.id)}>
-                        {replySendingRootId === message.id ? '盖楼中…' : '💬 评论'}
-                      </button>
-                      <button type="button" className="message-comment-cancel" onClick={() => { setReplyOpenRootId(null); setReplyStatusByRoot(previous => ({ ...previous, [message.id]: '' })) }}>收起</button>
-                    </div>
-                    {replyStatusByRoot[message.id] && <p className="message-status">{replyStatusByRoot[message.id]}</p>}
-                  </div>
-                ) : (
-                  <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(message)}>
-                    {comments.length ? `💬 回复 · 已有 ${comments.length} 楼` : '💬 来盖第一楼'}
-                  </button>
-                )}
-              </div>
-            </article>
-          )
-        })}
+        ) : thread.roots.map(node => renderRootCard(node))}
       </div>
 
       {deleteTarget && (
@@ -10889,14 +11290,22 @@ function MessageBoard() {
         <div className="message-confirm-backdrop" role="presentation" onClick={() => setCommentDeleteTarget(null)}>
           <div className="message-confirm-modal sticker-card" role="alertdialog" aria-modal="true" aria-labelledby="comment-confirm-title" onClick={event => event.stopPropagation()}>
             <span className="message-confirm-icon">🗑</span>
-            <h3 id="comment-confirm-title">删除这层评论？</h3>
-            <p>只删这一层楼，原留言还会保留。确定要删除吗？</p>
+            <h3 id="comment-confirm-title">删除这层回复？</h3>
+            <p>它下面的回复会一起删掉，原留言还会保留。确定要删除吗？</p>
             <div className="message-confirm-actions">
               <button type="button" className="message-confirm-cancel" onClick={() => setCommentDeleteTarget(null)}>再想想</button>
               <button type="button" className="message-confirm-ok" onClick={() => { removeComment(commentDeleteTarget); setCommentDeleteTarget(null) }}>确认删除</button>
             </div>
           </div>
         </div>
+      )}
+      {lightbox && (
+        <MessageLightbox
+          images={lightbox.images}
+          index={lightbox.index}
+          onClose={() => setLightbox(null)}
+          onChangeIndex={next => setLightbox(previous => (previous ? { ...previous, index: next } : previous))}
+        />
       )}
     </section>
   )

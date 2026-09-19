@@ -271,12 +271,14 @@ create table if not exists public.wwcxrl_messages (
   display_name text not null default '',
   content text not null default '',
   image_url text not null default '',
+  image_urls jsonb not null default '[]'::jsonb,
   parent_id uuid,
   created_at timestamptz not null default now()
 );
 
 alter table public.wwcxrl_messages enable row level security;
 -- 楼中楼评论：parent_id 指向主留言；null 表示这条本身就是主留言。
+alter table public.wwcxrl_messages add column if not exists image_urls jsonb not null default '[]'::jsonb;
 create index if not exists wwcxrl_messages_parent_id_idx on public.wwcxrl_messages (parent_id);
 
 drop policy if exists "wwcxrl_messages_public_read" on public.wwcxrl_messages;

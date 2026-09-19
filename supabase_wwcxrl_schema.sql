@@ -249,7 +249,7 @@ create policy "wwcxrl_meeting_dates_public_delete" on public.wwcxrl_meeting_date
 -- alter table public.wwcxrl_meeting_dates add column if not exists end_date text not null default '';
 
 -- ============ 留言板（wwcxrl_messages）：异地想对对方说的话 ============
--- 支持文字 + 图片，记录发送人与时间；图片存到 wwcxrl-photos 存储桶。
+-- 支持文字 + 多张图片，记录发送人与时间；图片存到 wwcxrl-photos 存储桶。
 create table if not exists public.wwcxrl_messages (
   id uuid primary key default gen_random_uuid(),
   user_id text not null,
@@ -257,6 +257,7 @@ create table if not exists public.wwcxrl_messages (
   display_name text not null default '',
   content text not null default '',
   image_url text not null default '',
+  image_urls jsonb not null default '[]'::jsonb,
   parent_id uuid,
   created_at timestamptz not null default now()
 );
@@ -264,6 +265,8 @@ create table if not exists public.wwcxrl_messages (
 alter table public.wwcxrl_messages enable row level security;
 -- 楼中楼评论：parent_id 指向主留言；null 表示这条本身就是主留言。
 alter table public.wwcxrl_messages add column if not exists parent_id uuid;
+-- 多图（每条最多 9 张）；image_url 保留第一张，兼容旧客户端。
+alter table public.wwcxrl_messages add column if not exists image_urls jsonb not null default '[]'::jsonb;
 create index if not exists wwcxrl_messages_parent_id_idx on public.wwcxrl_messages (parent_id);
 
 drop policy if exists "wwcxrl_messages_public_read" on public.wwcxrl_messages;
