@@ -13981,23 +13981,27 @@ html { overflow-x: hidden; }
   margin: 8px 0 2px 0;
 }
 .message-thread-more {
-  justify-self: start;
-  padding: 4px 12px;
+  /* 折叠开关做成居中的浅色文字链：它管的是整段列表，不是某一条评论 */
+  justify-self: center;
+  padding: 2px 8px;
   border-radius: 999px;
-  color: #8a5a35;
-  background: rgba(255, 255, 255, .74);
-  border: 1px dashed rgba(255, 159, 189, .5);
+  color: var(--soft-ink);
+  background: transparent;
+  border: 0;
   box-shadow: none;
   font-size: .8rem;
   font-weight: 700;
 }
 .message-thread-more:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(255, 111, 145, .12);
+  transform: none;
+  box-shadow: none;
+  color: var(--rose);
 }
 .message-thread-more.is-collapse {
   color: var(--soft-ink);
-  border-style: solid;
+}
+.message-thread-more.is-collapse:hover {
+  color: var(--rose);
 }
 .message-comment {
   display: grid;
@@ -14050,18 +14054,54 @@ html { overflow-x: hidden; }
   flex-wrap: wrap;
 }
 .message-comment-reply {
+  /* 每条评论的「回复」是轻量文字链，不再用整颗药丸，避免和折叠开关撞脸 */
   justify-self: start;
-  padding: 6px 12px;
+  padding: 2px 0;
   border-radius: 999px;
-  color: #7b4335;
-  background: linear-gradient(135deg, #fff7d9, #ffe7f0);
-  border: 1px dashed rgba(255, 159, 189, .42);
+  color: var(--soft-ink);
+  background: transparent;
+  border: 0;
   box-shadow: none;
-  font-size: .84rem;
+  font-size: .8rem;
+  font-weight: 700;
 }
 .message-comment-reply:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 14px rgba(255, 111, 145, .14);
+  transform: none;
+  box-shadow: none;
+  color: var(--rose);
+}
+/* 主留言自己的评论入口：一整行输入条，和评论里的「回复」明确区分 */
+.message-thread-foot {
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 159, 189, .24);
+}
+.message-comment-entry {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: var(--soft-ink);
+  background: rgba(255, 255, 255, .82);
+  border: 1px solid rgba(255, 159, 189, .32);
+  box-shadow: none;
+  font-size: .84rem;
+  text-align: left;
+}
+.message-comment-entry:hover {
+  transform: none;
+  color: #7b4335;
+  border-color: rgba(255, 111, 145, .48);
+  box-shadow: 0 4px 12px rgba(255, 111, 145, .12);
+}
+.message-entry-avatar {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+.message-entry-hint {
+  opacity: .86;
 }
 .message-comment-compose,
 .message-inline-editor {

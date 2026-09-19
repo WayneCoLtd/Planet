@@ -11074,7 +11074,7 @@ function MessageBoard() {
     const textValue = String(state.text || '')
     return (
       <div className="message-comment-compose">
-        <div className="message-comment-title">回复 {targetName}{isRoot ? ' 的留言' : ''}</div>
+        <div className="message-comment-title">{isRoot ? '写评论' : `回复 ${targetName}`}</div>
         <div className="message-sender-row message-comment-sender">
           <span className="message-sender-label">我是</span>
           <div className="message-sender-toggle" role="group" aria-label="回复身份">
@@ -11099,7 +11099,7 @@ function MessageBoard() {
         <div className="message-compose-bar message-comment-bar">
           <span className="message-compose-count">{textValue.length}/500</span>
           <button type="button" className="message-send message-comment-send" disabled={state.sending} onClick={() => sendComment(targetId)}>
-            {state.sending ? '发送中…' : '💬 回复'}
+            {state.sending ? '发送中…' : '💬 发送'}
           </button>
           <button type="button" className="message-comment-cancel" onClick={() => setReplyOpenId(null)}>收起</button>
         </div>
@@ -11193,7 +11193,12 @@ function MessageBoard() {
                 </p>
               )}
               <div className="message-comment-actions">
-                <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(comment.id)}>
+                <button
+                  type="button"
+                  className="message-comment-reply"
+                  onClick={() => toggleReplyComposer(comment.id)}
+                  aria-label={`回复 ${nameOf(comment)}`}
+                >
                   💬 回复
                 </button>
               </div>
@@ -11243,13 +11248,17 @@ function MessageBoard() {
           {node.children.length > 0
             ? <div className="message-thread-list">{renderReplyList(message.id, node.children, message, 1)}</div>
             : <p className="message-comments-empty">还没有评论，来说第一句吧。</p>}
-          {replyOpenId === message.id
-            ? renderReplyComposer(message.id, nameOf(message), true)
-            : (
-              <button type="button" className="message-comment-reply" onClick={() => toggleReplyComposer(message.id)}>
-                💬 回复
-              </button>
-            )}
+          {/* 主留言自己的入口单独占一行、上方有分隔线，避免和评论里的「回复」看成一串 */}
+          <div className="message-thread-foot">
+            {replyOpenId === message.id
+              ? renderReplyComposer(message.id, nameOf(message), true)
+              : (
+                <button type="button" className="message-comment-entry" onClick={() => toggleReplyComposer(message.id)} aria-label="写评论">
+                  <span className="message-entry-avatar" aria-hidden="true">{senderRole === 'orange' ? '🌞' : '🌟'}</span>
+                  <span className="message-entry-hint">说点什么…</span>
+                </button>
+              )}
+          </div>
         </div>
       </article>
     )
