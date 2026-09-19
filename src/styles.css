@@ -13970,11 +13970,15 @@ html { overflow-x: hidden; }
   padding-top: 10px;
   border-top: 1px solid rgba(255, 159, 189, .24);
 }
-/* 二级及更深的回复：缩进一级，并用一条浅色竖线表示从属关系 */
-.message-thread-children {
+/* 二级及更深的回复：整体只缩进这一级，更深的层级不再叠加缩进（否则越回越窄）。
+   所以缩进挂在「一级节点的子容器」上，二级及更深的子容器不再加缩进。 */
+.message-thread-node.is-level-1 > .message-thread-children {
   margin: 8px 0 2px 10px;
   padding-left: 10px;
   border-left: 2px solid rgba(255, 159, 189, .3);
+}
+.message-thread-node.is-level-2 > .message-thread-children {
+  margin: 8px 0 2px 0;
 }
 .message-thread-more {
   justify-self: start;
@@ -14217,7 +14221,7 @@ html { overflow-x: hidden; }
     padding: 10px 10px 12px;
     border-radius: 16px;
   }
-  .message-thread-children {
+  .message-thread-node.is-level-1 > .message-thread-children {
     margin-left: 4px;
     padding-left: 8px;
   }
