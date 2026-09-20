@@ -13676,6 +13676,12 @@ function formatMusicTime(seconds) {
 // iOS 上 audio.volume 是只读的，音量条拖了没用 —— 用一个独立的探针元素判断，
 // 避免碰到正在播放的那个元素造成一闪的音量跳变。
 function detectVolumeSupport() {
+  if (typeof navigator === 'undefined') return false
+  // iPhone / iPad 上网页改不了音量（audio.volume 是只读的系统限制），
+  // 探针在真机上也不一定可靠，这里直接判为不支持，免得给出一条拖了没反应的滑杆。
+  const ua = navigator.userAgent || ''
+  const iOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1)
+  if (iOS) return false
   try {
     const probe = new Audio()
     probe.volume = 0.42
@@ -13975,18 +13981,123 @@ function MusicIcon({ name, size = 18 }) {
       </svg>
     )
   }
+  // 音量图标同样用 SVG：🔈🔊🔇 在部分系统会渲染成彩色方块，也和 Apple Music 的单色图标不一致。
+  if (name === 'volumeLow' || name === 'volumeHigh' || name === 'volumeMute') {
+    return (
+      <svg {...common}>
+        <path d="M4.6 9.4h2.9l3.8-3a.85.85 0 0 1 1.4.67v9.86a.85.85 0 0 1-1.4.67l-3.8-3H4.6a.9.9 0 0 1-.9-.9v-3.4a.9.9 0 0 1 .9-.9Z" />
+        {name === 'volumeLow' && (
+          <path d="M16.4 9.8a3.5 3.5 0 0 1 0 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        )}
+        {name === 'volumeHigh' && (
+          <>
+            <path d="M16 9.1a5 5 0 0 1 0 5.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="M18.9 6.6a8.6 8.6 0 0 1 0 10.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </>
+        )}
+        {name === 'volumeMute' && (
+          <>
+            <path d="m15.7 9.8 4.6 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+            <path d="m20.3 9.8-4.6 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+          </>
+        )}
+      </svg>
+    )
+  }
   return null
 }
 
 // 顶栏上的小控制：没在播时是一个安静的图标，在播时变成缓慢转动的小唱片。
 // 点开是从顶栏下方滑出的面板，不占页面底部、也不遮挡内容。
+// 音量：单独占一行，小喇叭 + 长滑杆 + 大喇叭（照 Apple Music 的排布）。
+// 以前塞在上一首/播放/下一首中间，只有 68px 宽，手机上几乎按不准。
+function MusicVolumeRow({ volume, onChange }) {
+  const supported = React.useMemo(() => musicIsVolumeSupported(), [])
+  const lastAudibleRef = React.useRef(volume > 0 ? volume : 0.8)
+  React.useEffect(() => { if (volume > 0) lastAudibleRef.current = volume }, [volume])
+  const percent = Math.round(volume * 100)
+
+  if (!supported) {
+    return (
+      <div className="music-volume-row is-unsupported">
+        <span className="music-volume-icon" aria-hidden="true"><MusicIcon name="volumeLow" size={17} /></span>
+        <span className="music-volume-note">手机网页改不了音量，用侧边的音量键调</span>
+        <span className="music-volume-icon is-large" aria-hidden="true"><MusicIcon name="volumeHigh" size={20} /></span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="music-volume-row">
+      <button
+        type="button"
+        className="music-volume-icon is-button"
+        onClick={() => onChange(volume > 0 ? 0 : lastAudibleRef.current)}
+        aria-label={volume > 0 ? '静音' : '恢复音量'}
+        title={volume > 0 ? '静音' : '恢复音量'}
+      >
+        <MusicIcon name={volume > 0 ? 'volumeLow' : 'volumeMute'} size={17} />
+      </button>
+      <input
+        type="range"
+        min="0"
+        max="100"
+        step="1"
+        value={percent}
+        onChange={event => onChange(Number(event.target.value) / 100)}
+        aria-label="音量"
+        style={{ '--music-fill': `${percent}%` }}
+      />
+      <span className="music-volume-icon is-large" aria-hidden="true"><MusicIcon name="volumeHigh" size={20} /></span>
+    </div>
+  )
+}
+
+// 播放控制组：进度 + 上一首/播放/下一首 + 音量。
+// 顶栏播放器和音乐室页面共用这一套，避免两处各写一份、慢慢走形。
+function MusicTransport({ music }) {
+  const mode = MUSIC_MODES.find(item => item.id === music.mode) || MUSIC_MODES[0]
+  const current = music.tracks.find(track => track.id === music.currentId) || null
+  return (
+    <div className="music-transport">
+      <div className="music-progress">
+        <input
+          type="range"
+          min="0"
+          max={Math.max(1, Math.floor(music.duration || 0))}
+          value={Math.min(Math.floor(music.progress || 0), Math.max(1, Math.floor(music.duration || 0)))}
+          onChange={event => musicSeek(event.target.value)}
+          disabled={!current}
+          aria-label="播放进度"
+          style={{ '--music-fill': `${music.duration > 0 ? Math.min(100, (music.progress / music.duration) * 100) : 0}%` }}
+        />
+        <span className="music-progress-time">
+          <span>{formatMusicTime(music.progress)}</span>
+          <span>{formatMusicTime(music.duration)}</span>
+        </span>
+      </div>
+
+      <div className="music-controls">
+        <button type="button" className="music-mode-button" onClick={() => musicSetMode(musicNextMode(music.mode))} title={mode.label} aria-label={`切换播放模式，当前${mode.label}`}>
+          <MusicIcon name={mode.icon} size={17} />
+        </button>
+        <button type="button" className="music-step-button" onClick={() => musicPlayStep(-1)} disabled={!music.tracks.length} aria-label="上一首"><MusicIcon name="prev" /></button>
+        <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing ? '暂停' : '播放'}>
+          {music.loadingId ? <span className="music-spinner" aria-hidden="true" /> : <MusicIcon name={music.playing ? 'pause' : 'play'} size={22} />}
+        </button>
+        <button type="button" className="music-step-button" onClick={() => musicPlayStep(1)} disabled={!music.tracks.length} aria-label="下一首"><MusicIcon name="next" /></button>
+      </div>
+
+      <MusicVolumeRow volume={music.volume} onChange={musicSetVolume} />
+    </div>
+  )
+}
+
 function MusicDock() {
   const music = useMusicState()
   const [open, setOpen] = useState(false)
-  const volumeSupported = React.useMemo(() => musicIsVolumeSupported(), [])
   const dockRef = React.useRef(null)
   const current = music.tracks.find(track => track.id === music.currentId) || null
-  const mode = MUSIC_MODES.find(item => item.id === music.mode) || MUSIC_MODES[0]
 
   React.useEffect(() => {
     if (!open) return
@@ -14034,49 +14145,7 @@ function MusicDock() {
 
           {music.error && <p className="music-panel-error">{music.error}</p>}
 
-          <div className="music-progress">
-            <input
-              type="range"
-              min="0"
-              max={Math.max(1, Math.floor(music.duration || 0))}
-              value={Math.min(Math.floor(music.progress || 0), Math.max(1, Math.floor(music.duration || 0)))}
-              onChange={event => musicSeek(event.target.value)}
-              disabled={!current}
-              aria-label="播放进度"
-              style={{ '--music-fill': `${music.duration > 0 ? Math.min(100, (music.progress / music.duration) * 100) : 0}%` }}
-            />
-            <span className="music-progress-time">
-              <span>{formatMusicTime(music.progress)}</span>
-              <span>{formatMusicTime(music.duration)}</span>
-            </span>
-          </div>
-
-          <div className="music-controls">
-            <button type="button" className="music-mode-button" onClick={() => musicSetMode(musicNextMode(music.mode))} title={mode.label} aria-label={`切换播放模式，当前${mode.label}`}>
-              <MusicIcon name={mode.icon} size={17} />
-            </button>
-            <button type="button" className="music-step-button" onClick={() => musicPlayStep(-1)} disabled={!music.tracks.length} aria-label="上一首"><MusicIcon name="prev" /></button>
-            <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing ? '暂停' : '播放'}>
-              {music.loadingId ? <span className="music-spinner" aria-hidden="true" /> : <MusicIcon name={music.playing ? 'pause' : 'play'} size={22} />}
-            </button>
-            <button type="button" className="music-step-button" onClick={() => musicPlayStep(1)} disabled={!music.tracks.length} aria-label="下一首"><MusicIcon name="next" /></button>
-            {volumeSupported ? (
-              <span className="music-volume">
-                <span aria-hidden="true">🔊</span>
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={Math.round(music.volume * 100)}
-                  onChange={event => musicSetVolume(Number(event.target.value) / 100)}
-                  aria-label="音量"
-                  style={{ '--music-fill': `${Math.round(music.volume * 100)}%` }}
-                />
-              </span>
-            ) : (
-              <span className="music-volume-hint" title="iPhone 的音量只能用侧边键调">🔊 用侧边键调</span>
-            )}
-          </div>
+          <MusicTransport music={music} />
 
           {music.tracks.length > 0 ? (
             <ul className="music-panel-list">
@@ -14173,6 +14242,9 @@ function MusicRoom() {
           </div>
 
           {music.error && <p className="music-room-error">{music.error}</p>}
+
+          {/* 音乐室自己带一套完整播放器，不用再去顶栏点开 */}
+          <MusicTransport music={music} />
 
           {music.tracks.length > 0 ? (
             <ul className="music-track-list">

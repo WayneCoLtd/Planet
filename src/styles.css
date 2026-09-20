@@ -15374,6 +15374,8 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   background: transparent;
 }
 .music-progress input[type='range']::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  appearance: none;
   height: 6px;
   border-radius: 999px;
   /* 已播部分用暖色，未播部分留淡底色，这样 0:00 时不会看着像已经播满 */
@@ -15386,6 +15388,7 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   transition: background .12s linear;
 }
 .music-progress input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
   appearance: none;
   width: 15px;
   height: 15px;
@@ -15477,22 +15480,64 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   background: linear-gradient(135deg, #ffe9ad, #ffbcd0) !important;
   box-shadow: 0 14px 28px rgba(255, 111, 145, .34) !important;
 }
-.music-volume {
+/* 播放控制组：顶栏播放器和音乐室页面共用 */
+.music-transport {
+  display: grid;
+  gap: 2px;
+}
+/* 音量单独一行：小喇叭 + 长滑杆 + 大喇叭（照 Apple Music 的排布）。
+   以前它塞在上一首/播放/下一首中间、只有 68px 宽，手机上几乎拖不准。 */
+.music-volume-row {
   display: flex;
   align-items: center;
-  gap: 5px;
-  margin-left: 4px;
-  font-size: .85rem;
+  gap: 10px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: rgba(101, 63, 38, .06);
 }
-.music-volume input[type='range'] {
-  width: 68px;
-  height: 20px;
+.music-volume-icon {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: inherit;
+  background: transparent;
+  box-shadow: none;
+  font-size: .95rem;
+  line-height: 1;
+}
+.music-volume-icon.is-large {
+  font-size: 1.2rem;
+}
+.music-volume-icon.is-button {
+  cursor: pointer;
+}
+.music-volume-icon.is-button:hover {
+  transform: none;
+  background: rgba(255, 173, 73, .3);
+}
+.music-volume-icon.is-button:active {
+  transform: scale(.94);
+}
+.music-volume-row input[type='range'] {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 28px;
   margin: 0;
   appearance: none;
+  -webkit-appearance: none;
   background: transparent;
+  /* 横向拖动交给滑杆，纵向滑动仍然可以滚动页面 */
+  touch-action: pan-y;
 }
-.music-volume input[type='range']::-webkit-slider-runnable-track {
-  height: 5px;
+.music-volume-row input[type='range']::-webkit-slider-runnable-track {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
   border-radius: 999px;
   background: linear-gradient(
     90deg,
@@ -15500,33 +15545,42 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
     rgba(135, 84, 45, .22) var(--music-fill, 0%) 100%
   );
 }
-.music-volume input[type='range']::-moz-range-track {
-  height: 5px;
-  border-radius: 999px;
-  background: rgba(135, 84, 45, .22);
-}
-.music-volume input[type='range']::-moz-range-progress {
-  height: 5px;
-  border-radius: 999px;
-  background: #ffb85e;
-}
-.music-volume input[type='range']::-webkit-slider-thumb {
+.music-volume-row input[type='range']::-webkit-slider-thumb {
+  /* Safari 只认带前缀的那份，缺了它会退回系统原生滑块，样式和命中区域都会错位 */
+  -webkit-appearance: none;
   appearance: none;
-  width: 13px;
-  height: 13px;
-  margin-top: -4px;
+  width: 18px;
+  height: 18px;
+  margin-top: -6px;
   border-radius: 50%;
   background: #fffdf4;
   box-shadow: 0 1px 4px rgba(122, 71, 31, .4), 0 0 0 2px rgba(255, 173, 73, .45);
 }
-.music-volume-hint {
-  margin-left: 4px;
-  padding: 4px 10px;
+.music-volume-row input[type='range']::-moz-range-track {
+  height: 6px;
   border-radius: 999px;
-  background: rgba(101, 63, 38, .07);
+  background: rgba(135, 84, 45, .22);
+}
+.music-volume-row input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: #ffb85e;
+}
+.music-volume-row input[type='range']::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 50%;
+  background: #fffdf4;
+  box-shadow: 0 1px 4px rgba(122, 71, 31, .4), 0 0 0 2px rgba(255, 173, 73, .45);
+}
+/* iPhone 上网页改不了音量，这里明说一句，不给一条拖了没反应的滑杆 */
+.music-volume-row.is-unsupported {
+  justify-content: center;
   color: #8a684f;
-  font-size: .74rem;
-  white-space: nowrap;
+}
+.music-volume-note {
+  font-size: .76rem;
 }
 .music-panel-list {
   list-style: none;
@@ -15988,7 +16042,8 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
 .music-request-submit:focus-visible,
 .music-request-list li > button:focus-visible,
 .music-progress input[type='range']:focus-visible,
-.music-volume input[type='range']:focus-visible,
+.music-volume-row input[type='range']:focus-visible,
+.music-volume-icon.is-button:focus-visible,
 .music-request-card textarea:focus-visible {
   outline: 3px solid rgba(255, 143, 77, .85);
   outline-offset: 2px;
