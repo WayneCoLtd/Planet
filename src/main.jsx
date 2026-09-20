@@ -1084,11 +1084,31 @@ function PasswordGate({ onUnlock }) {
 
 function Nav({ current, setCurrent }) {
   const [bagVersion, setBagVersion] = useState(0)
+  const navRef = React.useRef(null)
   React.useEffect(() => {
     const refresh = () => setBagVersion(value => value + 1)
     window.addEventListener('wwcxrl-backpack-updated', refresh)
     return () => window.removeEventListener('wwcxrl-backpack-updated', refresh)
   }, [])
+
+  // 手机上导航一屏放不下：切换页面后把当前项滚进视野，
+  // 免得停在「每日签到」时看不出自己其实已经切到别处。
+  React.useEffect(() => {
+    const nav = navRef.current
+    if (!nav) return
+    const active = nav.querySelector('button.active')
+    if (!active) return
+    const target = Math.max(0, active.offsetLeft - (nav.clientWidth - active.offsetWidth) / 2)
+    if (Math.abs(nav.scrollLeft - target) < 4) return
+    const reduce = typeof window !== 'undefined' && window.matchMedia
+      ? window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      : false
+    try {
+      nav.scrollTo({ left: target, behavior: reduce ? 'auto' : 'smooth' })
+    } catch {
+      nav.scrollLeft = target
+    }
+  }, [current])
 
   const bag = loadBackpack()
   const observatoryNavOpen = Number(bag.observatory_nav_unlocked || 0) > 0
@@ -1103,7 +1123,7 @@ function Nav({ current, setCurrent }) {
     ['capsule', '彩蛋', '🎁']
   ]
   return (
-    <nav className="planet-nav" aria-label="300Days 纪念日导航">
+    <nav className="planet-nav" aria-label="300Days 纪念日导航" ref={navRef}>
       <button
         type="button"
         title="回到可操作的 8月9日邀请信"

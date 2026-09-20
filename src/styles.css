@@ -1147,21 +1147,51 @@ main { position: relative; }
 @media (max-width: 900px) {
   .top-bar {
     width: min(100% - 20px, 1180px);
-    align-items: stretch !important;
-    flex-direction: column !important;
+    /* 两行网格：品牌 + 播放器同一行，导航独占下一行。
+       以前这里是 flex-direction: column，播放器会被挤到第三行、孤零零挂在左边。 */
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "brand brand dock"
+      "nav nav nav";
+    align-items: center !important;
+    column-gap: 10px;
+    row-gap: 8px;
     margin-top: 10px !important;
     margin-bottom: 14px !important;
   }
-  .brand { width: fit-content !important; }
+  .brand {
+    grid-area: brand;
+    width: fit-content !important;
+    justify-self: start;
+  }
+  .music-dock {
+    grid-area: dock;
+    justify-self: end;
+  }
   .planet-nav {
+    grid-area: nav;
     justify-content: flex-start !important;
     flex-wrap: nowrap !important;
     overflow-x: auto !important;
     padding: 2px 2px 8px !important;
+    /* 右侧渐隐，暗示还能往右滑 */
+    -webkit-mask-image: linear-gradient(90deg, #000 0 calc(100% - 26px), transparent 100%);
+    mask-image: linear-gradient(90deg, #000 0 calc(100% - 26px), transparent 100%);
   }
   .planet-nav button { flex: 0 0 auto !important; }
   .hero-section { width: min(100% - 20px, 1180px) !important; }
   .planet-wrap { transform: none; }
+}
+
+@media (max-width: 480px) {
+  /* 窄屏把导航按钮收紧一点，一屏能多露出一个入口 */
+  .planet-nav button {
+    padding: 9px 11px !important;
+    gap: 5px !important;
+    font-size: .86rem !important;
+  }
+  .planet-nav { padding: 2px 2px 6px !important; }
 }
 
 
