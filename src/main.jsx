@@ -13661,7 +13661,6 @@ function CloudStatusPill() {
 const MUSIC_API = '/api/music'
 const MUSIC_REQUESTS_API = '/api/music-requests'
 const MUSIC_MODE_KEY = 'wwcxrl-music-mode'
-const MUSIC_VOLUME_KEY = 'wwcxrl-music-volume'
 
 const MUSIC_MODES = [
   { id: 'list', icon: 'repeat', label: '顺序播放' },
@@ -13693,25 +13692,6 @@ function formatMusicTime(seconds) {
   return `${mins}:${secs}`
 }
 
-// iOS 上 audio.volume 是只读的，音量条拖了没用 —— 用一个独立的探针元素判断，
-// 避免碰到正在播放的那个元素造成一闪的音量跳变。
-function detectVolumeSupport() {
-  if (typeof navigator === 'undefined') return false
-  // iPhone / iPad 上网页改不了音量（audio.volume 是只读的系统限制），
-  // 探针在真机上也不一定可靠，这里直接判为不支持，免得给出一条拖了没反应的滑杆。
-  const ua = navigator.userAgent || ''
-  const iOS = /iPad|iPhone|iPod/.test(ua) || (/Macintosh/.test(ua) && (navigator.maxTouchPoints || 0) > 1)
-  if (iOS) return false
-  try {
-    const probe = new Audio()
-    probe.volume = 0.42
-    const usable = Math.abs(probe.volume - 0.42) < 0.01
-    return usable
-  } catch {
-    return false
-  }
-}
-
 const musicState = {
   tracks: [],
   currentId: null,
@@ -13719,13 +13699,11 @@ const musicState = {
   loadingId: null,
   progress: 0,
   duration: 0,
-  volume: 0.8,
   mode: 'list',
   error: '',
   loaded: false
 }
 
-let musicVolumeSupported = null
 let musicAudio = null
 let musicSnapshot = { ...musicState }
 const musicListeners = new Set()
@@ -13749,11 +13727,6 @@ function useMusicState() {
   return React.useSyncExternalStore(musicSubscribe, musicGetSnapshot, musicGetSnapshot)
 }
 
-function musicIsVolumeSupported() {
-  if (musicVolumeSupported === null) musicVolumeSupported = detectVolumeSupport()
-  return musicVolumeSupported
-}
-
 function musicCurrentTrack() {
   return musicState.tracks.find(track => track.id === musicState.currentId) || null
 }
@@ -13762,7 +13735,6 @@ function musicAudioEl() {
   if (musicAudio) return musicAudio
   const audio = new Audio()
   audio.preload = 'metadata'
-  try { audio.volume = musicState.volume } catch {}
   audio.addEventListener('timeupdate', () => {
     musicState.progress = audio.currentTime || 0
     const second = Math.floor(musicState.progress)
@@ -13904,14 +13876,6 @@ function musicSeek(seconds) {
   } catch {}
 }
 
-function musicSetVolume(value) {
-  const volume = Math.max(0, Math.min(1, Number(value)))
-  musicState.volume = volume
-  try { musicAudioEl().volume = volume } catch {}
-  safeSetItem(MUSIC_VOLUME_KEY, String(volume))
-  musicNotify()
-}
-
 function musicSetMode(mode) {
   if (!MUSIC_MODES.some(item => item.id === mode)) return
   musicState.mode = mode
@@ -13923,8 +13887,6 @@ function musicSetMode(mode) {
 function musicBootstrap() {
   const savedMode = safeGetItem(MUSIC_MODE_KEY)
   if (MUSIC_MODES.some(item => item.id === savedMode)) musicState.mode = savedMode
-  const savedVolume = Number(safeGetItem(MUSIC_VOLUME_KEY))
-  if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 1) musicState.volume = savedVolume
 }
 
 function musicNextMode(mode) {
@@ -14001,79 +13963,12 @@ function MusicIcon({ name, size = 18 }) {
       </svg>
     )
   }
-  // 音量图标同样用 SVG：🔈🔊🔇 在部分系统会渲染成彩色方块，也和 Apple Music 的单色图标不一致。
-  if (name === 'volumeLow' || name === 'volumeHigh' || name === 'volumeMute') {
-    return (
-      <svg {...common}>
-        <path d="M4.6 9.4h2.9l3.8-3a.85.85 0 0 1 1.4.67v9.86a.85.85 0 0 1-1.4.67l-3.8-3H4.6a.9.9 0 0 1-.9-.9v-3.4a.9.9 0 0 1 .9-.9Z" />
-        {name === 'volumeLow' && (
-          <path d="M16.4 9.8a3.5 3.5 0 0 1 0 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        )}
-        {name === 'volumeHigh' && (
-          <>
-            <path d="M16 9.1a5 5 0 0 1 0 5.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            <path d="M18.9 6.6a8.6 8.6 0 0 1 0 10.8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          </>
-        )}
-        {name === 'volumeMute' && (
-          <>
-            <path d="m15.7 9.8 4.6 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-            <path d="m20.3 9.8-4.6 4.4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          </>
-        )}
-      </svg>
-    )
-  }
   return null
 }
 
 // 顶栏上的小控制：没在播时是一个安静的图标，在播时变成缓慢转动的小唱片。
 // 点开是从顶栏下方滑出的面板，不占页面底部、也不遮挡内容。
-// 音量：单独占一行，小喇叭 + 长滑杆 + 大喇叭（照 Apple Music 的排布）。
-// 以前塞在上一首/播放/下一首中间，只有 68px 宽，手机上几乎按不准。
-function MusicVolumeRow({ volume, onChange }) {
-  const supported = React.useMemo(() => musicIsVolumeSupported(), [])
-  const lastAudibleRef = React.useRef(volume > 0 ? volume : 0.8)
-  React.useEffect(() => { if (volume > 0) lastAudibleRef.current = volume }, [volume])
-  const percent = Math.round(volume * 100)
-
-  if (!supported) {
-    return (
-      <div className="music-volume-row is-unsupported">
-        <span className="music-volume-icon" aria-hidden="true"><MusicIcon name="volumeLow" size={17} /></span>
-        <span className="music-volume-note">手机网页改不了音量，用侧边的音量键调</span>
-        <span className="music-volume-icon is-large" aria-hidden="true"><MusicIcon name="volumeHigh" size={20} /></span>
-      </div>
-    )
-  }
-
-  return (
-    <div className="music-volume-row">
-      <button
-        type="button"
-        className="music-volume-icon is-button"
-        onClick={() => onChange(volume > 0 ? 0 : lastAudibleRef.current)}
-        aria-label={volume > 0 ? '静音' : '恢复音量'}
-        title={volume > 0 ? '静音' : '恢复音量'}
-      >
-        <MusicIcon name={volume > 0 ? 'volumeLow' : 'volumeMute'} size={17} />
-      </button>
-      <input
-        type="range"
-        min="0"
-        max="100"
-        step="1"
-        value={percent}
-        onChange={event => onChange(Number(event.target.value) / 100)}
-        aria-label="音量"
-        style={{ '--music-fill': `${percent}%` }}
-      />
-      <span className="music-volume-icon is-large" aria-hidden="true"><MusicIcon name="volumeHigh" size={20} /></span>
-    </div>
-  )
-}
-
-// 播放控制组：进度 + 上一首/播放/下一首 + 音量。
+// 播放控制组：进度 + 上一首/播放/下一首。
 // 顶栏播放器和音乐室页面共用这一套，避免两处各写一份、慢慢走形。
 function MusicTransport({ music }) {
   const mode = MUSIC_MODES.find(item => item.id === music.mode) || MUSIC_MODES[0]
@@ -14107,8 +14002,6 @@ function MusicTransport({ music }) {
         </button>
         <button type="button" className="music-step-button" onClick={() => musicPlayStep(1)} disabled={!music.tracks.length} aria-label="下一首"><MusicIcon name="next" /></button>
       </div>
-
-      <MusicVolumeRow volume={music.volume} onChange={musicSetVolume} />
     </div>
   )
 }
