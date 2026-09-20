@@ -10843,7 +10843,7 @@ function MessageBoard() {
           content: text,
           imageUrls: resolved.urls,
           parentId: targetId
-        }, sender), '发送有点慢，如果已经出现，说明成功了，稍后会自动刷新。')
+        }, { role: sender.role, userId: sender.userId, displayName: sender.name }), '发送有点慢，如果已经出现，说明成功了，稍后会自动刷新。')
         if (!saved?.ok) {
           patchReply(targetId, { status: `回复失败：${saved?.error || '请稍后再试。'}` })
           return
@@ -11059,7 +11059,14 @@ function MessageBoard() {
   }
 
   function nameOf(item) {
-    return item?.displayName || (item?.role === 'orange' ? '小琛' : '小琳')
+    const role = item?.role
+    const expected = role === 'orange' ? '小琛' : (role === 'pomelo' ? '小琳' : '')
+    if (!expected) return item?.displayName || '访客'
+    const otherName = role === 'orange' ? '小琳' : '小琛'
+    // 小信箱只有小琛和小琳两个人，角色是权威字段。
+    // 历史上有过「角色→名字」写反的错行（头像 🌞 却署名小琳），这里按角色纠正显示。
+    if (!item.displayName || item.displayName === otherName) return expected
+    return item.displayName
   }
 
   function renderReplyComposer(targetId, targetName, isRoot = false) {

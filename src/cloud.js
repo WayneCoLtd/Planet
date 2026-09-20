@@ -897,7 +897,9 @@ export async function saveCloudMessage({ content = '', imageUrl = '', imageUrls 
     if (!supabase || !identity) return { ok: false, error: '未连接云端' }
     const role = sender?.role || identity.role
     const userId = sender?.userId || identity.id
-    const displayName = sender?.displayName || identity.displayName
+    // name 是调用方常用的写法，这里一并接受：漏传时不能悄悄回退成设备身份的名字，
+    // 否则会出现「角色是小琛、署名却写成小琳」的错行。
+    const displayName = sender?.displayName || sender?.name || identity.displayName
     const list = normalizeOutgoingImageUrls({ imageUrl, imageUrls })
     if (list.length > 1 && messageMultiImageSupported === false) {
       return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
