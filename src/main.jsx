@@ -12386,6 +12386,21 @@ function parseNightReadingPasteText(text) {
     .map(text => ({ id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: 'text', text }))
 }
 
+function buildNightReadingBlocksFromLegacy(secret = '', gallery = [], ensureTextBlock = false) {
+  const blocks = []
+  const stamp = Date.now()
+  String(secret || '').split(/\n+/).map(text => text.trim()).filter(Boolean).forEach(text => {
+    blocks.push({ id: `nr-legacy-${stamp}-${blocks.length}`, type: 'text', text, align: 'left', fontSize: 'normal', color: '#4f3e68' })
+  })
+  ;(Array.isArray(gallery) ? gallery : []).map(String).map(url => url.trim()).filter(Boolean).forEach(url => {
+    blocks.push({ id: `nr-legacy-${stamp}-${blocks.length}`, type: 'image', url, caption: '' })
+  })
+  if (ensureTextBlock && !blocks.length) {
+    blocks.push({ id: `nr-legacy-${stamp}-0`, type: 'text', text: '', align: 'left', fontSize: 'normal', color: '#4f3e68' })
+  }
+  return blocks
+}
+
 async function resolveNightReadingImageBlob(url) {
   if (String(url || '').startsWith('data:')) return dataUrlToBlob(url)
   const proxiedUrl = `/api/night-reading-image?url=${encodeURIComponent(url)}`
@@ -12704,7 +12719,7 @@ function AdminTaskPage() {
   }
 
   function setNightReadingBlocks(blocks) {
-    setDraft(previous => ({ ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }))
+    setDraft(previous => ({ ...previous, secret: '', gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks } }))
   }
 
   function clearNightReadingImport() {
@@ -12717,11 +12732,14 @@ function AdminTaskPage() {
 
   function addNightReadingBlock(type = 'text') {
     setDraft(previous => {
-      const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
+      const existing = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter(Boolean) : []
+      const blocks = existing.length
+        ? [...existing]
+        : buildNightReadingBlocksFromLegacy(previous.secret, previous.gameConfig?.gallery)
       blocks.push(type === 'image'
         ? { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, url: '', caption: '' }
         : { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, text: '', align: 'left', fontSize: 'normal', color: '#4f3e68' })
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
+      return { ...previous, secret: '', gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks } }
     })
   }
 
@@ -12753,13 +12771,7 @@ function AdminTaskPage() {
     setDraft(previous => {
       const existing = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter(Boolean) : []
       if (existing.length) return previous
-      const blocks = []
-      String(previous.secret || '').split(/\n+/).map(text => text.trim()).filter(Boolean).forEach(text => {
-        blocks.push({ id: `nr-${Date.now()}-${blocks.length}`, type: 'text', text, align: 'left', fontSize: 'normal', color: '#4f3e68' })
-      })
-      const gallery = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery.filter(Boolean) : []
-      gallery.forEach(url => blocks.push({ id: `nr-${Date.now()}-${blocks.length}`, type: 'image', url, caption: '' }))
-      if (!blocks.length) blocks.push({ id: `nr-${Date.now()}-0`, type: 'text', text: '', align: 'left', fontSize: 'normal', color: '#4f3e68' })
+      const blocks = buildNightReadingBlocksFromLegacy(previous.secret, previous.gameConfig?.gallery, true)
       return {
         ...previous,
         secret: '',
@@ -12802,8 +12814,11 @@ function AdminTaskPage() {
       status: 'importing'
     }))
     setDraft(previous => {
-      const blocks = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks : []
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks: [...blocks, ...placeholders] } }
+      const existing = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter(Boolean) : []
+      const blocks = existing.length
+        ? existing
+        : buildNightReadingBlocksFromLegacy(previous.secret, previous.gameConfig?.gallery)
+      return { ...previous, secret: '', gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks: [...blocks, ...placeholders] } }
     })
     setUploadingImage(true)
     let succeeded = 0
@@ -12929,53 +12944,6 @@ function AdminTaskPage() {
     processNightReadingBlocks(blocks)
   }
 
-  async function handleNightReadingGalleryFiles(event) {
-    const files = Array.from(event.target.files || []).filter(Boolean).slice(0, 12)
-    event.target.value = ''
-    if (!files.length) return
-    if (!draft.day) { setToast('请先填写天数 Day，再上传夜读配图'); return }
-    setUploadingImage(true)
-    setToast(`正在上传 ${files.length} 张夜读配图…`)
-    const uploaded = []
-    for (const file of files) {
-      const url = await uploadCloudTaskImage(file, draft.day)
-      if (url) uploaded.push(url)
-    }
-    setUploadingImage(false)
-    if (uploaded.length) {
-      setDraft(previous => {
-        const existing = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery.filter(Boolean) : []
-        return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery: [...existing, ...uploaded] } }
-      })
-      setToast(`已上传 ${uploaded.length} 张夜读配图。`)
-    } else {
-      setToast('夜读配图上传失败：云端未连接或存储不可用，可改用图片链接。')
-    }
-  }
-
-  function addNightReadingGalleryImage() {
-    setDraft(previous => {
-      const gallery = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery : []
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery: [...gallery, ''] } }
-    })
-  }
-
-  function updateNightReadingGalleryImage(index, url) {
-    setDraft(previous => {
-      const gallery = Array.isArray(previous.gameConfig?.gallery) ? [...previous.gameConfig.gallery] : []
-      gallery[index] = url
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery } }
-    })
-  }
-
-  function removeNightReadingGalleryImage(index) {
-    setDraft(previous => {
-      const gallery = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery.filter((_, itemIndex) => itemIndex !== index) : []
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), gallery } }
-    })
-  }
-
-
   function remove(row) {
     if (!window.confirm(`确认删除 Day ${row.day}？删除后不可恢复。`)) return
     if (row.source === 'local') {
@@ -13006,6 +12974,17 @@ function AdminTaskPage() {
   function editTask(row) {
     setAdminSection('form')
     setEditingDay(row.day)
+    let nextSecret = row.secret || ''
+    let nextGameConfig = row.type === 'game'
+      ? { ...getMiniGameDefaults(row.gameId || 'mazeClassic'), ...(row.gameConfig || {}) }
+      : { ...(row.gameConfig || {}) }
+    if (row.type === 'nightReading' && !(Array.isArray(nextGameConfig.blocks) && nextGameConfig.blocks.length)) {
+      const migratedBlocks = buildNightReadingBlocksFromLegacy(nextSecret, nextGameConfig.gallery)
+      if (migratedBlocks.length) {
+        nextSecret = ''
+        nextGameConfig = { ...nextGameConfig, gallery: [], blocks: migratedBlocks }
+      }
+    }
     setDraft({
       day: row.day,
       date: row.date || adminDayToDate(row.day),
@@ -13015,15 +12994,13 @@ function AdminTaskPage() {
       theme: row.theme || '',
       reward: row.reward || '',
       prompt: row.prompt || '',
-      secret: row.secret || '',
+      secret: nextSecret,
       answer: row.answer || '',
       image: row.image || '',
       memoryTitle: row.memoryTitle || '',
       memoryCaption: row.memoryCaption || '',
       gameId: row.gameId || 'mazeClassic',
-      gameConfig: row.type === 'game'
-        ? { ...getMiniGameDefaults(row.gameId || 'mazeClassic'), ...(row.gameConfig || {}) }
-        : { ...(row.gameConfig || {}) },
+      gameConfig: nextGameConfig,
       chat: Array.isArray(row.chatMessages)
         ? row.chatMessages.map(msg => `${msg.side === 'her' ? '小琳' : '小琛'}：${msg.text}`).join('\n')
         : '',
@@ -13063,6 +13040,7 @@ function AdminTaskPage() {
   const nightGallery = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
   const nightBlocks = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks : []
   const usingNightBlocks = draft.type === 'nightReading' && nightBlocks.length > 0
+  const hasLegacyNightContent = draft.type === 'nightReading' && (Boolean(String(draft.secret || '').trim()) || nightGallery.some(Boolean))
   const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）', nightReading: '夜读正文（可分段；漫画类可以只留图集）' })[draft.type] || '完成后显示的内容'
   const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : draft.type === 'nightReading' ? '把今晚想对她说的话，写成几段温柔的文字。' : '完成后显示的一段话'
   const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
@@ -13283,7 +13261,7 @@ function AdminTaskPage() {
                   <small>按内容块排版，发布时会保持这里的顺序和样式。</small>
                 </div>
                 <div className="admin-night-block-actions">
-                  {!nightBlocks.length && <button type="button" onClick={migrateNightReadingLegacyContent}>升级现有正文</button>}
+                  {!nightBlocks.length && hasLegacyNightContent && <button type="button" onClick={migrateNightReadingLegacyContent}>升级旧版正文与图集</button>}
                   <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 文字</button>
                   <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片</button>
                 </div>
@@ -13355,18 +13333,16 @@ function AdminTaskPage() {
                   </div>
                 </div>
               ) : (
-                <p className="admin-night-editor-empty">可以继续使用下方旧版正文，也可以点“升级现有正文”进入可排版的新版编辑器。</p>
+                <p className="admin-night-editor-empty">{hasLegacyNightContent ? '检测到旧版正文或图集。点击“升级旧版正文与图集”，或直接新增文字 / 上传图片，旧内容会自动进入编辑器且不会丢失。' : '还没有内容。可以批量上传图片、新增文字，或粘贴微信公众号文章。'}</p>
               )}
             </div>
           )}
         </div>
-        {!usingNightBlocks && (
+        {!usingNightBlocks && draft.type !== 'nightReading' && (
           <>
-            {draft.type !== 'nightReading' && (
-              <label className="admin-full">{promptLabel}
-                <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
-              </label>
-            )}
+            <label className="admin-full">{promptLabel}
+              <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
+            </label>
             {draft.type === 'memoryPuzzle' && (
               <label className={`admin-full${missingFields.includes('谜底答案') ? ' admin-field-missing' : ''}`}>谜底答案（她答对后才能签到）
                 <input value={draft.answer} onChange={event => { setDraft({ ...draft, answer: event.target.value }); setMissingFields([]) }} placeholder="例如：郑州二砂文化创意园" />
@@ -13385,30 +13361,6 @@ function AdminTaskPage() {
           </span>
           {draft.image && <img className="admin-image-preview" src={draft.image} alt="配图预览" />}
         </label>
-        {draft.type === 'nightReading' && !usingNightBlocks && (
-          <div className="admin-full admin-night-gallery">
-            <div className="admin-section-head">
-              <h3>🖼️ 夜读图集</h3>
-              <button type="button" className="admin-meeting-add" onClick={addNightReadingGalleryImage}>＋ 添加图片链接</button>
-            </div>
-            <div className="admin-night-gallery-list">
-              {(nightGallery.length ? nightGallery : ['']).map((url, index) => (
-                <div className="admin-night-gallery-item" key={`night-gallery-${index}`}>
-                  <input
-                    value={url}
-                    onChange={event => updateNightReadingGalleryImage(index, event.target.value)}
-                    placeholder="粘贴图片地址，或点击下方批量上传"
-                  />
-                  <button type="button" className="admin-row-delete" onClick={() => removeNightReadingGalleryImage(index)}>删除</button>
-                </div>
-              ))}
-            </div>
-            <span className="admin-image-upload-row">
-              <input type="file" accept="image/*" multiple onChange={handleNightReadingGalleryFiles} disabled={uploadingImage || !draft.day} />
-              <small>{uploadingImage ? '上传中…' : '可一次选择多张图片，自动追加到图集'}</small>
-            </span>
-          </div>
-        )}
         <details className="admin-advanced">
           <summary>高级选项（选填）</summary>
           <div className="admin-form-grid">
