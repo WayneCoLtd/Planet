@@ -39,7 +39,7 @@ const END_DATE = new Date(`${dailyAdventures[dailyAdventures.length - 1]?.date |
 const ADMIN_TASK_TYPES = [
   { id: 'memoryPuzzle', label: '谜语签到（推荐）', hint: '输入谜底答案，答对后自动亮起签到' },
   { id: 'dailyLight', label: '今日小卡（轻量签到）', hint: '一张 10 秒小卡：冷知识、生活技巧、AI 小提示、脑筋急转弯。看完点“收下啦”即可签到' },
-  { id: 'nightReading', label: '夜读（温暖阅读）', hint: '一篇温暖治愈的文字或漫画，看完点“我读完啦”即可签到。支持封面、正文、多图和原文链接' },
+  { id: 'nightReading', label: '内容栏目（夜读 / 轻松一刻）', hint: '发布温暖夜读、轻松一刻或治愈漫画；支持混排、基础排版、封面、多图和原文链接' },
   { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
   { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
   { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
@@ -7796,8 +7796,14 @@ function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}
 function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () => {} }) {
   const [collecting, setCollecting] = useState(false)
   const config = item.gameConfig || {}
-  const kind = config.readingKind === 'comic' ? '治愈漫画' : '温暖夜读'
-  const sourceName = String(config.source || '央视新闻').trim()
+  const column = config.readingColumn || (config.readingKind === 'comic' ? 'healingComic' : 'nightReading')
+  const columnMeta = {
+    nightReading: { label: '温暖夜读', icon: '🌙' },
+    lightMoment: { label: '轻松一刻', icon: '😄' },
+    healingComic: { label: '治愈漫画', icon: '🎨' }
+  }[column] || { label: '温暖夜读', icon: '🌙' }
+  const sourceMode = config.sourceMode || (config.source ? 'repost' : 'hidden')
+  const sourceName = String(config.source || '').trim()
   const sourceUrl = String(config.sourceUrl || '').trim()
   const body = String(item.secret || '').trim()
   const paragraphs = body ? body.split(/\n+/).map(line => line.trim()).filter(Boolean) : []
@@ -7816,17 +7822,20 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
   }
 
   return (
-    <div className={`mini-game night-reading ${taskCompleted ? 'is-completed' : ''} ${collecting ? 'is-collecting' : ''}`}>
+    <div className={`mini-game night-reading is-${column} ${taskCompleted ? 'is-completed' : ''} ${collecting ? 'is-collecting' : ''}`}>
       <div className="night-reading-top">
-        <span className="night-reading-badge">{item.icon || '🌙'} {kind}</span>
+        <span className="night-reading-badge">{item.icon || columnMeta.icon} {columnMeta.label}</span>
         <small>{item.date} · Day {item.day}</small>
       </div>
       <header className="night-reading-header">
         <h3>{item.title || '夜读'}</h3>
-        <p>
-          <span>来源：{sourceName}</span>
-          {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer">查看原文 ↗</a>}
-        </p>
+        {(sourceMode !== 'hidden' || sourceUrl) && (
+          <p>
+            {sourceMode === 'original' && <span>来源：{sourceName || '原创'}</span>}
+            {sourceMode === 'repost' && sourceName && <span>来源：{sourceName}</span>}
+            {sourceUrl && <a href={sourceUrl} target="_blank" rel="noreferrer">查看原文 ↗</a>}
+          </p>
+        )}
       </header>
       {item.image && <img className="night-reading-cover" src={item.image} alt="夜读封面" loading="lazy" />}
       {intro && <p className="night-reading-intro">{intro}</p>}
@@ -7844,10 +7853,18 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
                   </div>
                 )
               }
-              return <img key={`${item.day}-b-${index}`} className="night-reading-block-image" src={block.url} alt={`夜读图片 ${index + 1}`} loading="lazy" referrerPolicy="no-referrer" />
+              return (
+                <figure key={`${item.day}-b-${index}`} className="night-reading-block-figure">
+                  <img className="night-reading-block-image" src={block.url} alt={block.caption || `${columnMeta.label}图片 ${index + 1}`} loading="lazy" referrerPolicy="no-referrer" />
+                  {block.caption && <figcaption>{block.caption}</figcaption>}
+                </figure>
+              )
             }
             if (block.type !== 'image' && block.text) {
-              return <p key={`${item.day}-b-${index}`}>{block.text}</p>
+              const align = ['left', 'center', 'right'].includes(block.align) ? block.align : 'left'
+              const size = ['small', 'normal', 'large', 'title'].includes(block.fontSize) ? block.fontSize : 'normal'
+              const color = /^#[0-9a-f]{6}$/i.test(String(block.color || '')) ? block.color : undefined
+              return <p key={`${item.day}-b-${index}`} className={`is-align-${align} is-size-${size}`} style={color ? { color } : undefined}>{block.text}</p>
             }
             return null
           })}
@@ -12221,12 +12238,23 @@ const ADMIN_TASK_EXAMPLES = {
     gameConfig: { cardKind: '冷知识' }
   },
   nightReading: {
-    title: '夜读 · 想，全是问题；做，才有答案',
-    prompt: '今晚把手机调静音，留三分钟读一点温柔。',
-    secret: '很多时候，因为害怕失败，我们总希望做好万全的准备，才敢迈出第一步。\n\n但其实，并没有那个完美的时机。\n\n想，全是问题；做，才有答案。',
-    reward: '愿你放下包袱，勇敢出发。',
-    icon: '🌙',
-    gameConfig: { readingKind: 'article', source: '央视新闻', sourceUrl: '', gallery: [] }
+    title: '轻松一刻 · 今日份小能量',
+    prompt: '如果你今晚还需要一点小能量，欢迎来到【轻松一刻】栏目',
+    secret: '',
+    reward: '愿你笑一下，再轻轻松松去休息。',
+    icon: '😄',
+    gameConfig: {
+      readingKind: 'article',
+      readingColumn: 'lightMoment',
+      sourceMode: 'repost',
+      source: '网络趣图',
+      sourceUrl: '',
+      gallery: [],
+      blocks: [
+        { id: 'light-moment-intro', type: 'text', text: '请欣赏我隆重推出——今天终于结束了。', align: 'center', fontSize: 'large', color: '#7b4b63' },
+        { id: 'light-moment-image', type: 'image', url: '/images/light-moment-will-smith.png', caption: '今日份快乐已送达' }
+      ]
+    }
   },
   letter: {
     title: '第 X 天的一封信',
@@ -12685,7 +12713,9 @@ function AdminTaskPage() {
   function addNightReadingBlock(type = 'text') {
     setDraft(previous => {
       const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
-      blocks.push({ id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, text: '', url: '' })
+      blocks.push(type === 'image'
+        ? { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, url: '', caption: '' }
+        : { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, text: '', align: 'left', fontSize: 'normal', color: '#4f3e68' })
       return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
     })
   }
@@ -12702,6 +12732,53 @@ function AdminTaskPage() {
       const blocks = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter((_, blockIndex) => blockIndex !== index) : []
       return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
     })
+  }
+
+  function duplicateNightReadingBlock(index) {
+    setDraft(previous => {
+      const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
+      if (!blocks[index]) return previous
+      const copy = { ...blocks[index], id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }
+      blocks.splice(index + 1, 0, copy)
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
+    })
+  }
+
+  function migrateNightReadingLegacyContent() {
+    setDraft(previous => {
+      const existing = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter(Boolean) : []
+      if (existing.length) return previous
+      const blocks = []
+      String(previous.secret || '').split(/\n+/).map(text => text.trim()).filter(Boolean).forEach(text => {
+        blocks.push({ id: `nr-${Date.now()}-${blocks.length}`, type: 'text', text, align: 'left', fontSize: 'normal', color: '#4f3e68' })
+      })
+      const gallery = Array.isArray(previous.gameConfig?.gallery) ? previous.gameConfig.gallery.filter(Boolean) : []
+      gallery.forEach(url => blocks.push({ id: `nr-${Date.now()}-${blocks.length}`, type: 'image', url, caption: '' }))
+      if (!blocks.length) blocks.push({ id: `nr-${Date.now()}-0`, type: 'text', text: '', align: 'left', fontSize: 'normal', color: '#4f3e68' })
+      return {
+        ...previous,
+        secret: '',
+        gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks }
+      }
+    })
+    setToast('已切换到新版内容编辑器，原有正文和图集已按顺序转换。')
+  }
+
+  async function handleNightReadingBlockImageFile(event, index) {
+    const file = event.target.files && event.target.files[0]
+    event.target.value = ''
+    if (!file) return
+    if (!draft.day) { setToast('请先填写天数 Day，再上传图片'); return }
+    setUploadingImage(true)
+    setToast('图片上传中…')
+    const url = await uploadCloudTaskImage(file, draft.day)
+    setUploadingImage(false)
+    if (url) {
+      updateNightReadingBlock(index, { url, status: 'uploaded' })
+      setToast('图片已上传并放入当前内容块。')
+    } else {
+      setToast('图片上传失败：云端未连接或存储不可用，可改用图片链接。')
+    }
   }
 
   function moveNightReadingBlock(index, direction) {
@@ -13005,7 +13082,9 @@ function AdminTaskPage() {
                 if (type === 'nightReading') next.gameConfig = {
                   ...(draft.gameConfig || {}),
                   readingKind: draft.gameConfig?.readingKind || 'article',
-                  source: draft.gameConfig?.source || '央视新闻',
+                  readingColumn: draft.gameConfig?.readingColumn || 'nightReading',
+                  sourceMode: draft.gameConfig?.sourceMode || 'hidden',
+                  source: draft.gameConfig?.source || '',
                   sourceUrl: draft.gameConfig?.sourceUrl || '',
                   gallery: Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
                 }
@@ -13052,23 +13131,30 @@ function AdminTaskPage() {
           )}
           {draft.type === 'nightReading' && (
             <div className="admin-full admin-night-meta">
-              <div className="admin-night-meta-title">🌙 夜读信息</div>
+              <div className="admin-night-meta-title">✨ 栏目信息</div>
               <div className="admin-night-meta-grid">
-                <label>夜读形式
+                <label>栏目
                   <select
-                    value={draft.gameConfig?.readingKind || 'article'}
-                    onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), readingKind: event.target.value } })}
+                    value={draft.gameConfig?.readingColumn || (draft.gameConfig?.readingKind === 'comic' ? 'healingComic' : 'nightReading')}
+                    onChange={event => {
+                      const readingColumn = event.target.value
+                      setDraft({ ...draft, icon: readingColumn === 'lightMoment' ? '😄' : readingColumn === 'healingComic' ? '🎨' : '🌙', gameConfig: { ...(draft.gameConfig || {}), readingColumn, readingKind: readingColumn === 'healingComic' ? 'comic' : 'article' } })
+                    }}
                   >
-                    <option value="article">温暖夜读 · 文字</option>
-                    <option value="comic">治愈漫画 · 图片</option>
+                    <option value="nightReading">🌙 温暖夜读</option>
+                    <option value="lightMoment">😄 轻松一刻</option>
+                    <option value="healingComic">🎨 治愈漫画</option>
                   </select>
                 </label>
-                <label>来源名称
-                  <input
-                    value={draft.gameConfig?.source || '央视新闻'}
-                    onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), source: event.target.value } })}
-                    placeholder="例如：央视新闻"
-                  />
+                <label>来源显示
+                  <select
+                    value={draft.gameConfig?.sourceMode || (draft.gameConfig?.source ? 'repost' : 'hidden')}
+                    onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), sourceMode: event.target.value } })}
+                  >
+                    <option value="hidden">不显示来源</option>
+                    <option value="original">原创内容</option>
+                    <option value="repost">转载 / 其他来源</option>
+                  </select>
                 </label>
                 <label>原文链接（选填）
                   <input
@@ -13077,8 +13163,22 @@ function AdminTaskPage() {
                     placeholder="https://mp.weixin.qq.com/s/…"
                   />
                 </label>
+                {(draft.gameConfig?.sourceMode || (draft.gameConfig?.source ? 'repost' : 'hidden')) !== 'hidden' && (
+                  <label>来源名称（选填）
+                    <input
+                      value={draft.gameConfig?.source || ''}
+                      onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), source: event.target.value } })}
+                      placeholder={draft.gameConfig?.sourceMode === 'original' ? '留空则显示“原创”' : '例如：央视新闻、网络趣图'}
+                    />
+                  </label>
+                )}
               </div>
             </div>
+          )}
+          {draft.type === 'nightReading' && (
+            <label className="admin-full">栏目介绍（选填）
+              <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="例如：如果你今晚还需要一点小能量，欢迎来到【轻松一刻】栏目" />
+            </label>
           )}
           {draft.type === 'nightReading' && (
             <div className="admin-full admin-night-import">
@@ -13100,26 +13200,73 @@ function AdminTaskPage() {
               <p className="admin-night-import-status">
                 {nightImportProgress || `已识别 ${nightBlocks.length} 个内容块`}
               </p>
-              {nightBlocks.length > 0 && (
+              <div className="admin-night-editor-head">
+                <div>
+                  <strong>内容编辑器</strong>
+                  <small>按内容块排版，发布时会保持这里的顺序和样式。</small>
+                </div>
+                <div className="admin-night-block-actions">
+                  {!nightBlocks.length && <button type="button" onClick={migrateNightReadingLegacyContent}>升级现有正文</button>}
+                  <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 文字</button>
+                  <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片</button>
+                </div>
+              </div>
+              {nightBlocks.length > 0 ? (
                 <div className="admin-night-block-list">
                   {nightBlocks.map((block, index) => (
                     <div className={`admin-night-block-item is-${block.type}`} key={block.id || `nr-block-${index}`}>
                       <div className="admin-night-block-head">
-                        <span>{block.type === 'image' ? '🖼️ 图片' : '📄 文字'}</span>
+                        <span>{block.type === 'image' ? '🖼️ 图片块' : '📄 文字块'} {index + 1}</span>
                         <span className={`admin-night-block-status is-${block.status || 'local'}`}>
                           {block.status === 'importing' ? '转存中…' : block.status === 'uploaded' ? '已转存' : block.status === 'failed' ? '未转存' : ''}
                         </span>
                         <button type="button" disabled={nightImporting || index === 0} onClick={() => moveNightReadingBlock(index, -1)} aria-label="上移">↑</button>
                         <button type="button" disabled={nightImporting || index === nightBlocks.length - 1} onClick={() => moveNightReadingBlock(index, 1)} aria-label="下移">↓</button>
+                        <button type="button" disabled={nightImporting} onClick={() => duplicateNightReadingBlock(index)} aria-label="复制">⧉</button>
                         <button type="button" disabled={nightImporting} onClick={() => removeNightReadingBlock(index)} aria-label="删除">✕</button>
                       </div>
                       {block.type === 'image' ? (
                         <div className="admin-night-block-image-editor">
                           {block.url && <img className="admin-night-block-thumb" src={block.url} alt="图片预览" referrerPolicy="no-referrer" />}
                           <input value={block.url || ''} onChange={event => updateNightReadingBlock(index, { url: event.target.value })} placeholder="图片地址" />
+                          <span className="admin-image-upload-row">
+                            <input type="file" accept="image/*" onChange={event => handleNightReadingBlockImageFile(event, index)} disabled={uploadingImage || !draft.day} />
+                            <small>{uploadingImage ? '上传中…' : '也可以直接选择图片上传'}</small>
+                          </span>
+                          <input value={block.caption || ''} onChange={event => updateNightReadingBlock(index, { caption: event.target.value })} placeholder="图片说明（选填）" />
                         </div>
                       ) : (
-                        <textarea value={block.text || ''} onChange={event => updateNightReadingBlock(index, { text: event.target.value })} rows={3} placeholder="这段文字" />
+                        <div className="admin-night-text-editor">
+                          <div className="admin-night-format-toolbar" aria-label={`文字块 ${index + 1} 排版工具`}>
+                            <div className="admin-night-align-buttons" aria-label="文字对齐">
+                              {[
+                                ['left', '左对齐', '≡'],
+                                ['center', '居中', '≣'],
+                                ['right', '右对齐', '☰']
+                              ].map(([value, label, glyph]) => (
+                                <button key={value} type="button" className={(block.align || 'left') === value ? 'is-active' : ''} onClick={() => updateNightReadingBlock(index, { align: value })} title={label} aria-label={label}>{glyph}</button>
+                              ))}
+                            </div>
+                            <label>字号
+                              <select value={block.fontSize || 'normal'} onChange={event => updateNightReadingBlock(index, { fontSize: event.target.value })}>
+                                <option value="small">小字</option>
+                                <option value="normal">正文</option>
+                                <option value="large">大字</option>
+                                <option value="title">标题</option>
+                              </select>
+                            </label>
+                            <label className="admin-night-color-control">颜色
+                              <input type="color" value={/^#[0-9a-f]{6}$/i.test(String(block.color || '')) ? block.color : '#4f3e68'} onChange={event => updateNightReadingBlock(index, { color: event.target.value })} />
+                              <input value={block.color || '#4f3e68'} onChange={event => updateNightReadingBlock(index, { color: event.target.value })} placeholder="#4f3e68" aria-label="文字色号" />
+                            </label>
+                            <div className="admin-night-color-swatches" aria-label="常用文字颜色">
+                              {['#4f3e68', '#7b4b63', '#b85f47', '#3f7165', '#3f5f8f', '#1f1f26'].map(color => (
+                                <button key={color} type="button" className={block.color === color ? 'is-active' : ''} style={{ '--swatch': color }} onClick={() => updateNightReadingBlock(index, { color })} aria-label={`使用颜色 ${color}`} title={color} />
+                              ))}
+                            </div>
+                          </div>
+                          <textarea value={block.text || ''} onChange={event => updateNightReadingBlock(index, { text: event.target.value })} rows={4} placeholder="输入这一段文字…" style={{ textAlign: block.align || 'left', color: /^#[0-9a-f]{6}$/i.test(String(block.color || '')) ? block.color : undefined }} />
+                        </div>
                       )}
                     </div>
                   ))}
@@ -13129,15 +13276,19 @@ function AdminTaskPage() {
                     <button type="button" onClick={() => processNightReadingBlocks(nightBlocks)} disabled={!nightBlocks.length}>↻ 重新转存全部图片</button>
                   </div>
                 </div>
+              ) : (
+                <p className="admin-night-editor-empty">可以继续使用下方旧版正文，也可以点“升级现有正文”进入可排版的新版编辑器。</p>
               )}
             </div>
           )}
         </div>
         {!usingNightBlocks && (
           <>
-            <label className="admin-full">{promptLabel}
-              <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
-            </label>
+            {draft.type !== 'nightReading' && (
+              <label className="admin-full">{promptLabel}
+                <textarea value={draft.prompt} onChange={event => { setDraft({ ...draft, prompt: event.target.value }); setMissingFields([]) }} rows={2} placeholder="今天的小任务是什么？" />
+              </label>
+            )}
             {draft.type === 'memoryPuzzle' && (
               <label className={`admin-full${missingFields.includes('谜底答案') ? ' admin-field-missing' : ''}`}>谜底答案（她答对后才能签到）
                 <input value={draft.answer} onChange={event => { setDraft({ ...draft, answer: event.target.value }); setMissingFields([]) }} placeholder="例如：郑州二砂文化创意园" />
@@ -13232,11 +13383,22 @@ function AdminTaskPage() {
               <p className="admin-preview-prompt">💡 {draft.gameConfig?.cardKind || '今日小卡'} · 看完点“收下啦”即可完成签到</p>
             )}
             {draft.type === 'nightReading' && (
-              <p className="admin-preview-prompt">🌙 {draft.gameConfig?.readingKind === 'comic' ? '治愈漫画' : '温暖夜读'} · 看完点“我读完啦”即可完成签到</p>
+              <p className="admin-preview-prompt">
+                {draft.gameConfig?.readingColumn === 'lightMoment' ? '😄 轻松一刻' : draft.gameConfig?.readingColumn === 'healingComic' || draft.gameConfig?.readingKind === 'comic' ? '🎨 治愈漫画' : '🌙 温暖夜读'} · 看完点“我读完啦”即可完成签到
+              </p>
             )}
             {draft.prompt && <p className="admin-preview-prompt">{draft.prompt}</p>}
           </div>
         </div>
+        {draft.type === 'nightReading' && (
+          <details className="admin-night-live-preview" open>
+            <summary>查看栏目完整效果</summary>
+            <p className="admin-night-live-preview-note">这是实时预览；发布后会使用相同的排版与配色。</p>
+            <div className="admin-night-live-preview-stage">
+              <NightReadingQuest item={{ ...draft, day: Number(draft.day) || 0, title: draft.title || '未命名内容' }} />
+            </div>
+          </details>
+        )}
       </section>
 
           </>)}

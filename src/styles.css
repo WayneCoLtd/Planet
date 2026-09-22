@@ -14458,6 +14458,8 @@ html { overflow-x: hidden; }
 /* ===== 夜读：温暖阅读 / 治愈漫画 ===== */
 .night-reading {
   display: grid;
+  justify-items: stretch;
+  width: 100%;
   gap: 16px;
   min-width: 0;
   padding: clamp(18px, 3vw, 28px);
@@ -14563,6 +14565,28 @@ html { overflow-x: hidden; }
   white-space: pre-wrap;
   word-break: break-word;
 }
+.night-reading-blocks p.is-align-left { text-align: left; }
+.night-reading-blocks p.is-align-center { text-align: center; }
+.night-reading-blocks p.is-align-right { text-align: right; }
+.night-reading-blocks p.is-size-small { font-size: clamp(.82rem, 1.7vw, .92rem); }
+.night-reading-blocks p.is-size-normal { font-size: clamp(.96rem, 2vw, 1.05rem); }
+.night-reading-blocks p.is-size-large {
+  font-size: clamp(1.1rem, 2.5vw, 1.32rem);
+  line-height: 1.8;
+  font-weight: 700;
+}
+.night-reading-blocks p.is-size-title {
+  font-size: clamp(1.3rem, 3.2vw, 1.75rem);
+  line-height: 1.55;
+  font-weight: 900;
+  letter-spacing: .02em;
+}
+.night-reading-block-figure {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  min-width: 0;
+}
 .night-reading-block-image {
   display: block;
   width: 100%;
@@ -14572,6 +14596,12 @@ html { overflow-x: hidden; }
   border-radius: 16px;
   border: 2px solid #fff;
   box-shadow: 0 12px 26px rgba(83, 62, 102, .12);
+}
+.night-reading-block-figure figcaption {
+  color: #8d7b9e;
+  font-size: .8rem;
+  line-height: 1.6;
+  text-align: center;
 }
 .night-reading-block-placeholder {
   display: grid;
@@ -14641,6 +14671,51 @@ html { overflow-x: hidden; }
   color: var(--soft-ink);
   font-size: .8rem;
 }
+.night-reading.is-lightMoment {
+  background:
+    radial-gradient(circle at 9% 5%, rgba(255, 209, 100, .34), transparent 30%),
+    radial-gradient(circle at 94% 10%, rgba(255, 164, 190, .26), transparent 32%),
+    linear-gradient(155deg, #fffdf2, #fff4d8 54%, #ffeef3);
+  border-color: rgba(255, 255, 255, .96);
+  box-shadow: 0 22px 48px rgba(181, 111, 70, .16);
+}
+.night-reading.is-lightMoment .night-reading-badge {
+  color: #814c3e;
+  background: linear-gradient(135deg, #fff0a8, #ffd1df);
+  box-shadow: 0 7px 16px rgba(214, 118, 91, .16);
+}
+.night-reading.is-lightMoment .night-reading-header h3 { color: #6f3f3b; }
+.night-reading.is-lightMoment .night-reading-intro { color: #875d54; }
+.night-reading.is-lightMoment .night-reading-blocks {
+  gap: clamp(16px, 3vw, 24px);
+  padding: clamp(14px, 2.5vw, 22px);
+  border: 2px dashed rgba(213, 139, 91, .22);
+  border-radius: 24px;
+  background: rgba(255, 255, 255, .48);
+}
+.night-reading.is-lightMoment .night-reading-block-image {
+  max-width: min(100%, 620px);
+  max-height: min(68vh, 760px);
+  padding: clamp(6px, 1.2vw, 10px);
+  background: #fff;
+  border-radius: 22px;
+  box-shadow: 0 16px 34px rgba(112, 73, 54, .16), 0 0 0 1px rgba(120, 75, 50, .08);
+}
+.night-reading.is-lightMoment .night-reading-ending {
+  padding: 12px 16px;
+  border-radius: 16px;
+  color: #7a5049;
+  background: rgba(255, 255, 255, .58);
+  text-align: center;
+}
+.night-reading.is-lightMoment .night-reading-finish {
+  background: linear-gradient(135deg, #f39b5f, #ec7895 58%, #d981bd);
+  box-shadow: 0 9px #c96f7252, 0 17px 28px rgba(214, 105, 118, .24);
+}
+.night-reading.is-healingComic .night-reading-blocks,
+.night-reading.is-healingComic .night-reading-gallery {
+  gap: clamp(18px, 3vw, 28px);
+}
 .night-reading.is-collecting .night-reading-body,
 .night-reading.is-collecting .night-reading-gallery {
   animation: nightReadingClose .46s ease both;
@@ -14659,12 +14734,18 @@ html { overflow-x: hidden; }
 }
 .interstellar-voyage-theme .night-reading-header h3,
 .interstellar-voyage-theme .night-reading-body p,
+.interstellar-voyage-theme .night-reading-blocks p,
 .interstellar-voyage-theme .night-reading-ending {
   color: #eef6ff;
 }
 .interstellar-voyage-theme .night-reading-body {
   background: rgba(16, 26, 44, .7);
   border-color: rgba(185, 215, 255, .26);
+}
+.interstellar-voyage-theme .night-reading-block-figure figcaption { color: #a9bdd3; }
+.interstellar-voyage-theme .night-reading.is-lightMoment .night-reading-blocks {
+  background: rgba(16, 26, 44, .56);
+  border-color: rgba(255, 217, 142, .25);
 }
 
 /* ===== 管理端：夜读图集 ===== */
@@ -14820,6 +14901,131 @@ html { overflow-x: hidden; }
   box-shadow: none;
   font-size: .84rem;
 }
+.admin-night-editor-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 4px;
+  border-top: 1px solid rgba(124, 98, 181, .14);
+}
+.admin-night-editor-head > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+.admin-night-editor-head strong { color: #5b4b7a; }
+.admin-night-editor-head small,
+.admin-night-editor-empty {
+  color: var(--soft-ink);
+  font-size: .78rem;
+  line-height: 1.6;
+}
+.admin-night-editor-empty {
+  margin: 0;
+  padding: 14px;
+  border-radius: 14px;
+  background: rgba(240, 234, 255, .5);
+  text-align: center;
+}
+.admin-night-text-editor {
+  display: grid;
+  gap: 9px;
+}
+.admin-night-format-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px;
+  border-radius: 12px;
+  background: rgba(240, 234, 255, .58);
+}
+.admin-night-format-toolbar label {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #6c5b86;
+  font-size: .75rem;
+}
+.admin-night-format-toolbar select,
+.admin-night-format-toolbar input {
+  width: auto;
+  margin: 0;
+  padding: 6px 8px;
+  border-radius: 8px;
+  font-size: .78rem;
+}
+.admin-night-align-buttons {
+  display: inline-flex;
+  gap: 4px;
+}
+.admin-night-align-buttons button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid rgba(124, 98, 181, .18);
+  border-radius: 8px;
+  color: #5b4b7a;
+  background: #fff;
+  box-shadow: none;
+  font-weight: 900;
+}
+.admin-night-align-buttons button.is-active {
+  color: #fff;
+  background: #7c62b5;
+}
+.admin-night-color-control input[type='color'] {
+  width: 34px;
+  height: 32px;
+  padding: 3px;
+  cursor: pointer;
+}
+.admin-night-color-control input:last-child { width: 88px; }
+.admin-night-color-swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.admin-night-color-swatches button {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: var(--swatch);
+  box-shadow: 0 0 0 1px rgba(76, 55, 98, .2);
+}
+.admin-night-color-swatches button.is-active {
+  box-shadow: 0 0 0 3px rgba(124, 98, 181, .38);
+}
+.admin-night-live-preview {
+  margin-top: 16px;
+  border-top: 1px dashed rgba(124, 98, 181, .25);
+  padding-top: 14px;
+}
+.admin-night-live-preview summary {
+  color: #5b4b7a;
+  font-size: .9rem;
+  font-weight: 900;
+  cursor: pointer;
+}
+.admin-night-live-preview-note {
+  margin: 8px 0 12px;
+  color: var(--soft-ink);
+  font-size: .78rem;
+}
+.admin-night-live-preview-stage {
+  max-height: 680px;
+  padding: 12px;
+  overflow: auto;
+  border-radius: 20px;
+  background: rgba(240, 234, 255, .42);
+}
+.admin-night-live-preview-stage .night-reading-foot { pointer-events: none; }
 .admin-night-gallery .admin-section-head {
   margin: 0;
 }
@@ -14854,6 +15060,15 @@ html { overflow-x: hidden; }
   .admin-night-block-item {
     grid-template-columns: 1fr;
   }
+  .admin-night-editor-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .admin-night-editor-head .admin-night-block-actions { width: 100%; }
+  .admin-night-editor-head .admin-night-block-actions button { flex: 1 1 auto; }
+  .admin-night-format-toolbar { align-items: stretch; }
+  .admin-night-color-control { width: 100%; }
+  .admin-night-color-control input:last-child { flex: 1; width: auto; }
 }
 @media (min-width: 641px) and (max-width: 900px) {
   .admin-night-meta-grid {
