@@ -14766,6 +14766,80 @@ html { overflow-x: hidden; }
 .admin-night-import .admin-section-head {
   margin: 0;
 }
+.admin-night-source-actions {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.35fr) repeat(2, minmax(130px, .8fr));
+  gap: 8px;
+}
+.admin-night-source-actions button,
+.admin-night-batch-upload {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 42px;
+  margin: 0;
+  padding: 9px 13px;
+  border: 1px solid rgba(124, 98, 181, .2);
+  border-radius: 13px;
+  color: #5b4b7a;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .94), rgba(240, 234, 255, .86));
+  box-shadow: 0 6px 14px rgba(83, 62, 102, .07);
+  font-size: .84rem;
+  font-weight: 900;
+  text-align: center;
+  cursor: pointer;
+}
+.admin-night-source-actions button:hover,
+.admin-night-batch-upload:hover {
+  border-color: rgba(124, 98, 181, .45);
+  background: linear-gradient(135deg, #fff, rgba(232, 222, 255, .92));
+}
+.admin-night-batch-upload input {
+  position: absolute;
+  width: 1px !important;
+  height: 1px;
+  margin: -1px !important;
+  padding: 0 !important;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0 !important;
+}
+.admin-night-batch-upload.is-uploading {
+  opacity: .66;
+  cursor: wait;
+}
+.admin-night-source-hint,
+.admin-night-batch-progress {
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 11px;
+  color: var(--soft-ink);
+  background: rgba(255, 255, 255, .55);
+  font-size: .78rem;
+  line-height: 1.65;
+}
+.admin-night-batch-progress {
+  color: #5b4b7a;
+  background: rgba(232, 222, 255, .72);
+  font-weight: 800;
+}
+.admin-night-wechat-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 2px;
+  padding-top: 11px;
+  border-top: 1px dashed rgba(124, 98, 181, .2);
+  color: #5b4b7a;
+  font-size: .84rem;
+}
+.admin-night-wechat-head small {
+  color: var(--soft-ink);
+  font-size: .74rem;
+  font-weight: 500;
+}
 .admin-night-meta {
   grid-column: 1 / -1;
   display: grid;
@@ -14838,7 +14912,8 @@ html { overflow-x: hidden; }
   font-size: .74rem;
   font-weight: 700;
 }
-.admin-night-block-status.is-uploaded {
+.admin-night-block-status.is-uploaded,
+.admin-night-block-status.is-ready {
   color: #3b7d65;
 }
 .admin-night-block-status.is-importing {
@@ -14846,6 +14921,15 @@ html { overflow-x: hidden; }
 }
 .admin-night-block-status.is-failed {
   color: #c44d6a;
+}
+.admin-night-block-file-name {
+  max-width: min(36vw, 240px);
+  overflow: hidden;
+  color: var(--soft-ink);
+  font-size: .72rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .admin-night-block-head button {
   width: 30px;
@@ -15059,6 +15143,18 @@ html { overflow-x: hidden; }
   }
   .admin-night-block-item {
     grid-template-columns: 1fr;
+  }
+  .admin-night-source-actions {
+    grid-template-columns: 1fr;
+  }
+  .admin-night-wechat-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .admin-night-block-file-name {
+    order: 5;
+    width: 100%;
+    max-width: none;
   }
   .admin-night-editor-head {
     align-items: stretch;

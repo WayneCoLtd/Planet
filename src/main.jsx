@@ -12422,6 +12422,7 @@ function AdminTaskPage() {
   const [uploadingImage, setUploadingImage] = useState(false)
   const [nightImporting, setNightImporting] = useState(false)
   const [nightImportProgress, setNightImportProgress] = useState('')
+  const [nightBatchProgress, setNightBatchProgress] = useState('')
   const nightImportTokenRef = React.useRef(0)
   const [missingFields, setMissingFields] = useState([])
   const [dateAuto, setDateAuto] = useState(true)
@@ -12620,6 +12621,10 @@ function AdminTaskPage() {
       setToast('夜读图片还在转存，请等进度完成后，再点发布。')
       return
     }
+    if (uploadingImage) {
+      setToast('图片还在上传，请等进度完成后再保存或发布。')
+      return
+    }
     const missing = []
     if (!draft.day) missing.push('天数')
     if (!draft.date) missing.push('日期')
@@ -12779,6 +12784,64 @@ function AdminTaskPage() {
     } else {
       setToast('图片上传失败：云端未连接或存储不可用，可改用图片链接。')
     }
+  }
+
+  async function handleNightReadingBlockFiles(event) {
+    const selectedFiles = Array.from(event.target.files || []).filter(file => file?.type?.startsWith('image/'))
+    event.target.value = ''
+    if (!selectedFiles.length) return
+    if (!draft.day) { setToast('请先填写天数 Day，再批量上传图片'); return }
+    const files = selectedFiles.slice(0, 12)
+    const stamp = Date.now()
+    const placeholders = files.map((file, index) => ({
+      id: `nr-batch-${stamp}-${index}`,
+      type: 'image',
+      url: '',
+      caption: '',
+      fileName: file.name || `图片 ${index + 1}`,
+      status: 'importing'
+    }))
+    setDraft(previous => {
+      const blocks = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks : []
+      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks: [...blocks, ...placeholders] } }
+    })
+    setUploadingImage(true)
+    let succeeded = 0
+    let failed = 0
+    for (let index = 0; index < files.length; index += 1) {
+      const file = files[index]
+      const placeholder = placeholders[index]
+      setNightBatchProgress(`正在处理第 ${index + 1}/${files.length} 张：${file.name || '未命名图片'}`)
+      try {
+        const url = cloudEnabled
+          ? await uploadCloudTaskImage(file, draft.day)
+          : await compressImageFile(file, 1200, 0.8)
+        if (!url) throw new Error('图片上传未返回地址')
+        succeeded += 1
+        setDraft(previous => ({
+          ...previous,
+          gameConfig: {
+            ...(previous.gameConfig || {}),
+            blocks: (previous.gameConfig?.blocks || []).map(block => block.id === placeholder.id ? { ...block, url, status: cloudEnabled ? 'uploaded' : 'ready' } : block)
+          }
+        }))
+      } catch (error) {
+        failed += 1
+        console.warn('[wwcxrl admin] night reading batch image failed', error)
+        setDraft(previous => ({
+          ...previous,
+          gameConfig: {
+            ...(previous.gameConfig || {}),
+            blocks: (previous.gameConfig?.blocks || []).map(block => block.id === placeholder.id ? { ...block, status: 'failed' } : block)
+          }
+        }))
+      }
+    }
+    setUploadingImage(false)
+    setNightBatchProgress('')
+    const limitedNote = selectedFiles.length > files.length ? `；单次最多处理 12 张，其余 ${selectedFiles.length - files.length} 张未加入` : ''
+    const localNote = !cloudEnabled && succeeded ? '（本地预览模式，图片会随本地任务保存）' : ''
+    setToast(`批量图片处理完成：成功 ${succeeded} 张${failed ? `，失败 ${failed} 张` : ''}${limitedNote}${localNote}`)
   }
 
   function moveNightReadingBlock(index, direction) {
@@ -13068,7 +13131,7 @@ function AdminTaskPage() {
           </label>
           <label>任务类型
             <span className="admin-type-row">
-              <select value={draft.type} onChange={event => {
+              <select value={draft.type} disabled={nightImporting || uploadingImage} onChange={event => {
                 const type = event.target.value
                 const next = { ...draft, type }
                 if (type !== 'nightReading') {
@@ -13183,8 +13246,22 @@ function AdminTaskPage() {
           {draft.type === 'nightReading' && (
             <div className="admin-full admin-night-import">
               <div className="admin-section-head">
-                <h3>📥 从微信粘贴导入</h3>
-                <button type="button" className="admin-meeting-add" onClick={clearNightReadingImport}>清空导入</button>
+                <h3>🧩 内容导入与编辑</h3>
+                <button type="button" className="admin-meeting-add" onClick={clearNightReadingImport} disabled={nightImporting || uploadingImage}>清空全部内容</button>
+              </div>
+              <div className="admin-night-source-actions">
+                <label className={`admin-night-batch-upload ${uploadingImage ? 'is-uploading' : ''}`}>
+                  <span>🖼️ 本地批量上传图片</span>
+                  <input type="file" accept="image/*" multiple onChange={handleNightReadingBlockFiles} disabled={uploadingImage || nightImporting || !draft.day} />
+                </label>
+                <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 新增文字</button>
+                <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片链接</button>
+              </div>
+              <p className="admin-night-source-hint">可以任选一种方式开始，也可以混合使用；批量图片会按本地选择顺序追加到正文末尾。</p>
+              {nightBatchProgress && <p className="admin-night-batch-progress" role="status">{nightBatchProgress}</p>}
+              <div className="admin-night-wechat-head">
+                <strong>📋 粘贴微信公众号文章</strong>
+                <small>可选：适合快速导入已有图文</small>
               </div>
               <div
                 className={`admin-night-paste-zone ${nightImporting ? 'is-importing' : ''}`}
@@ -13218,8 +13295,9 @@ function AdminTaskPage() {
                       <div className="admin-night-block-head">
                         <span>{block.type === 'image' ? '🖼️ 图片块' : '📄 文字块'} {index + 1}</span>
                         <span className={`admin-night-block-status is-${block.status || 'local'}`}>
-                          {block.status === 'importing' ? '转存中…' : block.status === 'uploaded' ? '已转存' : block.status === 'failed' ? '未转存' : ''}
+                          {block.status === 'importing' ? '处理中…' : block.status === 'uploaded' ? '已转存' : block.status === 'ready' ? '已就绪' : block.status === 'failed' ? '处理失败' : ''}
                         </span>
+                        {block.fileName && <small className="admin-night-block-file-name" title={block.fileName}>{block.fileName}</small>}
                         <button type="button" disabled={nightImporting || index === 0} onClick={() => moveNightReadingBlock(index, -1)} aria-label="上移">↑</button>
                         <button type="button" disabled={nightImporting || index === nightBlocks.length - 1} onClick={() => moveNightReadingBlock(index, 1)} aria-label="下移">↓</button>
                         <button type="button" disabled={nightImporting} onClick={() => duplicateNightReadingBlock(index)} aria-label="复制">⧉</button>
@@ -13362,8 +13440,8 @@ function AdminTaskPage() {
         </details>
 {activeTypeHint && <p className="admin-type-hint">💡 {activeTypeHint.hint}</p>}
         <div className="admin-actions">
-          <button type="button" className="admin-save-draft" disabled={saving || nightImporting} onClick={() => save('draft')}>{saving ? '保存中…' : '存为草稿'}</button>
-          <button type="button" className="admin-save-publish" disabled={saving || nightImporting} onClick={() => save('published')}>{saving ? '保存中…' : nightImporting ? '图片转存中…' : '发布任务'}</button>
+          <button type="button" className="admin-save-draft" disabled={saving || nightImporting || uploadingImage} onClick={() => save('draft')}>{saving ? '保存中…' : '存为草稿'}</button>
+          <button type="button" className="admin-save-publish" disabled={saving || nightImporting || uploadingImage} onClick={() => save('published')}>{saving ? '保存中…' : nightImporting || uploadingImage ? '图片处理中…' : '发布任务'}</button>
           {editingDay && <button type="button" className="admin-cancel" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeDay)); setDateAuto(true) }}>取消编辑</button>}
         </div>
       </section>
