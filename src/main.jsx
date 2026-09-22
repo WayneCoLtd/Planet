@@ -1574,6 +1574,7 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
         ? '先完成上面的今日任务，签到按钮就会亮起来。'
         : '任务完成啦，可以点击签到。'
   const panelStatus = signed ? '已签到' : taskCompleted ? '待签到' : unlocked ? '任务进行中' : '未解锁'
+  const showDailySummary = item.type !== 'memoryPuzzle' && (item.theme || item.reward)
   const signDisabled = !unlocked || signed || !taskCompleted
   const signButtonLabel = signed
     ? '💖 已签到'
@@ -1730,13 +1731,18 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
             <span className={`daily-status-pill ${signed ? 'signed' : taskCompleted ? 'ready' : unlocked ? 'working' : 'locked'}`}>{panelStatus}</span>
           </div>
           <h3>{item.title}</h3>
-          {item.type !== 'memoryPuzzle' ? <p>{item.theme} / {item.reward}</p> : null}
+          {showDailySummary && (
+            <div className="daily-summary-row">
+              {item.theme && <span className="daily-theme-chip">{item.theme}</span>}
+              {item.reward && <span className="daily-reward-copy">{item.reward}</span>}
+            </div>
+          )}
         </div>
       </div>
       {unlocked && NEWBIE_DAY_HINTS[item.day] && <aside className="daily-newbie-hint" role="note"><strong>现在玩这里：</strong>{NEWBIE_DAY_HINTS[item.day]}</aside>}
       <div className="daily-body">
         {unlocked && item.prompt && item.type !== 'foamDrawingReview' ? <p>{item.prompt}</p> : null}
-        {unlocked ? <DailyInteraction item={item} signed={signed} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} /> : <LockedPreview item={item} />}
+        {unlocked ? <DailyInteraction item={item} signed={signed} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded /> : <LockedPreview item={item} />}
       </div>
       <div className="daily-actions">
         <button className={`sign-button ${taskCompleted && !signed && unlocked ? 'ready' : ''}`} disabled={signDisabled} onClick={onSign}>{signButtonLabel}</button>
@@ -5000,6 +5006,20 @@ const EMBEDDED_GAME_SOURCES = {
   moleMarket: { source: 'mole-market', title: '菜摊敲敲乐' }
 }
 
+function scrollPageToTop() {
+  const reduce = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+  window.scrollTo({ top: 0, behavior: reduce ? 'auto' : 'smooth' })
+}
+
+function BackToTopButton({ className = '' }) {
+  return (
+    <button type="button" className={`back-to-top-button ${className}`.trim()} onClick={scrollPageToTop} aria-label="返回页面顶部" title="返回顶部">
+      <span aria-hidden="true">↑</span>
+      <small>回到顶部</small>
+    </button>
+  )
+}
+
 // 2026-09 下线的旧嵌入小游戏：云端老任务若仍引用这些 id，自动映射到同类型的轻松新游戏，
 // 避免签到面板空白，也无需手动去管理页改任务。
 const RETIRED_GAME_FALLBACK = {
@@ -7752,7 +7772,7 @@ function LetterQuest({ item, taskCompleted, onTaskComplete }) {
 }
 
 // ---- 今日小卡：一张 10 秒轻量小卡，看完点“收下啦”即可完成 ----
-function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {} }) {
+function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [collecting, setCollecting] = useState(false)
   const cardKind = String(item.gameConfig?.cardKind || '今日小卡').trim()
   const cardBody = String(item.secret || '').trim() || '今天的小卡还在路上。'
@@ -7772,8 +7792,8 @@ function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}
         <span className="daily-light-card-kind"><b>{item.icon || '💡'}</b>{cardKind}</span>
         <small>{item.date} · Day {item.day}</small>
       </div>
-      <h3>{item.title || '今日小卡'}</h3>
-      {item.prompt && <p className="daily-light-card-intro">{item.prompt}</p>}
+      {!embedded && <h3>{item.title || '今日小卡'}</h3>}
+      {!embedded && item.prompt && <p className="daily-light-card-intro">{item.prompt}</p>}
       <article className="daily-light-card-paper">
         {item.image && <img src={item.image} alt="今日小卡配图" loading="lazy" />}
         <p>{cardBody}</p>
@@ -7793,7 +7813,7 @@ function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}
 }
 
 // ---- 夜读：温暖治愈的文字或漫画，读完即可完成 ----
-function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () => {} }) {
+function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [collecting, setCollecting] = useState(false)
   const config = item.gameConfig || {}
   const column = config.readingColumn || (config.readingKind === 'comic' ? 'healingComic' : 'nightReading')
@@ -7823,12 +7843,12 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
 
   return (
     <div className={`mini-game night-reading is-${column} ${taskCompleted ? 'is-completed' : ''} ${collecting ? 'is-collecting' : ''}`}>
-      <div className="night-reading-top">
+      {!embedded && <div className="night-reading-top">
         <span className="night-reading-badge">{item.icon || columnMeta.icon} {columnMeta.label}</span>
         <small>{item.date} · Day {item.day}</small>
-      </div>
-      <header className="night-reading-header">
-        <h3>{item.title || '夜读'}</h3>
+      </div>}
+      <header className={`night-reading-header ${embedded ? 'is-embedded' : ''}`}>
+        {!embedded && <h3>{item.title || '夜读'}</h3>}
         {(sourceMode !== 'hidden' || sourceUrl) && (
           <p>
             {sourceMode === 'original' && <span>来源：{sourceName || '原创'}</span>}
@@ -7838,7 +7858,7 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
         )}
       </header>
       {item.image && <img className="night-reading-cover" src={item.image} alt="夜读封面" loading="lazy" />}
-      {intro && <p className="night-reading-intro">{intro}</p>}
+      {!embedded && intro && <p className="night-reading-intro">{intro}</p>}
       {hasBlocks && (
         <div className="night-reading-blocks">
           {blocks.map((block, index) => {
@@ -7882,7 +7902,7 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
           ))}
         </div>
       )}
-      {item.reward && <p className="night-reading-ending">{item.reward}</p>}
+      {!embedded && item.reward && <p className="night-reading-ending">{item.reward}</p>}
       <div className="night-reading-foot">
         {taskCompleted ? (
           <span className="night-reading-done">✓ 今晚已经读完啦</span>
@@ -8137,7 +8157,7 @@ function StickerQuest({ item, taskCompleted, onTaskComplete }) {
   )
 }
 
-function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskComplete = () => {} }) {
+function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [answer, setAnswer] = useState('')
   const [answerConfirmed, setAnswerConfirmed] = useState(false)
   const [answerError, setAnswerError] = useState('')
@@ -8195,11 +8215,11 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
   }
 
   if (item.type === 'dailyLight') {
-    return <DailyLightCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    return <DailyLightCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
   }
 
   if (item.type === 'nightReading') {
-    return <NightReadingQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    return <NightReadingQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
   }
 
   if (item.type === 'anniversary') {
@@ -11875,6 +11895,7 @@ function TemplateGuide({ setCurrent }) {
 function PlanetApp() {
   const [current, setCurrent] = useState('home')
   const [toast, setToast] = useState('')
+  const firstPageRenderRef = React.useRef(true)
   const readVoyageTheme = () => {
     try { return localStorage.getItem('wwcxrl-voyage-theme') === 'yes' } catch { return false }
   }
@@ -11903,6 +11924,13 @@ function PlanetApp() {
       window.removeEventListener('storage', refresh)
     }
   }, [])
+  React.useEffect(() => {
+    if (firstPageRenderRef.current) {
+      firstPageRenderRef.current = false
+      return
+    }
+    scrollPageToTop()
+  }, [current])
   React.useEffect(() => {
     let timerId = null
     const showToast = (event) => {
@@ -11987,7 +12015,9 @@ function PlanetApp() {
         {themeSwitchAvailable && <button type="button" className="theme-toggle-button subtle" onClick={() => setThemeMode(!voyageTheme)}>{voyageTheme ? '🍊 切回旧皮肤' : '🚀 切到新皮肤'}</button>}
         <button type="button" className="theme-toggle-button subtle" onClick={() => setChangelogOpen(true)}>📜 更新日志</button>
         <button type="button" className="theme-toggle-button subtle" onClick={() => setFeedbackOpen(true)}>💡 网站建议</button>
-        <button onClick={returnToInvitationLayer}>回到 8月9日邀请信</button></footer>
+        <button type="button" onClick={returnToInvitationLayer}>✉️ 回到邀请信</button>
+        <BackToTopButton />
+      </footer>
       {changelogOpen && (
         <div className="changelog-backdrop" role="presentation" onClick={() => setChangelogOpen(false)}>
           <div className="changelog-modal sticker-card" role="dialog" aria-modal="true" aria-labelledby="changelog-title" onClick={event => event.stopPropagation()}>
@@ -12401,6 +12431,25 @@ function buildNightReadingBlocksFromLegacy(secret = '', gallery = [], ensureText
   return blocks
 }
 
+function cloneNightReadingBlocks(blocks = []) {
+  return JSON.parse(JSON.stringify(Array.isArray(blocks) ? blocks : []))
+}
+
+function getNightReadingEditorIssues(blocks = []) {
+  const issues = []
+  blocks.forEach((block, index) => {
+    const label = `第 ${index + 1} 块`
+    if (block.type === 'image') {
+      if (!String(block.url || '').trim()) issues.push(`${label}图片为空`)
+      if (block.status === 'failed') issues.push(`${label}图片处理失败`)
+    } else {
+      if (!String(block.text || '').trim()) issues.push(`${label}文字为空`)
+      if (block.color && !/^#[0-9a-f]{6}$/i.test(String(block.color))) issues.push(`${label}色号无效`)
+    }
+  })
+  return issues
+}
+
 async function resolveNightReadingImageBlob(url) {
   if (String(url || '').startsWith('data:')) return dataUrlToBlob(url)
   const proxiedUrl = `/api/night-reading-image?url=${encodeURIComponent(url)}`
@@ -12439,6 +12488,16 @@ function AdminTaskPage() {
   const [nightImportProgress, setNightImportProgress] = useState('')
   const [nightBatchProgress, setNightBatchProgress] = useState('')
   const nightImportTokenRef = React.useRef(0)
+  const [selectedNightBlockId, setSelectedNightBlockId] = useState('')
+  const [collapsedNightBlocks, setCollapsedNightBlocks] = useState(() => new Set())
+  const [draggedNightBlockId, setDraggedNightBlockId] = useState('')
+  const [nightPreviewOpen, setNightPreviewOpen] = useState(false)
+  const [nightToolsCollapsed, setNightToolsCollapsed] = useState(false)
+  const [nightEditorDirty, setNightEditorDirty] = useState(false)
+  const [nightHistoryVersion, setNightHistoryVersion] = useState(0)
+  const nightUndoRef = React.useRef([])
+  const nightRedoRef = React.useRef([])
+  const nightTextEditSnapshotRef = React.useRef('')
   const [missingFields, setMissingFields] = useState([])
   const [dateAuto, setDateAuto] = useState(true)
   const [toast, setToast] = useState('')
@@ -12592,6 +12651,23 @@ function AdminTaskPage() {
     return () => window.clearTimeout(timerId)
   }, [toast])
 
+  React.useEffect(() => {
+    if (!nightEditorDirty) return undefined
+    const warnBeforeLeave = event => {
+      event.preventDefault()
+      event.returnValue = ''
+    }
+    window.addEventListener('beforeunload', warnBeforeLeave)
+    return () => window.removeEventListener('beforeunload', warnBeforeLeave)
+  }, [nightEditorDirty])
+
+  React.useEffect(() => {
+    if (!nightPreviewOpen) return undefined
+    const closePreview = event => { if (event.key === 'Escape') setNightPreviewOpen(false) }
+    window.addEventListener('keydown', closePreview)
+    return () => window.removeEventListener('keydown', closePreview)
+  }, [nightPreviewOpen])
+
   // 新建模式且表单仍为空时，自动跳到下一个空闲 Day
   React.useEffect(() => {
     if (editingDay) return
@@ -12650,6 +12726,11 @@ function AdminTaskPage() {
       const galleryCount = Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery.filter(Boolean).length : 0
       const blockCount = Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks.filter(block => block.type === 'image' ? Boolean(block.url) : Boolean(block.text)).length : 0
       if (!draft.secret.trim() && !galleryCount && !blockCount) missing.push('夜读内容')
+      const editorIssues = getNightReadingEditorIssues(draft.gameConfig?.blocks || [])
+      if (status === 'published' && editorIssues.length) {
+        setToast(`发布前请处理：${editorIssues.slice(0, 3).join('、')}${editorIssues.length > 3 ? ` 等 ${editorIssues.length} 项` : ''}`)
+        return
+      }
     }
     if (draft.type === 'letter' && !draft.secret.trim()) missing.push('信的内容')
     if (missing.length) {
@@ -12685,6 +12766,8 @@ function AdminTaskPage() {
       if (status === 'published') resetDayCheckinStatus(payload.day, payload.date)
       setEditingDay(null)
       setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+      setNightEditorDirty(false)
+      setSelectedNightBlockId('')
       refresh()
       return
     }
@@ -12696,6 +12779,8 @@ function AdminTaskPage() {
         if (status === 'published') resetDayCheckinStatus(payload.day, payload.date)
         setEditingDay(null)
         setDraft(emptyAdminTask(nextFreeAdminDay(Number(draft.day))))
+        setNightEditorDirty(false)
+        setSelectedNightBlockId('')
         refresh()
       } else {
         setToast('保存失败：云端写入被拒绝，请查看浏览器控制台')
@@ -12723,61 +12808,121 @@ function AdminTaskPage() {
   }
 
   function clearNightReadingImport() {
+    const currentBlocks = draft.gameConfig?.blocks || []
+    if ((currentBlocks.length || draft.secret || draft.gameConfig?.gallery?.length) && !window.confirm('确定清空全部正文和图片吗？此操作可以立即用“撤销”恢复内容块。')) return
     nightImportTokenRef.current += 1
     setNightImporting(false)
     setNightImportProgress('')
+    recordNightReadingSnapshot(currentBlocks)
     setNightReadingBlocks([])
+    setSelectedNightBlockId('')
+    setNightEditorDirty(true)
+    setNightHistoryVersion(value => value + 1)
     setToast('已清空导入内容。')
   }
 
-  function addNightReadingBlock(type = 'text') {
-    setDraft(previous => {
-      const existing = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter(Boolean) : []
-      const blocks = existing.length
-        ? [...existing]
-        : buildNightReadingBlocksFromLegacy(previous.secret, previous.gameConfig?.gallery)
-      blocks.push(type === 'image'
-        ? { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, url: '', caption: '' }
-        : { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, text: '', align: 'left', fontSize: 'normal', color: '#4f3e68' })
-      return { ...previous, secret: '', gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks } }
+  function recordNightReadingSnapshot(blocks) {
+    const snapshot = cloneNightReadingBlocks(blocks)
+    const last = nightUndoRef.current[nightUndoRef.current.length - 1]
+    if (!last || JSON.stringify(last) !== JSON.stringify(snapshot)) {
+      nightUndoRef.current = [...nightUndoRef.current, snapshot].slice(-20)
+    }
+    nightRedoRef.current = []
+    setNightHistoryVersion(value => value + 1)
+  }
+
+  function focusNightReadingBlock(blockId, focusEditor = false, shouldScroll = true) {
+    if (!blockId) return
+    setSelectedNightBlockId(blockId)
+    setCollapsedNightBlocks(previous => {
+      const next = new Set(previous)
+      next.delete(blockId)
+      return next
+    })
+    if (focusEditor) nightTextEditSnapshotRef.current = blockId
+    if (!shouldScroll) return
+    window.requestAnimationFrame(() => {
+      const element = document.getElementById(`admin-night-block-${blockId}`)
+      if (!element) return
+      element.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (focusEditor) window.setTimeout(() => element.querySelector('textarea, input:not([type="file"])')?.focus(), 260)
     })
   }
 
-  function updateNightReadingBlock(index, patch) {
+  function setNightReadingBlocksWithHistory(nextBlocks, blockId = '') {
+    recordNightReadingSnapshot(draft.gameConfig?.blocks || [])
+    setDraft(previous => ({ ...previous, secret: '', gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks: nextBlocks } }))
+    setNightEditorDirty(true)
+    nightTextEditSnapshotRef.current = blockId || ''
+    if (blockId) focusNightReadingBlock(blockId, true)
+  }
+
+  function undoNightReadingEdit() {
+    const previous = nightUndoRef.current.pop()
+    if (!previous) return
+    nightRedoRef.current = [...nightRedoRef.current, cloneNightReadingBlocks(draft.gameConfig?.blocks || [])].slice(-20)
+    setDraft(current => ({ ...current, secret: '', gameConfig: { ...(current.gameConfig || {}), gallery: [], blocks: previous } }))
+    setSelectedNightBlockId(previous[0]?.id || '')
+    setNightEditorDirty(true)
+    setNightHistoryVersion(value => value + 1)
+  }
+
+  function redoNightReadingEdit() {
+    const next = nightRedoRef.current.pop()
+    if (!next) return
+    nightUndoRef.current = [...nightUndoRef.current, cloneNightReadingBlocks(draft.gameConfig?.blocks || [])].slice(-20)
+    setDraft(current => ({ ...current, secret: '', gameConfig: { ...(current.gameConfig || {}), gallery: [], blocks: next } }))
+    setSelectedNightBlockId(next[0]?.id || '')
+    setNightEditorDirty(true)
+    setNightHistoryVersion(value => value + 1)
+  }
+
+  function beginNightTextEdit(blockId) {
+    if (nightTextEditSnapshotRef.current === blockId) return
+    recordNightReadingSnapshot(draft.gameConfig?.blocks || [])
+    nightTextEditSnapshotRef.current = blockId
+  }
+
+  function addNightReadingBlock(type = 'text', afterBlockId = selectedNightBlockId) {
+    const existing = Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks.filter(Boolean) : []
+    const blocks = existing.length ? [...existing] : buildNightReadingBlocksFromLegacy(draft.secret, draft.gameConfig?.gallery)
+    const block = type === 'image'
+      ? { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, url: '', caption: '' }
+      : { id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type, text: '', align: 'left', fontSize: 'normal', color: '#4f3e68' }
+    const selectedIndex = afterBlockId && afterBlockId !== '__start__' ? blocks.findIndex(item => item.id === afterBlockId) : -1
+    const insertAt = afterBlockId === '__start__' ? 0 : selectedIndex >= 0 ? selectedIndex + 1 : blocks.length
+    blocks.splice(insertAt, 0, block)
+    setNightReadingBlocksWithHistory(blocks, block.id)
+  }
+
+  function updateNightReadingBlock(index, patch, record = false) {
+    if (record) recordNightReadingSnapshot(draft.gameConfig?.blocks || [])
     setDraft(previous => {
       const blocks = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.map((block, blockIndex) => blockIndex === index ? { ...block, ...patch } : block) : []
       return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
     })
+    setNightEditorDirty(true)
   }
 
   function removeNightReadingBlock(index) {
-    setDraft(previous => {
-      const blocks = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter((_, blockIndex) => blockIndex !== index) : []
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
-    })
+    const blocks = Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks.filter((_, blockIndex) => blockIndex !== index) : []
+    const nextSelected = blocks[Math.min(index, blocks.length - 1)]?.id || ''
+    setNightReadingBlocksWithHistory(blocks, nextSelected)
   }
 
   function duplicateNightReadingBlock(index) {
-    setDraft(previous => {
-      const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
-      if (!blocks[index]) return previous
-      const copy = { ...blocks[index], id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }
-      blocks.splice(index + 1, 0, copy)
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
-    })
+    const blocks = Array.isArray(draft.gameConfig?.blocks) ? [...draft.gameConfig.blocks] : []
+    if (!blocks[index]) return
+    const copy = { ...blocks[index], id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` }
+    blocks.splice(index + 1, 0, copy)
+    setNightReadingBlocksWithHistory(blocks, copy.id)
   }
 
   function migrateNightReadingLegacyContent() {
-    setDraft(previous => {
-      const existing = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter(Boolean) : []
-      if (existing.length) return previous
-      const blocks = buildNightReadingBlocksFromLegacy(previous.secret, previous.gameConfig?.gallery, true)
-      return {
-        ...previous,
-        secret: '',
-        gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks }
-      }
-    })
+    const existing = Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks.filter(Boolean) : []
+    if (existing.length) return
+    const blocks = buildNightReadingBlocksFromLegacy(draft.secret, draft.gameConfig?.gallery, true)
+    setNightReadingBlocksWithHistory(blocks, blocks[0]?.id || '')
     setToast('已切换到新版内容编辑器，原有正文和图集已按顺序转换。')
   }
 
@@ -12786,6 +12931,8 @@ function AdminTaskPage() {
     event.target.value = ''
     if (!file) return
     if (!draft.day) { setToast('请先填写天数 Day，再上传图片'); return }
+    recordNightReadingSnapshot(draft.gameConfig?.blocks || [])
+    setNightEditorDirty(true)
     setUploadingImage(true)
     setToast('图片上传中…')
     const url = await uploadCloudTaskImage(file, draft.day)
@@ -12813,13 +12960,20 @@ function AdminTaskPage() {
       fileName: file.name || `图片 ${index + 1}`,
       status: 'importing'
     }))
+    recordNightReadingSnapshot(draft.gameConfig?.blocks || [])
     setDraft(previous => {
       const existing = Array.isArray(previous.gameConfig?.blocks) ? previous.gameConfig.blocks.filter(Boolean) : []
       const blocks = existing.length
         ? existing
         : buildNightReadingBlocksFromLegacy(previous.secret, previous.gameConfig?.gallery)
-      return { ...previous, secret: '', gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks: [...blocks, ...placeholders] } }
+      const selectedIndex = selectedNightBlockId ? blocks.findIndex(block => block.id === selectedNightBlockId) : -1
+      const insertAt = selectedIndex >= 0 ? selectedIndex + 1 : blocks.length
+      const nextBlocks = [...blocks]
+      nextBlocks.splice(insertAt, 0, ...placeholders)
+      return { ...previous, secret: '', gameConfig: { ...(previous.gameConfig || {}), gallery: [], blocks: nextBlocks } }
     })
+    setNightEditorDirty(true)
+    setSelectedNightBlockId(placeholders[placeholders.length - 1]?.id || '')
     setUploadingImage(true)
     let succeeded = 0
     let failed = 0
@@ -12857,16 +13011,26 @@ function AdminTaskPage() {
     const limitedNote = selectedFiles.length > files.length ? `；单次最多处理 12 张，其余 ${selectedFiles.length - files.length} 张未加入` : ''
     const localNote = !cloudEnabled && succeeded ? '（本地预览模式，图片会随本地任务保存）' : ''
     setToast(`批量图片处理完成：成功 ${succeeded} 张${failed ? `，失败 ${failed} 张` : ''}${limitedNote}${localNote}`)
+    focusNightReadingBlock(placeholders[placeholders.length - 1]?.id || '')
   }
 
   function moveNightReadingBlock(index, direction) {
-    setDraft(previous => {
-      const blocks = Array.isArray(previous.gameConfig?.blocks) ? [...previous.gameConfig.blocks] : []
-      const nextIndex = index + direction
-      if (nextIndex < 0 || nextIndex >= blocks.length) return previous
-      ;[blocks[index], blocks[nextIndex]] = [blocks[nextIndex], blocks[index]]
-      return { ...previous, gameConfig: { ...(previous.gameConfig || {}), blocks } }
-    })
+    const blocks = Array.isArray(draft.gameConfig?.blocks) ? [...draft.gameConfig.blocks] : []
+    const nextIndex = index + direction
+    if (nextIndex < 0 || nextIndex >= blocks.length) return
+    ;[blocks[index], blocks[nextIndex]] = [blocks[nextIndex], blocks[index]]
+    setNightReadingBlocksWithHistory(blocks, blocks[nextIndex]?.id || '')
+  }
+
+  function moveNightReadingBlockTo(sourceId, targetId) {
+    if (!sourceId || !targetId || sourceId === targetId) return
+    const blocks = Array.isArray(draft.gameConfig?.blocks) ? [...draft.gameConfig.blocks] : []
+    const sourceIndex = blocks.findIndex(block => block.id === sourceId)
+    const targetIndex = blocks.findIndex(block => block.id === targetId)
+    if (sourceIndex < 0 || targetIndex < 0) return
+    const [moved] = blocks.splice(sourceIndex, 1)
+    blocks.splice(targetIndex, 0, moved)
+    setNightReadingBlocksWithHistory(blocks, moved.id)
   }
 
   async function processNightReadingBlocks(initialBlocks) {
@@ -12934,7 +13098,10 @@ function AdminTaskPage() {
       setToast('没有识别到可导入的文字或图片，请先在微信文章里全选并复制。')
       return
     }
+    recordNightReadingSnapshot(draft.gameConfig?.blocks || [])
     setNightReadingBlocks(blocks)
+    setNightEditorDirty(true)
+    setSelectedNightBlockId(blocks[0]?.id || '')
     const imageCount = blocks.filter(block => block.type === 'image').length
     const textCount = blocks.filter(block => block.type === 'text').length
     if (imageCount > textCount) {
@@ -12974,6 +13141,11 @@ function AdminTaskPage() {
   function editTask(row) {
     setAdminSection('form')
     setEditingDay(row.day)
+    setNightEditorDirty(false)
+    setSelectedNightBlockId('')
+    nightUndoRef.current = []
+    nightRedoRef.current = []
+    setNightHistoryVersion(value => value + 1)
     let nextSecret = row.secret || ''
     let nextGameConfig = row.type === 'game'
       ? { ...getMiniGameDefaults(row.gameId || 'mazeClassic'), ...(row.gameConfig || {}) }
@@ -13016,6 +13188,12 @@ function AdminTaskPage() {
     return row.date < todayKey ? '已过期' : '已发布'
   }
 
+  function changeAdminSection(sectionId) {
+    if (sectionId !== adminSection && nightEditorDirty && !window.confirm('当前内容编辑器还有未保存修改，仍要离开吗？')) return
+    setAdminSection(sectionId)
+    window.requestAnimationFrame(scrollPageToTop)
+  }
+
   function fillExample() {
     const example = ADMIN_TASK_EXAMPLES[draft.type]
     if (!example) return
@@ -13031,6 +13209,7 @@ function AdminTaskPage() {
       icon: example.icon,
       gameConfig: example.gameConfig ? { ...(prev.gameConfig || {}), ...example.gameConfig } : prev.gameConfig
     }))
+    if (draft.type === 'nightReading') setNightEditorDirty(true)
     setToast('已填入示例，改一改就能发布啦')
   }
 
@@ -13041,6 +13220,11 @@ function AdminTaskPage() {
   const nightBlocks = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks : []
   const usingNightBlocks = draft.type === 'nightReading' && nightBlocks.length > 0
   const hasLegacyNightContent = draft.type === 'nightReading' && (Boolean(String(draft.secret || '').trim()) || nightGallery.some(Boolean))
+  const selectedNightBlockIndex = nightBlocks.findIndex(block => block.id === selectedNightBlockId)
+  const selectedNightBlock = selectedNightBlockIndex >= 0 ? nightBlocks[selectedNightBlockIndex] : null
+  const nightEditorIssues = getNightReadingEditorIssues(nightBlocks)
+  const canUndoNight = nightHistoryVersion >= 0 && nightUndoRef.current.length > 0
+  const canRedoNight = nightHistoryVersion >= 0 && nightRedoRef.current.length > 0
   const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）', nightReading: '夜读正文（可分段；漫画类可以只留图集）' })[draft.type] || '完成后显示的内容'
   const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : draft.type === 'nightReading' ? '把今晚想对她说的话，写成几段温柔的文字。' : '完成后显示的一段话'
   const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
@@ -13064,7 +13248,7 @@ function AdminTaskPage() {
                 key={section.id}
                 type="button"
                 className={adminSection === section.id ? 'is-active' : ''}
-                onClick={() => setAdminSection(section.id)}
+                onClick={() => changeAdminSection(section.id)}
               >
                 <span>{section.icon}</span>
                 {section.label}
@@ -13223,118 +13407,183 @@ function AdminTaskPage() {
           )}
           {draft.type === 'nightReading' && (
             <div className="admin-full admin-night-import">
-              <div className="admin-section-head">
-                <h3>🧩 内容导入与编辑</h3>
-                <button type="button" className="admin-meeting-add" onClick={clearNightReadingImport} disabled={nightImporting || uploadingImage}>清空全部内容</button>
-              </div>
-              <div className="admin-night-source-actions">
-                <label className={`admin-night-batch-upload ${uploadingImage ? 'is-uploading' : ''}`}>
-                  <span>🖼️ 本地批量上传图片</span>
-                  <input type="file" accept="image/*" multiple onChange={handleNightReadingBlockFiles} disabled={uploadingImage || nightImporting || !draft.day} />
-                </label>
-                <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 新增文字</button>
-                <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片链接</button>
-              </div>
-              <p className="admin-night-source-hint">可以任选一种方式开始，也可以混合使用；批量图片会按本地选择顺序追加到正文末尾。</p>
-              {nightBatchProgress && <p className="admin-night-batch-progress" role="status">{nightBatchProgress}</p>}
-              <div className="admin-night-wechat-head">
-                <strong>📋 粘贴微信公众号文章</strong>
-                <small>可选：适合快速导入已有图文</small>
-              </div>
-              <div
-                className={`admin-night-paste-zone ${nightImporting ? 'is-importing' : ''}`}
-                contentEditable
-                suppressContentEditableWarning
-                onPaste={handleNightReadingPaste}
-                role="textbox"
-                aria-multiline="true"
-                aria-label="从微信粘贴夜读内容"
-              >
-                {nightImporting ? (nightImportProgress || '正在转存图片…') : '在微信文章页 Ctrl+A 复制全部内容，然后回到这里 Ctrl+V 粘贴。'}
-              </div>
-              <p className="admin-night-import-status">
-                {nightImportProgress || `已识别 ${nightBlocks.length} 个内容块`}
-              </p>
-              <div className="admin-night-editor-head">
+              <div className="admin-night-workbench-head">
                 <div>
-                  <strong>内容编辑器</strong>
-                  <small>按内容块排版，发布时会保持这里的顺序和样式。</small>
+                  <h3>🧩 内容编排工作台</h3>
+                  <p>{nightBlocks.length} 个内容块{nightEditorDirty ? ' · 有未保存修改' : ' · 已保存'}</p>
                 </div>
-                <div className="admin-night-block-actions">
-                  {!nightBlocks.length && hasLegacyNightContent && <button type="button" onClick={migrateNightReadingLegacyContent}>升级旧版正文与图集</button>}
-                  <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 文字</button>
-                  <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片</button>
+                <div className="admin-night-workbench-head-actions">
+                  <button type="button" onClick={undoNightReadingEdit} disabled={!canUndoNight}>↶ 撤销</button>
+                  <button type="button" onClick={redoNightReadingEdit} disabled={!canRedoNight}>↷ 重做</button>
+                  <button type="button" onClick={() => setNightPreviewOpen(true)}>👀 预览</button>
                 </div>
               </div>
-              {nightBlocks.length > 0 ? (
-                <div className="admin-night-block-list">
-                  {nightBlocks.map((block, index) => (
-                    <div className={`admin-night-block-item is-${block.type}`} key={block.id || `nr-block-${index}`}>
-                      <div className="admin-night-block-head">
-                        <span>{block.type === 'image' ? '🖼️ 图片块' : '📄 文字块'} {index + 1}</span>
-                        <span className={`admin-night-block-status is-${block.status || 'local'}`}>
-                          {block.status === 'importing' ? '处理中…' : block.status === 'uploaded' ? '已转存' : block.status === 'ready' ? '已就绪' : block.status === 'failed' ? '处理失败' : ''}
-                        </span>
-                        {block.fileName && <small className="admin-night-block-file-name" title={block.fileName}>{block.fileName}</small>}
-                        <button type="button" disabled={nightImporting || index === 0} onClick={() => moveNightReadingBlock(index, -1)} aria-label="上移">↑</button>
-                        <button type="button" disabled={nightImporting || index === nightBlocks.length - 1} onClick={() => moveNightReadingBlock(index, 1)} aria-label="下移">↓</button>
-                        <button type="button" disabled={nightImporting} onClick={() => duplicateNightReadingBlock(index)} aria-label="复制">⧉</button>
-                        <button type="button" disabled={nightImporting} onClick={() => removeNightReadingBlock(index)} aria-label="删除">✕</button>
-                      </div>
-                      {block.type === 'image' ? (
-                        <div className="admin-night-block-image-editor">
-                          {block.url && <img className="admin-night-block-thumb" src={block.url} alt="图片预览" referrerPolicy="no-referrer" />}
-                          <input value={block.url || ''} onChange={event => updateNightReadingBlock(index, { url: event.target.value })} placeholder="图片地址" />
-                          <span className="admin-image-upload-row">
-                            <input type="file" accept="image/*" onChange={event => handleNightReadingBlockImageFile(event, index)} disabled={uploadingImage || !draft.day} />
-                            <small>{uploadingImage ? '上传中…' : '也可以直接选择图片上传'}</small>
-                          </span>
-                          <input value={block.caption || ''} onChange={event => updateNightReadingBlock(index, { caption: event.target.value })} placeholder="图片说明（选填）" />
-                        </div>
-                      ) : (
-                        <div className="admin-night-text-editor">
-                          <div className="admin-night-format-toolbar" aria-label={`文字块 ${index + 1} 排版工具`}>
-                            <div className="admin-night-align-buttons" aria-label="文字对齐">
-                              {[
-                                ['left', '左对齐', '≡'],
-                                ['center', '居中', '≣'],
-                                ['right', '右对齐', '☰']
-                              ].map(([value, label, glyph]) => (
-                                <button key={value} type="button" className={(block.align || 'left') === value ? 'is-active' : ''} onClick={() => updateNightReadingBlock(index, { align: value })} title={label} aria-label={label}>{glyph}</button>
-                              ))}
-                            </div>
-                            <label>字号
-                              <select value={block.fontSize || 'normal'} onChange={event => updateNightReadingBlock(index, { fontSize: event.target.value })}>
-                                <option value="small">小字</option>
-                                <option value="normal">正文</option>
-                                <option value="large">大字</option>
-                                <option value="title">标题</option>
-                              </select>
-                            </label>
-                            <label className="admin-night-color-control">颜色
-                              <input type="color" value={/^#[0-9a-f]{6}$/i.test(String(block.color || '')) ? block.color : '#4f3e68'} onChange={event => updateNightReadingBlock(index, { color: event.target.value })} />
-                              <input value={block.color || '#4f3e68'} onChange={event => updateNightReadingBlock(index, { color: event.target.value })} placeholder="#4f3e68" aria-label="文字色号" />
-                            </label>
-                            <div className="admin-night-color-swatches" aria-label="常用文字颜色">
-                              {['#4f3e68', '#7b4b63', '#b85f47', '#3f7165', '#3f5f8f', '#1f1f26'].map(color => (
-                                <button key={color} type="button" className={block.color === color ? 'is-active' : ''} style={{ '--swatch': color }} onClick={() => updateNightReadingBlock(index, { color })} aria-label={`使用颜色 ${color}`} title={color} />
-                              ))}
-                            </div>
-                          </div>
-                          <textarea value={block.text || ''} onChange={event => updateNightReadingBlock(index, { text: event.target.value })} rows={4} placeholder="输入这一段文字…" style={{ textAlign: block.align || 'left', color: /^#[0-9a-f]{6}$/i.test(String(block.color || '')) ? block.color : undefined }} />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                  <div className="admin-night-block-actions">
-                    <button type="button" onClick={() => addNightReadingBlock('text')} disabled={nightImporting}>＋ 文字块</button>
-                    <button type="button" onClick={() => addNightReadingBlock('image')} disabled={nightImporting}>＋ 图片块</button>
-                    <button type="button" onClick={() => processNightReadingBlocks(nightBlocks)} disabled={!nightBlocks.length}>↻ 重新转存全部图片</button>
-                  </div>
+              <details className="admin-night-import-details">
+                <summary>📥 导入已有内容（微信文章）</summary>
+                <div className="admin-night-wechat-head">
+                  <strong>粘贴微信公众号文章</strong>
+                  <small>可选：会按原文顺序识别图文</small>
                 </div>
-              ) : (
-                <p className="admin-night-editor-empty">{hasLegacyNightContent ? '检测到旧版正文或图集。点击“升级旧版正文与图集”，或直接新增文字 / 上传图片，旧内容会自动进入编辑器且不会丢失。' : '还没有内容。可以批量上传图片、新增文字，或粘贴微信公众号文章。'}</p>
-              )}
+                <div
+                  className={`admin-night-paste-zone ${nightImporting ? 'is-importing' : ''}`}
+                  contentEditable
+                  suppressContentEditableWarning
+                  onPaste={handleNightReadingPaste}
+                  role="textbox"
+                  aria-multiline="true"
+                  aria-label="从微信粘贴夜读内容"
+                >
+                  {nightImporting ? (nightImportProgress || '正在转存图片…') : '在微信文章页 Ctrl+A 复制全部内容，然后回到这里 Ctrl+V 粘贴。'}
+                </div>
+                <p className="admin-night-import-status">{nightImportProgress || `已识别 ${nightBlocks.length} 个内容块`}</p>
+              </details>
+              {nightBatchProgress && <p className="admin-night-batch-progress" role="status">{nightBatchProgress}</p>}
+              <div className="admin-night-workbench">
+                <aside className="admin-night-outline" aria-label="内容大纲">
+                  <div className="admin-night-rail-title">
+                    <strong>内容大纲</strong>
+                    <span>{nightBlocks.length}</span>
+                  </div>
+                  {nightBlocks.length ? nightBlocks.map((block, index) => (
+                    <button
+                      key={`outline-${block.id || index}`}
+                      type="button"
+                      className={selectedNightBlockId === block.id ? 'is-active' : ''}
+                      onClick={() => focusNightReadingBlock(block.id)}
+                    >
+                      <b>{block.type === 'image' ? '🖼️' : '📄'} {index + 1}</b>
+                      <span>{block.type === 'image' ? (block.caption || block.fileName || '图片') : (String(block.text || '').trim().slice(0, 28) || '空文字块')}</span>
+                    </button>
+                  )) : <p>还没有内容块</p>}
+                </aside>
+                <div className="admin-night-canvas">
+                  <div className="admin-night-editor-head">
+                    <div>
+                      <strong>文章内容</strong>
+                      <small>点击选中；拖动可排序；块间的 ＋ 可原位插入。</small>
+                    </div>
+                    <div className="admin-night-canvas-view-actions">
+                      <button type="button" onClick={() => setCollapsedNightBlocks(new Set(nightBlocks.map(block => block.id)))} disabled={!nightBlocks.length}>全部折叠</button>
+                      <button type="button" onClick={() => setCollapsedNightBlocks(new Set())} disabled={!nightBlocks.length}>全部展开</button>
+                    </div>
+                  </div>
+                  {!nightBlocks.length && hasLegacyNightContent && <button type="button" className="admin-night-upgrade" onClick={migrateNightReadingLegacyContent}>升级旧版正文与图集</button>}
+                  {!nightBlocks.length ? (
+                    <p className="admin-night-editor-empty">{hasLegacyNightContent ? '检测到旧版正文或图集，升级后即可统一编排。' : '还没有内容。请使用右侧工具栏新增文字或批量上传图片。'}</p>
+                  ) : (
+                    <div className="admin-night-block-list">
+                      <div className="admin-night-insert-row">
+                        <button type="button" onClick={() => addNightReadingBlock('text', '__start__')}>＋ 在开头插入文字</button>
+                      </div>
+                      {nightBlocks.map((block, index) => {
+                        const isSelected = selectedNightBlockId === block.id
+                        const isCollapsed = collapsedNightBlocks.has(block.id)
+                        return (
+                          <React.Fragment key={block.id || `nr-block-${index}`}>
+                            <div
+                              id={`admin-night-block-${block.id}`}
+                              className={`admin-night-block-item is-${block.type} ${isSelected ? 'is-selected' : ''} ${isCollapsed ? 'is-collapsed' : ''}`}
+                              draggable={!nightImporting}
+                              onClick={() => focusNightReadingBlock(block.id, false, false)}
+                              onDragStart={() => setDraggedNightBlockId(block.id)}
+                              onDragOver={event => event.preventDefault()}
+                              onDrop={() => { moveNightReadingBlockTo(draggedNightBlockId, block.id); setDraggedNightBlockId('') }}
+                            >
+                              <div className="admin-night-block-head">
+                                <span className="admin-night-drag-handle" title="拖动排序">⠿</span>
+                                <span>{block.type === 'image' ? '🖼️ 图片块' : '📄 文字块'} {index + 1}</span>
+                                <span className={`admin-night-block-status is-${block.status || 'local'}`}>
+                                  {block.status === 'importing' ? '处理中…' : block.status === 'uploaded' ? '已转存' : block.status === 'ready' ? '已就绪' : block.status === 'failed' ? '处理失败' : ''}
+                                </span>
+                                {block.fileName && <small className="admin-night-block-file-name" title={block.fileName}>{block.fileName}</small>}
+                                <button type="button" onClick={event => { event.stopPropagation(); setCollapsedNightBlocks(previous => { const next = new Set(previous); next.has(block.id) ? next.delete(block.id) : next.add(block.id); return next }) }} aria-label={isCollapsed ? '展开' : '折叠'}>{isCollapsed ? '▾' : '▴'}</button>
+                              </div>
+                              {isCollapsed ? (
+                                <p className="admin-night-block-summary">{block.type === 'image' ? (block.caption || block.fileName || '图片块') : (String(block.text || '').trim().slice(0, 80) || '空文字块')}</p>
+                              ) : block.type === 'image' ? (
+                                <div className="admin-night-block-image-editor">
+                                  {block.url && <img className="admin-night-block-thumb" src={block.url} alt="图片预览" referrerPolicy="no-referrer" />}
+                                  <input value={block.url || ''} onFocus={() => beginNightTextEdit(block.id)} onChange={event => updateNightReadingBlock(index, { url: event.target.value })} placeholder="图片地址" />
+                                  <span className="admin-image-upload-row">
+                                    <input type="file" accept="image/*" onChange={event => handleNightReadingBlockImageFile(event, index)} disabled={uploadingImage || !draft.day} />
+                                    <small>{uploadingImage ? '上传中…' : '替换当前图片'}</small>
+                                  </span>
+                                  <input value={block.caption || ''} onFocus={() => beginNightTextEdit(block.id)} onChange={event => updateNightReadingBlock(index, { caption: event.target.value })} placeholder="图片说明（选填）" />
+                                </div>
+                              ) : (
+                                <div className="admin-night-text-editor">
+                                  <textarea value={block.text || ''} onFocus={() => beginNightTextEdit(block.id)} onChange={event => updateNightReadingBlock(index, { text: event.target.value })} rows={5} placeholder="输入这一段文字…" style={{ textAlign: block.align || 'left', color: /^#[0-9a-f]{6}$/i.test(String(block.color || '')) ? block.color : undefined }} />
+                                </div>
+                              )}
+                            </div>
+                            <div className="admin-night-insert-row">
+                              <button type="button" onClick={() => addNightReadingBlock('text', block.id)}>＋ 在这里插入文字</button>
+                              <button type="button" onClick={() => addNightReadingBlock('image', block.id)}>＋ 图片</button>
+                            </div>
+                          </React.Fragment>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+                <aside className={`admin-night-tools ${nightToolsCollapsed ? 'is-collapsed' : ''}`} aria-label="固定编辑工具栏">
+                  <div className="admin-night-rail-title">
+                    <strong>编辑工具</strong>
+                    <span className="admin-night-tool-title-side">
+                      {nightEditorDirty && <i>未保存</i>}
+                      <button type="button" onClick={() => setNightToolsCollapsed(value => !value)} aria-label={nightToolsCollapsed ? '展开工具栏' : '收起工具栏'}>{nightToolsCollapsed ? '▴' : '▾'}</button>
+                    </span>
+                  </div>
+                  <div className="admin-night-primary-tools">
+                    <button type="button" onClick={() => addNightReadingBlock('text')}>＋ 文字</button>
+                    <button type="button" onClick={() => addNightReadingBlock('image')}>＋ 图片链接</button>
+                    <label className={`admin-night-batch-upload ${uploadingImage ? 'is-uploading' : ''}`}>
+                      <span>🖼️ 批量图片</span>
+                      <input type="file" accept="image/*" multiple onChange={handleNightReadingBlockFiles} disabled={uploadingImage || nightImporting || !draft.day} />
+                    </label>
+                  </div>
+                  <p className="admin-night-tool-hint">默认插入到当前选中块之后；未选中时追加到末尾。</p>
+                  <div className="admin-night-history-tools">
+                    <button type="button" onClick={undoNightReadingEdit} disabled={!canUndoNight}>↶ 撤销</button>
+                    <button type="button" onClick={redoNightReadingEdit} disabled={!canRedoNight}>↷ 重做</button>
+                    <button type="button" onClick={() => setNightPreviewOpen(true)}>👀 预览</button>
+                  </div>
+                  {selectedNightBlock ? (
+                    <div className="admin-night-selected-tools">
+                      <strong>当前：{selectedNightBlock.type === 'image' ? '图片' : '文字'} {selectedNightBlockIndex + 1}</strong>
+                      {selectedNightBlock.type !== 'image' && (
+                        <>
+                          <div className="admin-night-align-buttons" aria-label="文字对齐">
+                            {[['left', '左对齐', '≡'], ['center', '居中', '≣'], ['right', '右对齐', '☰']].map(([value, label, glyph]) => (
+                              <button key={value} type="button" className={(selectedNightBlock.align || 'left') === value ? 'is-active' : ''} onClick={() => updateNightReadingBlock(selectedNightBlockIndex, { align: value }, true)} aria-label={label}>{glyph}</button>
+                            ))}
+                          </div>
+                          <label>字号
+                            <select value={selectedNightBlock.fontSize || 'normal'} onChange={event => updateNightReadingBlock(selectedNightBlockIndex, { fontSize: event.target.value }, true)}>
+                              <option value="small">小字</option><option value="normal">正文</option><option value="large">大字</option><option value="title">标题</option>
+                            </select>
+                          </label>
+                          <label className="admin-night-color-control">色号
+                            <input type="color" value={/^#[0-9a-f]{6}$/i.test(String(selectedNightBlock.color || '')) ? selectedNightBlock.color : '#4f3e68'} onChange={event => updateNightReadingBlock(selectedNightBlockIndex, { color: event.target.value }, true)} />
+                            <input value={selectedNightBlock.color || '#4f3e68'} onFocus={() => beginNightTextEdit(selectedNightBlock.id)} onChange={event => updateNightReadingBlock(selectedNightBlockIndex, { color: event.target.value })} aria-label="文字色号" />
+                          </label>
+                        </>
+                      )}
+                      <div className="admin-night-selected-actions">
+                        <button type="button" onClick={() => moveNightReadingBlock(selectedNightBlockIndex, -1)} disabled={selectedNightBlockIndex === 0}>↑ 上移</button>
+                        <button type="button" onClick={() => moveNightReadingBlock(selectedNightBlockIndex, 1)} disabled={selectedNightBlockIndex === nightBlocks.length - 1}>↓ 下移</button>
+                        <button type="button" onClick={() => duplicateNightReadingBlock(selectedNightBlockIndex)}>⧉ 复制</button>
+                        <button type="button" className="is-danger" onClick={() => removeNightReadingBlock(selectedNightBlockIndex)}>✕ 删除</button>
+                      </div>
+                    </div>
+                  ) : <p className="admin-night-tool-empty">点击左侧大纲或中间内容块后，可在这里调整格式和顺序。</p>}
+                  <div className={`admin-night-health ${nightEditorIssues.length ? 'has-issues' : 'is-clean'}`}>
+                    <strong>{nightEditorIssues.length ? `发布检查：${nightEditorIssues.length} 项` : '✓ 内容检查通过'}</strong>
+                    {nightEditorIssues.slice(0, 3).map(issue => <small key={issue}>{issue}</small>)}
+                  </div>
+                  <button type="button" className="admin-night-clear" onClick={clearNightReadingImport} disabled={!nightBlocks.length || nightImporting || uploadingImage}>清空全部内容</button>
+                </aside>
+              </div>
             </div>
           )}
         </div>
@@ -13394,12 +13643,12 @@ function AdminTaskPage() {
         <div className="admin-actions">
           <button type="button" className="admin-save-draft" disabled={saving || nightImporting || uploadingImage} onClick={() => save('draft')}>{saving ? '保存中…' : '存为草稿'}</button>
           <button type="button" className="admin-save-publish" disabled={saving || nightImporting || uploadingImage} onClick={() => save('published')}>{saving ? '保存中…' : nightImporting || uploadingImage ? '图片处理中…' : '发布任务'}</button>
-          {editingDay && <button type="button" className="admin-cancel" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeDay)); setDateAuto(true) }}>取消编辑</button>}
+          {editingDay && <button type="button" className="admin-cancel" onClick={() => { setEditingDay(null); setDraft(emptyAdminTask(nextFreeDay)); setDateAuto(true); setNightEditorDirty(false); setSelectedNightBlockId('') }}>取消编辑</button>}
         </div>
       </section>
 
       <section className="admin-task-preview sticker-card">
-        <h2>预览卡片</h2>
+        <h2>日历入口预览</h2>
         <div className="admin-preview-card">
           <div className="admin-preview-icon">{draft.icon || '✨'}</div>
           <div>
@@ -13421,15 +13670,23 @@ function AdminTaskPage() {
           </div>
         </div>
         {draft.type === 'nightReading' && (
-          <details className="admin-night-live-preview" open>
-            <summary>查看栏目完整效果</summary>
-            <p className="admin-night-live-preview-note">这是实时预览；发布后会使用相同的排版与配色。</p>
+          <button type="button" className="admin-night-preview-launch" onClick={() => setNightPreviewOpen(true)}>👀 打开完整实时预览</button>
+        )}
+      </section>
+      {nightPreviewOpen && createPortal(
+        <div className="admin-night-preview-overlay" role="dialog" aria-modal="true" aria-label="栏目实时预览" onMouseDown={event => { if (event.target === event.currentTarget) setNightPreviewOpen(false) }}>
+          <div className="admin-night-preview-drawer">
+            <div className="admin-night-preview-drawer-head">
+              <div><strong>栏目实时预览</strong><small>发布后会使用相同的内容顺序与样式</small></div>
+              <button type="button" onClick={() => setNightPreviewOpen(false)} aria-label="关闭预览">✕</button>
+            </div>
             <div className="admin-night-live-preview-stage">
               <NightReadingQuest item={{ ...draft, day: Number(draft.day) || 0, title: draft.title || '未命名内容' }} />
             </div>
-          </details>
-        )}
-      </section>
+          </div>
+        </div>,
+        document.body
+      )}
 
           </>)}
           {adminSection === 'tasks' && (
@@ -13596,6 +13853,9 @@ function AdminTaskPage() {
         </div>
       </div>
 
+      <div className="admin-page-foot">
+        <BackToTopButton className="is-admin" />
+      </div>
       {toast && <div className="wwcxrl-soft-toast admin-toast" role="status">{toast}</div>}
     </main>
   )
