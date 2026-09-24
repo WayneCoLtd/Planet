@@ -1167,7 +1167,8 @@ function Hero({ setCurrent }) {
     window.addEventListener('wwcxrl-tasks-updated', refresh)
     window.addEventListener('focus', refresh)
     document.addEventListener('visibilitychange', refreshVisible)
-    const intervalId = window.setInterval(refresh, 8000)
+    // 跨设备进度不需要每 8 秒轮询；首次进入、窗口聚焦和站内事件都会立即刷新。
+    const intervalId = window.setInterval(refresh, 60000)
     return () => {
       alive = false
       window.removeEventListener('wwcxrl-signed-updated', refresh)
@@ -1342,7 +1343,8 @@ function CheckIn() {
         .finally(() => { refreshCheckinsInFlightRef.current = false })
     }
     refreshCloudCheckins()
-    const intervalId = window.setInterval(refreshCloudCheckins, 6000)
+    // 保留跨设备最终同步，但避免签到页每 6 秒持续请求云端。
+    const intervalId = window.setInterval(refreshCloudCheckins, 60000)
     const handleFocus = () => refreshCloudCheckins()
     const handleVisibility = () => { if (!document.hidden) refreshCloudCheckins() }
     const handleSignedUpdate = () => {
