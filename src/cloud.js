@@ -9,13 +9,12 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
 // 已经验证过的线路最多等 10 秒；失败后页面仍可继续使用本地缓存。
 const CLOUD_REQUEST_TIMEOUT_MS = 10000
-// 首次打开只给候选线路 2.5 秒。移动网络或代理把请求丢进黑洞时，
-// 不再让签到数据先空白 6 秒才切换备用线路。
-const CLOUD_PROBE_TIMEOUT_MS = 2500
-// 网上诊断出「域名可达但 supabase.co 不可达」时自动切到同域代理，结果记下来，
-// 之后每次打开都直接走通的那条，不再重复试错。
-// v2 改为同域优先。换 key 是为了不继续沿用旧版本曾记下的慢直连线路。
-const CLOUD_TRANSPORT_KEY = 'wwcxrl-cloud-transport-v2'
+// 读取请求先走首选线路；700ms 还没结果就并发启动备用线路，避免串行超时。
+const CLOUD_HEDGE_DELAY_MS = 700
+// 线路是会随网络、代理节点和运营商变化的，只短期记住胜出的线路。
+const CLOUD_TRANSPORT_TTL_MS = 15 * 60 * 1000
+// v3 改为短期自适应 + 并发竞速，主动丢弃旧版永久保存的线路选择。
+const CLOUD_TRANSPORT_KEY = 'wwcxrl-cloud-transport-v3'
 const CLOUD_PROXY_PREFIX = '/sb'
 // 只有幂等的读取才允许自动换线路重试：写请求若在服务端已经落库、只是响应丢了，
 // 重试会造成重复插入，宁可让它按原来的方式失败。
@@ -62,16 +61,16 @@ function canUseSameOriginProxy() {
 
 function readSavedTransport() {
   if (!canUseSameOriginProxy()) return 'direct'
-  const saved = safeGetItem(CLOUD_TRANSPORT_KEY)
-  if (saved === 'direct' || saved === 'proxy') return saved
-  // 页面本身既然已经从本站加载成功，复用同一域名和连接通常最快；
-  // /sb 不可用时，读取请求会在短探测后自动退回 Supabase 直连。
-  return 'proxy'
+  try {
+    const saved = JSON.parse(safeGetItem(CLOUD_TRANSPORT_KEY, 'null'))
+    if (saved && (saved.mode === 'direct' || saved.mode === 'proxy') && Number(saved.expiresAt) > Date.now()) {
+      return saved.mode
+    }
+  } catch {}
+  return 'direct'
 }
 
 let cloudTransport = readSavedTransport()
-// 线路是用户网络环境的属性，一旦发现可用就固定下来；探明后不再来回切换。
-let cloudTransportProven = !canUseSameOriginProxy() || ['direct', 'proxy'].includes(safeGetItem(CLOUD_TRANSPORT_KEY))
 
 function useSameOriginProxy(rawUrl) {
   if (typeof rawUrl !== 'string' || !supabaseUrl) return rawUrl
@@ -80,10 +79,11 @@ function useSameOriginProxy(rawUrl) {
 }
 
 function rememberTransport(next) {
-  cloudTransportProven = true
-  if (cloudTransport === next) return
   cloudTransport = next
-  safeSetItem(CLOUD_TRANSPORT_KEY, next)
+  safeSetItem(CLOUD_TRANSPORT_KEY, JSON.stringify({
+    mode: next,
+    expiresAt: Date.now() + CLOUD_TRANSPORT_TTL_MS
+  }))
 }
 
 // 图片是浏览器直接向 supabase.co 取的，不走上面的请求出口。
@@ -163,10 +163,17 @@ function fetchOnce(input, init = {}, timeoutMs = CLOUD_REQUEST_TIMEOUT_MS) {
     return fetch(input, init)
   }
   const controller = new AbortController()
+  const externalSignal = init && init.signal
+  const abortFromExternal = () => controller.abort(externalSignal?.reason)
+  if (externalSignal?.aborted) abortFromExternal()
+  else externalSignal?.addEventListener?.('abort', abortFromExternal, { once: true })
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
-  const { signal, ...rest } = init || {}
-  return fetch(input, { ...rest, signal: signal || controller.signal })
-    .finally(() => window.clearTimeout(timer))
+  const { signal: _signal, ...rest } = init || {}
+  return fetch(input, { ...rest, signal: controller.signal })
+    .finally(() => {
+      window.clearTimeout(timer)
+      externalSignal?.removeEventListener?.('abort', abortFromExternal)
+    })
 }
 
 function requestMethod(init) {
@@ -181,35 +188,79 @@ function looksLikeProxyMiss(response) {
   return !type.includes('application/json')
 }
 
-// 所有云端请求的出口：先用当前认定可用的线路，不通就换另一条再试一次。
-// 只换一次、只对读取，既有自愈能力，又不会把写请求重复提交。
+function cloudCandidateUrl(rawUrl, mode) {
+  return mode === 'proxy' ? useSameOriginProxy(rawUrl) : rawUrl
+}
+
+async function fetchCloudCandidate(rawUrl, init, mode, controller) {
+  const response = await fetchOnce(cloudCandidateUrl(rawUrl, mode), { ...init, signal: controller.signal })
+  if (mode === 'proxy' && looksLikeProxyMiss(response)) {
+    throw new Error('[wwcxrl cloud] same-origin proxy unavailable')
+  }
+  // 5xx 表示这条线路暂时没有给出可用结果，让另一条线路继续争胜。
+  if (Number(response.status) >= 500) {
+    throw new Error(`[wwcxrl cloud] ${mode} returned ${response.status}`)
+  }
+  return { response, mode }
+}
+
+// 幂等读取使用“快乐眼球”式竞速：先发首选线路，700ms 未完成再发备用线路，
+// 第一条成功响应胜出并取消另一条。比“等 6 秒再换线”更适合移动网络和代理切换。
+async function hedgedCloudRead(rawUrl, init, preferredMode) {
+  const secondaryMode = preferredMode === 'proxy' ? 'direct' : 'proxy'
+  const primaryController = new AbortController()
+  const secondaryController = new AbortController()
+  let secondaryStarted = false
+  let startSecondary
+  let hedgeTimer = null
+  let winnerMode = null
+
+  const secondaryPromise = new Promise((resolve, reject) => {
+    startSecondary = () => {
+      if (secondaryStarted) return
+      secondaryStarted = true
+      fetchCloudCandidate(rawUrl, init, secondaryMode, secondaryController).then(resolve, reject)
+    }
+    hedgeTimer = window.setTimeout(startSecondary, CLOUD_HEDGE_DELAY_MS)
+  })
+
+  const primaryPromise = fetchCloudCandidate(rawUrl, init, preferredMode, primaryController)
+    .catch(error => {
+      startSecondary()
+      throw error
+    })
+
+  try {
+    const winner = await Promise.any([primaryPromise, secondaryPromise])
+    winnerMode = winner.mode
+    rememberTransport(winner.mode)
+    return noteCloudResponse(winner.response)
+  } catch (error) {
+    noteCloudUnreachable()
+    throw error
+  } finally {
+    if (hedgeTimer !== null) window.clearTimeout(hedgeTimer)
+    // Response 返回后 Supabase 还要读取 body，不能中止胜出线路，只取消落后者。
+    if (!winnerMode || winnerMode !== preferredMode) primaryController.abort()
+    if (!winnerMode || winnerMode !== secondaryMode) secondaryController.abort()
+  }
+}
+
+// 所有云端请求的出口。只对幂等读取做双线路竞速；写请求始终只提交一次，
+// 避免服务端已落库但响应丢失时产生重复数据。
 async function cloudFetch(input, init = {}) {
   const rawUrl = typeof input === 'string' ? input : String((input && input.url) || '')
   const proxyAvailable = canUseSameOriginProxy() && Boolean(supabaseUrl) && rawUrl.indexOf(supabaseUrl) === 0
   const retryable = proxyAvailable && CLOUD_RETRYABLE_METHODS.has(requestMethod(init))
-  const firstIsProxy = cloudTransport === 'proxy' && proxyAvailable
-  // 线路还没探明时先短超时：快速失败、快速换线路，避免首屏干等十几秒。
-  const firstTimeout = cloudTransportProven ? CLOUD_REQUEST_TIMEOUT_MS : CLOUD_PROBE_TIMEOUT_MS
+  if (retryable) return hedgedCloudRead(rawUrl, init, cloudTransport)
+
+  const writeMode = proxyAvailable ? cloudTransport : 'direct'
   try {
-    const response = await fetchOnce(firstIsProxy ? useSameOriginProxy(rawUrl) : input, init, firstTimeout)
-    if (firstIsProxy && looksLikeProxyMiss(response)) throw new Error('[wwcxrl cloud] same-origin proxy unavailable')
-    rememberTransport(firstIsProxy ? 'proxy' : 'direct')
+    const response = await fetchOnce(cloudCandidateUrl(rawUrl, writeMode), init)
     return noteCloudResponse(response)
   } catch (error) {
-    if (!retryable) {
-      noteCloudUnreachable()
-      throw error
-    }
-    const secondIsProxy = !firstIsProxy
-    try {
-      const response = await fetchOnce(secondIsProxy ? useSameOriginProxy(rawUrl) : input, init, CLOUD_REQUEST_TIMEOUT_MS)
-      if (secondIsProxy && looksLikeProxyMiss(response)) throw new Error('[wwcxrl cloud] same-origin proxy unavailable')
-      rememberTransport(secondIsProxy ? 'proxy' : 'direct')
-      return noteCloudResponse(response)
-    } catch (secondError) {
-      noteCloudUnreachable()
-      throw secondError
-    }
+    noteCloudUnreachable()
+    throw error
   }
 }
 
