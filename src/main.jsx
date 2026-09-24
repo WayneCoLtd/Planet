@@ -13925,6 +13925,9 @@ function App() {
 // ---- 站点访问密码（服务端校验） ----
 // 密码只存在于服务端环境变量里，前端拿不到、也不会被打包进公开的 JS。
 const ACCESS_API = '/api/access'
+// 这里只是“这个浏览器曾成功通过门禁”的非敏感提示，真正权限仍由
+// HttpOnly Cookie 和服务端接口决定。提示存在时可先显示本地缓存，再后台复核。
+const ACCESS_HINT_KEY = 'wwcxrl-access-hint-v1'
 
 function isLocalDevHost() {
   if (typeof window === 'undefined') return true
@@ -13970,14 +13973,15 @@ async function verifyAdminPassword(password) {
 // 密码门：通过之前不渲染站点的任何内容。
 // 通过之后靠 HttpOnly Cookie 记住 180 天，平时访问完全无感。
 function AccessGate({ children }) {
-  const [phase, setPhase] = useState(() => (isLocalDevHost() ? 'open' : 'checking'))
+  const accessHintAtBootRef = React.useRef(!isLocalDevHost() && safeGetItem(ACCESS_HINT_KEY) === '1')
+  const [phase, setPhase] = useState(() => (isLocalDevHost() || accessHintAtBootRef.current ? 'open' : 'checking'))
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
 
   React.useEffect(() => {
-    if (phase !== 'checking') return
+    if (isLocalDevHost()) return
     let alive = true
     callAccessApi({ method: 'GET' }).then(result => {
       if (!alive) return
@@ -13986,15 +13990,21 @@ function AccessGate({ children }) {
       const unavailable = !result.reached || result.status === 404 || result.status >= 500
       if (unavailable) {
         setNotice('访问校验暂时不可用，已按公开模式打开')
-        setPhase('open')
+        setPhase(previous => previous === 'checking' ? 'open' : previous)
         return
       }
       const data = result.data || {}
-      if (data.enabled === false || data.ok === true) setPhase('open')
-      else setPhase('locked')
+      if (data.enabled === false || data.ok === true) {
+        safeSetItem(ACCESS_HINT_KEY, '1')
+        setNotice('')
+        setPhase('open')
+      } else {
+        safeRemoveItem(ACCESS_HINT_KEY)
+        setPhase('locked')
+      }
     })
     return () => { alive = false }
-  }, [phase])
+  }, [])
 
   async function submit(event) {
     event.preventDefault()
@@ -14013,6 +14023,7 @@ function AccessGate({ children }) {
     }
     if (result.status === 200 && result.data && result.data.ok) {
       setPassword('')
+      safeSetItem(ACCESS_HINT_KEY, '1')
       setPhase('open')
       return
     }
