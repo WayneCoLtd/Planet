@@ -11908,18 +11908,31 @@ function PlanetApp() {
     let alive = true
     const refresh = () => setVoyageTheme(readVoyageTheme())
     hydrateGlobalCloudState().then(() => { if (alive) refresh() })
-    // 曲库在进站后就安静地拉一次，顶栏的小控制才有歌可放。
-    musicLoadTracks()
-    loadCloudBackpack().then(cloudBag => {
-      if (!alive || !cloudBag) return
-      const next = { ...loadBackpack(), ...(cloudBag || {}) }
-      saveBackpack(next)
-      window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
-    }).catch(error => console.warn('[wwcxrl cloud] app backpack hydrate failed', error.message))
+    // 曲库和背包不影响首页首屏：等浏览器空闲后再拉，避免与身份校验、
+    // 首页签到数和主题状态争抢慢网络上的连接。
+    let idleId = null
+    let fallbackTimerId = null
+    const hydrateSecondaryData = () => {
+      if (!alive) return
+      musicLoadTracks()
+      loadCloudBackpack().then(cloudBag => {
+        if (!alive || !cloudBag) return
+        const next = { ...loadBackpack(), ...(cloudBag || {}) }
+        saveBackpack(next)
+        window.dispatchEvent(new Event('wwcxrl-backpack-updated'))
+      }).catch(error => console.warn('[wwcxrl cloud] app backpack hydrate failed', error.message))
+    }
+    if (typeof window.requestIdleCallback === 'function') {
+      idleId = window.requestIdleCallback(hydrateSecondaryData, { timeout: 1200 })
+    } else {
+      fallbackTimerId = window.setTimeout(hydrateSecondaryData, 450)
+    }
     window.addEventListener('wwcxrl-theme-updated', refresh)
     window.addEventListener('storage', refresh)
     return () => {
       alive = false
+      if (idleId !== null && typeof window.cancelIdleCallback === 'function') window.cancelIdleCallback(idleId)
+      if (fallbackTimerId !== null) window.clearTimeout(fallbackTimerId)
       window.removeEventListener('wwcxrl-theme-updated', refresh)
       window.removeEventListener('storage', refresh)
     }
@@ -13919,7 +13932,9 @@ function isLocalDevHost() {
 }
 
 async function callAccessApi(options = {}) {
-  const timeoutMs = 8000
+  // 门禁只是入口校验；网络不可用时站点会 fail-open。把等待压到 4 秒，
+  // 避免代理线路异常时长时间停在“正在确认身份”。
+  const timeoutMs = 4000
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null
   try {

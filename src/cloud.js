@@ -7,14 +7,15 @@ installStorageGuard()
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
-// 云端请求最长等待 15 秒：网络慢或挂起时立刻回退到本地数据，不让页面一直停在“空白/未使用”状态。
-const CLOUD_REQUEST_TIMEOUT_MS = 15000
-// 还没确定走哪条线路时，直连先只等 6 秒：很多网络是直接把 supabase.co 丢进黑洞，
-// 等满 15 秒再切换会让首屏白等，这里先快速放弃。
-const CLOUD_PROBE_TIMEOUT_MS = 6000
+// 已经验证过的线路最多等 10 秒；失败后页面仍可继续使用本地缓存。
+const CLOUD_REQUEST_TIMEOUT_MS = 10000
+// 首次打开只给候选线路 2.5 秒。移动网络或代理把请求丢进黑洞时，
+// 不再让签到数据先空白 6 秒才切换备用线路。
+const CLOUD_PROBE_TIMEOUT_MS = 2500
 // 网上诊断出「域名可达但 supabase.co 不可达」时自动切到同域代理，结果记下来，
 // 之后每次打开都直接走通的那条，不再重复试错。
-const CLOUD_TRANSPORT_KEY = 'wwcxrl-cloud-transport'
+// v2 改为同域优先。换 key 是为了不继续沿用旧版本曾记下的慢直连线路。
+const CLOUD_TRANSPORT_KEY = 'wwcxrl-cloud-transport-v2'
 const CLOUD_PROXY_PREFIX = '/sb'
 // 只有幂等的读取才允许自动换线路重试：写请求若在服务端已经落库、只是响应丢了，
 // 重试会造成重复插入，宁可让它按原来的方式失败。
@@ -61,12 +62,16 @@ function canUseSameOriginProxy() {
 
 function readSavedTransport() {
   if (!canUseSameOriginProxy()) return 'direct'
-  return safeGetItem(CLOUD_TRANSPORT_KEY) === 'proxy' ? 'proxy' : 'direct'
+  const saved = safeGetItem(CLOUD_TRANSPORT_KEY)
+  if (saved === 'direct' || saved === 'proxy') return saved
+  // 页面本身既然已经从本站加载成功，复用同一域名和连接通常最快；
+  // /sb 不可用时，读取请求会在短探测后自动退回 Supabase 直连。
+  return 'proxy'
 }
 
 let cloudTransport = readSavedTransport()
 // 线路是用户网络环境的属性，一旦发现可用就固定下来；探明后不再来回切换。
-let cloudTransportProven = cloudTransport === 'proxy'
+let cloudTransportProven = !canUseSameOriginProxy() || ['direct', 'proxy'].includes(safeGetItem(CLOUD_TRANSPORT_KEY))
 
 function useSameOriginProxy(rawUrl) {
   if (typeof rawUrl !== 'string' || !supabaseUrl) return rawUrl
