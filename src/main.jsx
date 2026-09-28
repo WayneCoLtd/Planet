@@ -1,3 +1,5 @@
+import StarField from './StarField'
+import { verifyAdminPassword } from './access'
 import React, { useMemo, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
@@ -6,6 +8,8 @@ import { changelog } from './data/changelog'
 import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, compressImageFile, isMessageMultiImageReady, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog, getCloudStatus, resolveCloudAssetUrl } from './cloud'
 import { installStorageGuard, safeGetItem, safeSetItem, safeRemoveItem } from './safeStorage'
 import './styles.css'
+import { createReadResource } from './readResource'
+import { toCanonicalCloudUrl } from './cloud'
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -794,18 +798,6 @@ function isLocalWwcxrlDeveloperDevice() {
 
 function isChildrenSpecialPostponed(item) {
   return Boolean(item && CHILDREN_POSTPONED_DAYS.includes(Number(item.day)) && !isLocalWwcxrlDeveloperDevice())
-}
-
-function StarField() {
-  const stars = useMemo(() => Array.from({ length: 56 }, (_, i) => ({
-    id: i,
-    '--left': `${Math.random() * 100}%`,
-    '--top': `${Math.random() * 100}%`,
-    '--delay': `${Math.random() * 5}s`,
-    '--size': `${Math.random() * 5 + 3}px`
-  })), [])
-
-  return <div className="star-field" aria-hidden="true">{stars.map(star => <span key={star.id} style={star} />)}</div>
 }
 
 function CuteIcon({ children, tone = 'sunny' }) {
@@ -8620,7 +8612,7 @@ function normalizeCloudPhoto(row) {
   }
 }
 
-async function loadCloudPhotoWallRows() {
+async function fetchCloudPhotoWallRows() {
   const supabase = await getSupabase()
   if (!supabase) return {}
   const identity = getCloudIdentity()
@@ -8641,6 +8633,23 @@ async function loadCloudPhotoWallRows() {
     }
   })
   return next
+}
+
+// Cloud metadata stays separate from local images waiting to be uploaded.
+const photoWallResource = createReadResource({
+  load: fetchCloudPhotoWallRows,
+  read: () => {
+    try {
+      const rows = JSON.parse(safeGetItem('wwcxrl-photo-wall-cloud-cache-v1') || '{}')
+      return Object.fromEntries(Object.entries(rows).filter(([, photo]) => photo?.src)
+        .map(([key, photo]) => [key, { ...photo, src: resolveCloudAssetUrl(photo.src) }]))
+    } catch { return {} }
+  },
+  save: rows => safeSetItem('wwcxrl-photo-wall-cloud-cache-v1', JSON.stringify(rows))
+})
+
+function loadCloudPhotoWallRows() {
+  return photoWallResource.refresh()
 }
 
 async function loadCloudUploadedPhotoDays(targetUserId = null) {
@@ -8692,7 +8701,7 @@ async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame, identity
     user_id: activeIdentity.id,
     day: day.day,
     owner: owner.id,
-    image_url: publicData.publicUrl,
+    image_url: toCanonicalCloudUrl(publicData.publicUrl),
     image_path: path,
     caption: `${day.date} · 这一天`,
     frame,
@@ -8705,8 +8714,10 @@ async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame, identity
     .select('*')
     .single()
   if (error) throw error
-  await logCloudEvent('photo_uploaded_to_wall', { day: day.day, owner: owner.id, frame }, day.day)
-  return normalizeCloudPhoto(data)
+  const photo = normalizeCloudPhoto(data)
+  photoWallResource.update(rows => ({ ...rows, [`${day.day}-${owner.id}`]: photo }))
+  void logCloudEvent('photo_uploaded_to_wall', { day: day.day, owner: owner.id, frame }, day.day)
+  return photo
 }
 
 async function updateCloudPhotoFrame(photo, key, frame) {
@@ -8717,7 +8728,7 @@ async function updateCloudPhotoFrame(photo, key, frame) {
     user_id: photo.userId || identity.id,
     day: Number(day),
     owner,
-    image_url: photo.src,
+    image_url: toCanonicalCloudUrl(photo.src),
     image_path: photo.imagePath || '',
     caption: photo.caption || `Day ${day} · 这一天`,
     frame,
@@ -8741,10 +8752,17 @@ async function removeCloudPhoto(photo, key) {
   query = photo.userId ? query.eq('user_id', photo.userId) : query.eq('user_id', identity.id)
   const { error } = await query
   if (error) throw error
+  photoWallResource.update(rows => {
+    const next = { ...rows }
+    delete next[key]
+    return next
+  })
 }
 
 // ===== 相册待同步队列：云端失败时照片先留在本机，之后自动/手动补传 =====
 const PHOTO_WALL_PENDING_KEY = 'wwcxrl-photo-wall-pending-v1'
+const photoWallActiveUploads = new Set()
+let photoWallFlushPromise = null
 
 function loadPhotoWallPending() {
   try {
@@ -8782,21 +8800,19 @@ function removePhotoWallPending(type, day, owner) {
   return next
 }
 
-function isPhotoPendingFor(key) {
-  const [day, owner] = key.split('-')
-  return loadPhotoWallPending().some(item => item.type === 'upload' && Number(item.day) === Number(day) && item.owner === owner)
-}
-
-function mergePhotoWallViews(cloud, local) {
+function mergePhotoWallViews(cloud, local, pending = loadPhotoWallPending()) {
   // 照片位若有在途操作（上传/换框/取下），以本机最新状态为准；否则云端优先、本机兜底。
   // 注意：不能删除同时存在于云端和本机的照片位，否则切换相框后照片会从墙上消失。
-  const pendingKeys = new Set(loadPhotoWallPending()
+  const pendingKeys = new Set(pending
     .filter(item => item.type === 'upload' || item.type === 'frame' || item.type === 'remove')
     .map(item => `${item.day}-${item.owner}`))
   const merged = { ...STATIC_PHOTOS, ...local }
   for (const [key, photo] of Object.entries(cloud)) {
     if (pendingKeys.has(key)) continue
     merged[key] = photo
+  }
+  for (const item of pending) {
+    if (item.type === 'remove') delete merged[`${item.day}-${item.owner}`]
   }
   return merged
 }
@@ -8812,7 +8828,14 @@ async function uploadPendingPhotoItem(item) {
   return Boolean(cloudPhoto)
 }
 
-async function flushPendingPhotoWallSync() {
+function flushPendingPhotoWallSync() {
+  if (!photoWallFlushPromise) {
+    photoWallFlushPromise = runPendingPhotoWallSync().finally(() => { photoWallFlushPromise = null })
+  }
+  return photoWallFlushPromise
+}
+
+async function runPendingPhotoWallSync() {
   if (!cloudEnabled) return { synced: 0, failed: 0 }
   const pending = loadPhotoWallPending()
   if (!pending.length) return { synced: 0, failed: 0 }
@@ -8820,6 +8843,7 @@ async function flushPendingPhotoWallSync() {
   let failed = 0
   for (const item of pending) {
     const key = `${item.day}-${item.owner}`
+    if (photoWallActiveUploads.has(key)) continue
     try {
       if (item.type === 'upload') {
         const ok = await uploadPendingPhotoItem(item)
@@ -8986,11 +9010,12 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
 function PhotoWall() {
   const [curtainOpen, setCurtainOpen] = useState(false)
   const [localPhotos, setLocalPhotos] = useState(loadPhotoWallLocal)
-  const [cloudPhotos, setCloudPhotos] = useState({})
+  const [cloudPhotos, setCloudPhotos] = useState(() => photoWallResource.peek())
   const [status, setStatus] = useState('')
   const [lightbox, setLightbox] = useState(null)
   const [albumDays, setAlbumDays] = useState(() => getDailyAdventures())
   const [pendingCount, setPendingCount] = useState(() => loadPhotoWallPending().length)
+  const [uploadingKeys, setUploadingKeys] = useState(() => new Set())
   // 上传列表：时间逆序 + 分页，最新日期永远在第一页最上面。
   const [uploadPage, setUploadPage] = useState(1)
   const [uploadPageSize, setUploadPageSize] = useState(() => (
@@ -8999,7 +9024,9 @@ function PhotoWall() {
   const photoRefreshInFlightRef = React.useRef(false)
   const previewMode = isPreviewMode()
   const openedDays = albumDays.filter(item => isAlbumUploadOpen(item))
-  const photos = mergePhotoWallViews(cloudPhotos, localPhotos)
+  const pendingItems = useMemo(() => loadPhotoWallPending(), [pendingCount, localPhotos, cloudPhotos])
+  const pendingUploadKeys = new Set(pendingItems.filter(item => item.type === 'upload').map(item => `${item.day}-${item.owner}`))
+  const photos = mergePhotoWallViews(cloudPhotos, localPhotos, pendingItems)
   const uploadDaysDesc = [...albumDays].sort((a, b) => Number(b.day) - Number(a.day))
   const uploadTotalPages = Math.max(1, Math.ceil(uploadDaysDesc.length / uploadPageSize))
   const safeUploadPage = Math.max(1, Math.min(uploadPage, uploadTotalPages))
@@ -9113,10 +9140,18 @@ function PhotoWall() {
     const file = event.target.files?.[0]
     if (!file) return
     const key = `${day.day}-${owner.id}`
+    if (photoWallActiveUploads.has(key) || photoWallFlushPromise) {
+      setStatus('照片正在同步，请稍后再换这一张。')
+      event.target.value = ''
+      return
+    }
+    photoWallActiveUploads.add(key)
+    setUploadingKeys(current => new Set([...current, key]))
     const frame = 'cream'
     setStatus('正在把照片裱进相册…')
     try {
       const dataUrl = await resizeImageFile(file)
+      removePhotoWallPending('remove', day.day, owner.id)
       const localPhoto = {
         src: dataUrl,
         name: file.name,
@@ -9125,7 +9160,7 @@ function PhotoWall() {
         source: 'local',
         updatedAt: new Date().toISOString()
       }
-      persistLocal({ ...localPhotos, [key]: localPhoto })
+      persistLocal({ ...loadPhotoWallLocal(), [key]: localPhoto })
       const uploadIdentity = getCloudIdentity()
       if (cloudEnabled) {
         enqueuePhotoWallPending({
@@ -9141,15 +9176,6 @@ function PhotoWall() {
         })
         setPendingCount(loadPhotoWallPending().length)
       }
-      // 无论云端是否可用，当天上传照片都记一次抽能量机会（本机计数、云端可同步）
-      let grantResult = null
-      try {
-        grantResult = await grantEnergyChanceForPhotoDay(day.day, owner.id)
-        window.dispatchEvent(new CustomEvent('wwcxrl-photo-uploaded', { detail: { day: day.day, owner: owner.id, granted: Boolean(grantResult?.granted) } }))
-      } catch (energyError) {
-        console.warn('[wwcxrl energy] photo chance grant failed', energyError.message)
-      }
-      const chanceNote = grantResult?.granted ? '新增 1 次抽能量机会。' : '今天的照片抽能量机会已领取过。'
       try {
         const cloudPhoto = await uploadPhotoToCloud(day, owner, dataUrl, file.name, frame)
         if (cloudPhoto) {
@@ -9159,28 +9185,38 @@ function PhotoWall() {
           delete nextLocal[key]
           persistLocal(nextLocal)
           setPendingCount(loadPhotoWallPending().length)
-          setStatus(grantResult ? `照片已挂上墙，两台设备都会看到。${chanceNote}` : '照片已挂上墙，两台设备都会看到；抽能量机会稍后打开彩蛋页会自动补发。')
+          setStatus('照片已挂上墙，两台设备都会看到；抽能量机会正在后台同步。')
         } else {
           removePhotoWallPending('upload', day.day, owner.id)
           setPendingCount(loadPhotoWallPending().length)
-          setStatus(grantResult ? `照片已经挂上墙啦。${chanceNote}` : '照片已经挂上墙啦；抽能量机会稍后打开彩蛋页会自动补发。')
+          setStatus('照片已经挂上墙啦；抽能量机会正在后台同步。')
         }
       } catch (cloudError) {
         console.warn('[wwcxrl cloud] photo upload failed', cloudError.message)
         setPendingCount(loadPhotoWallPending().length)
-        setStatus(grantResult ? `照片已经收好啦，网络恢复后会自动同步。${chanceNote}` : '照片已经收好啦，网络恢复后会自动同步。')
+        setStatus('照片已经收好啦，网络恢复后会自动同步。')
       }
+      // Energy settlement must not delay the actual upload or its success UI.
+      void grantEnergyChanceForPhotoDay(day.day, owner.id).then(result => {
+        window.dispatchEvent(new CustomEvent('wwcxrl-photo-uploaded', { detail: { day: day.day, owner: owner.id, granted: Boolean(result?.granted) } }))
+      }).catch(error => console.warn('[wwcxrl energy] photo chance grant failed', error.message))
     } catch (error) {
       console.warn('[wwcxrl album] upload failed', error)
       setStatus('这张照片暂时没贴上去，换一张小一点的试试。')
     } finally {
+      photoWallActiveUploads.delete(key)
+      setUploadingKeys(current => { const next = new Set(current); next.delete(key); return next })
       event.target.value = ''
     }
   }
 
   async function handleRemove(key) {
+    if (photoWallActiveUploads.has(key) || photoWallFlushPromise) {
+      setStatus('照片正在同步，请稍后再取下。')
+      return
+    }
     const currentPhoto = photos[key]
-    const nextLocal = { ...localPhotos }
+    const nextLocal = { ...loadPhotoWallLocal() }
     delete nextLocal[key]
     persistLocal(nextLocal)
     setCloudPhotos(current => {
@@ -9188,28 +9224,28 @@ function PhotoWall() {
       delete next[key]
       return next
     })
-    const pendingUpload = loadPhotoWallPending().find(item => item.type === 'upload' && `${item.day}-${item.owner}` === key)
-    if (pendingUpload) {
-      removePhotoWallPending('upload', Number(key.split('-')[0]), key.split('-')[1])
-      setPendingCount(loadPhotoWallPending().length)
-      setStatus('这张照片已经从照片墙取下啦。')
-      return
-    }
+    const [day, owner] = key.split('-')
+    removePhotoWallPending('upload', Number(day), owner)
+    const identity = getCloudIdentity()
+    if (cloudEnabled) enqueuePhotoWallPending({
+      type: 'remove', day: Number(day), owner,
+      userId: currentPhoto?.userId || identity?.id || '', role: identity?.role || 'pomelo'
+    })
+    photoWallResource.update(rows => { const next = { ...rows }; delete next[key]; return next })
+    photoWallActiveUploads.add(key)
+    setUploadingKeys(current => new Set([...current, key]))
+    setPendingCount(loadPhotoWallPending().length)
     try {
       await removeCloudPhoto(currentPhoto, key)
+      removePhotoWallPending('remove', Number(day), owner)
       setStatus('这张照片已经从照片墙取下。')
     } catch (error) {
       console.warn('[wwcxrl cloud] photo remove failed', error.message)
-      const identity = getCloudIdentity()
-      enqueuePhotoWallPending({
-        type: 'remove',
-        day: Number(key.split('-')[0]),
-        owner: key.split('-')[1],
-        userId: currentPhoto?.userId || identity?.id || '',
-        role: identity?.role || 'pomelo'
-      })
-      setPendingCount(loadPhotoWallPending().length)
       setStatus('这张照片已经从墙上取下，会自动同步到另一边。')
+    } finally {
+      photoWallActiveUploads.delete(key)
+      setUploadingKeys(current => { const next = new Set(current); next.delete(key); return next })
+      setPendingCount(loadPhotoWallPending().length)
     }
   }
 
@@ -9250,7 +9286,7 @@ function PhotoWall() {
           <span className="cord-line" />
           <span className="cord-pull">{curtainOpen ? '合上帷幕' : '拉开帷幕'}</span>
         </button>
-        <div className="dual-upload-board sticker-card">
+        <div className="dual-upload-board sticker-card" inert={curtainOpen ? '' : undefined}>
           <div className="album-board-topline">
             <strong>已开放 {openedDays.length} 天照片位 · 每天 2 栏，随天数增加</strong>
             <span>已挂上 {filledPhotos.length} 张</span>
@@ -9284,16 +9320,16 @@ function PhotoWall() {
                           <div className="slot-heading"><img className="owner-avatar owner-avatar-lg" src={owner.icon} alt={owner.label} /><strong>{owner.label}</strong></div>
                           {photo?.src ? (
                             <button type="button" className="mini-framed-photo frame-cream" onClick={() => setLightbox({ photo, owner, day })}>
-                              <img src={photo.src} alt={`${owner.label} Day ${day.day}`} />
+                              <img src={photo.src} loading="lazy" decoding="async" alt={`${owner.label} Day ${day.day}`} />
                               <small>{photo.name || photo.caption || owner.hint}</small>
-                              {isPhotoPendingFor(key) && <span className="album-pending-chip">排队中</span>}
+                              {pendingUploadKeys.has(key) && <span className="album-pending-chip">排队中</span>}
                             </button>
                           ) : (
                             <div className="empty-upload-slot"><span>{open ? '📷' : '🔒'}</span><p>{open ? owner.hint : '这一天还没解锁，照片位先被小贴纸封好。'}</p></div>
                           )}
                           <div className="slot-controls">
-                            <label className={`upload-file-button ${open ? '' : 'disabled'}`}>{photo?.src ? '换一张' : '上传'}<input type="file" accept="image/*" disabled={!open} onChange={event => handleUpload(day, owner, event)} /></label>
-                            {photo?.src && photo.source !== 'static' && <button type="button" className="remove-photo-button" onClick={() => handleRemove(key)}>取下</button>}
+                            <label className={`upload-file-button ${open ? '' : 'disabled'}`}>{uploadingKeys.has(key) ? '上传中…' : photo?.src ? '换一张' : '上传'}<input type="file" accept="image/*" disabled={!open || uploadingKeys.has(key)} onChange={event => handleUpload(day, owner, event)} /></label>
+                            {photo?.src && photo.source !== 'static' && <button type="button" className="remove-photo-button" disabled={uploadingKeys.has(key)} onClick={() => handleRemove(key)}>取下</button>}
                           </div>
                         </div>
                       )
@@ -9308,9 +9344,9 @@ function PhotoWall() {
         <div className="photo-wall-layer" aria-hidden={!curtainOpen}>
           <div className="photo-wall-header"><span>🖼️</span><strong>我们的照片墙</strong><small>每次新增照片都会自动补到这里，每天 2 栏，天数越多照片位越多。</small></div>
           <div className="photo-wall-grid" style={{ '--wall-cols': wallColumns, '--wall-rows': wallRows, '--wall-gap': `${wallGap}px`, '--wall-count': wallCount }}>
-            {filledPhotos.length === 0 ? <div className="empty-wall-note">还没有照片被裱起来。先合上帷幕，在上面上传第一张吧。</div> : filledPhotos.map((slot, index) => (
+            {!curtainOpen ? null : filledPhotos.length === 0 ? <div className="empty-wall-note">还没有照片被裱起来。先合上帷幕，在上面上传第一张吧。</div> : filledPhotos.map((slot, index) => (
               <button key={slot.key} type="button" className={`wall-photo-card frame-cream owner-${slot.owner.id}`} style={{ '--tilt': `${index % 2 === 0 ? -2 : 2}deg` }} onClick={() => setLightbox(slot)} aria-label={`放大查看 ${slot.owner.label} Day ${slot.day.day} 的照片`}>
-                <img src={slot.photo.src} alt={`${slot.owner.label} Day ${slot.day.day}`} />
+                <img src={slot.photo.src} loading="lazy" decoding="async" alt={`${slot.owner.label} Day ${slot.day.day}`} />
                 <span><img className="owner-avatar owner-avatar-sm" src={slot.owner.icon} alt="" /> Day {slot.day.day}</span>
               </button>
             ))}
@@ -14113,166 +14149,6 @@ function App() {
   return <PlanetApp />
 }
 
-// ---- 站点访问密码（服务端校验） ----
-// 密码只存在于服务端环境变量里，前端拿不到、也不会被打包进公开的 JS。
-const ACCESS_API = '/api/access'
-// 这里只是“这个浏览器曾成功通过门禁”的非敏感提示，真正权限仍由
-// HttpOnly Cookie 和服务端接口决定。提示存在时可先显示本地缓存，再后台复核。
-const ACCESS_HINT_KEY = 'wwcxrl-access-hint-v1'
-
-function isLocalDevHost() {
-  if (typeof window === 'undefined') return true
-  return ['localhost', '127.0.0.1', '0.0.0.0'].includes(window.location.hostname)
-}
-
-async function callAccessApi(options = {}) {
-  // 返回用户已有缓存可先显示，后台校验应容忍冷启动和慢网络。
-  const timeoutMs = 12000
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null
-  try {
-    const response = await fetch(ACCESS_API, { ...options, signal: controller ? controller.signal : undefined })
-    const data = await response.json()
-    return { reached: true, status: response.status, data }
-  } catch (error) {
-    return { reached: false, status: 0, data: {}, error }
-  } finally {
-    if (timer) window.clearTimeout(timer)
-  }
-}
-
-// 验证管理端密码：线上交给服务端判断，本地开发用 .env.local 里的 VITE_ADMIN_PASSWORD。
-async function verifyAdminPassword(password) {
-  if (isLocalDevHost()) {
-    const local = import.meta.env.VITE_ADMIN_PASSWORD
-    if (!local) return { ok: false, error: '本地开发：请在 .env.local 里设置 VITE_ADMIN_PASSWORD' }
-    return String(password) === String(local) ? { ok: true } : { ok: false, error: '密码不对哦' }
-  }
-  const result = await callAccessApi({
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ password, scope: 'admin' })
-  })
-  if (!result.reached) return { ok: false, error: '连不上服务器，检查一下网络再试' }
-  if (result.status === 200) return { ok: true }
-  // 把服务端真正的原因显示出来：分清「密码不对」「还没过站点门」「试太多次被限速」，
-  // 而不是一律说成密码错误。
-  return { ok: false, error: (result.data && result.data.error) || '密码不对哦' }
-}
-
-// 密码门：通过之前不渲染站点的任何内容。
-// 通过之后靠 HttpOnly Cookie 记住 180 天，平时访问完全无感。
-function AccessGate({ children }) {
-  const accessHintAtBootRef = React.useRef(!isLocalDevHost() && safeGetItem(ACCESS_HINT_KEY) === '1')
-  // 不在启动阶段调用 Serverless GET：返回用户立即打开；首次用户直接看到口令框。
-  // 需要保护的服务端接口仍会验证 HttpOnly Cookie。
-  const [phase, setPhase] = useState(() => (isLocalDevHost() || accessHintAtBootRef.current ? 'open' : 'locked'))
-  const [password, setPassword] = useState('')
-  const [message, setMessage] = useState('')
-  const [busy, setBusy] = useState(false)
-
-  async function submit(event) {
-    event.preventDefault()
-    if (busy) return
-    setBusy(true)
-    setMessage('')
-    const result = await callAccessApi({
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password, scope: 'site' })
-    })
-    setBusy(false)
-    if (!result.reached) {
-      setMessage('连不上服务器，检查一下网络再试')
-      return
-    }
-    if (result.status === 200 && result.data && result.data.ok) {
-      setPassword('')
-      safeSetItem(ACCESS_HINT_KEY, '1')
-      setPhase('open')
-      return
-    }
-    setMessage((result.data && result.data.error) || '密码不对哦，再想想')
-  }
-
-  if (phase === 'open') {
-    return children
-  }
-
-  return (
-    <div className="access-gate">
-      <StarField />
-      <div className="access-gate-card">
-        <span className="access-gate-planet" aria-hidden="true">🪐</span>
-        {phase === 'checking' ? (
-          <>
-            <h1>正在确认身份</h1>
-            <p className="access-gate-hint">稍等一下下…</p>
-          </>
-        ) : (
-          <form onSubmit={submit} className="access-gate-form">
-            <h1>小星球的门</h1>
-            <p className="access-gate-hint">输入我们约定的口令，就能进来</p>
-            <label className="access-gate-field">
-              <input
-                type="password"
-                value={password}
-                onChange={event => { setPassword(event.target.value); setMessage('') }}
-                placeholder="口令"
-                aria-label="站点访问口令"
-                autoComplete="current-password"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                // eslint-disable-next-line jsx-a11y/no-autofocus
-                autoFocus
-              />
-            </label>
-            <button type="submit" className="access-gate-submit" disabled={busy || !password}>
-              {busy ? '正在核对…' : '进去吧'}
-            </button>
-            {message && <p className="access-gate-error" role="alert">{message}</p>}
-          </form>
-        )}
-      </div>
-    </div>
-  )
-}
-
-// 渲染兜底：万一还有没预料到的异常，给一个能重试的页面，而不是白屏。
-class AppErrorBoundary extends React.Component {
-  constructor(props) {
-    super(props)
-    this.state = { error: null }
-  }
-
-  static getDerivedStateFromError(error) {
-    return { error }
-  }
-
-  componentDidCatch(error, info) {
-    console.error('[wwcxrl] render error', error, info)
-  }
-
-  render() {
-    if (!this.state.error) return this.props.children
-    return (
-      <div className="app-error-fallback" role="alert">
-        <div className="app-error-card">
-          <span className="app-error-icon">🛠️</span>
-          <h1>小星球刚才绊了一下</h1>
-          <p>页面没能正常显示，多半是浏览器存储或网络临时出了状况。刷新一下通常就好了，签到记录都存在云端，不会丢。</p>
-          <div className="app-error-actions">
-            <button type="button" onClick={() => window.location.reload()}>刷新一下</button>
-            <button type="button" className="is-ghost" onClick={() => this.setState({ error: null })}>再试一次</button>
-          </div>
-          <small>{String((this.state.error && this.state.error.message) || this.state.error || '未知错误')}</small>
-        </div>
-      </div>
-    )
-  }
-}
-
 // 云端连不上时才出现的提示：连接正常时直接渲染 null，不占任何位置。
 function CloudStatusPill() {
   const [down, setDown] = useState(() => getCloudStatus() === 'down')
@@ -15036,19 +14912,4 @@ function AdminMusicPanel() {
 // 播放器全局初始化放在最后执行：确保上面这些常量都已经就位。
 musicBootstrap()
 
-// Safari 再次访问时由 Service Worker 提供最近成功的应用壳；云端数据接口仍只走网络，
-// 页面打开后继续使用本地缓存并在连接恢复时同步。
-if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !isLocalDevHost()) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js', { scope: '/' })
-      .catch(error => console.warn('[wwcxrl] service worker registration failed', error.message))
-  }, { once: true })
-}
-
-createRoot(document.getElementById('root')).render(
-  <AppErrorBoundary>
-    <AccessGate>
-      <App />
-    </AccessGate>
-  </AppErrorBoundary>
-)
+export default App

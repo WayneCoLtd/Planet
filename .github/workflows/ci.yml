@@ -23,5 +23,7 @@ jobs:
         run: npm ci
       - name: Build
         run: npm run build
+      - name: Regression tests
+        run: node --test scripts/*.test.mjs
       - name: Dependency audit
         run: npm audit --audit-level=moderate

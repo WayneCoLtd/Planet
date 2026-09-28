@@ -119,7 +119,7 @@ test('service worker leaves API and cloud data uncached', () => {
 })
 
 test('access check tolerates responses past the former four-second cutoff', async () => {
-  const source = readFileSync(new URL('../src/main.jsx', import.meta.url), 'utf8')
+  const source = readFileSync(new URL('../src/access.jsx', import.meta.url), 'utf8')
   const fn = source.slice(source.indexOf('async function callAccessApi('), source.indexOf('// 验证管理端密码：'))
   let requestedTimeout
   const context = vm.createContext({ AbortController, ACCESS_API: '/api/access',
