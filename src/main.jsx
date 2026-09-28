@@ -12764,12 +12764,14 @@ function AdminTaskPage() {
 
   // 新建模式且表单仍为空时，自动跳到下一个空闲 Day
   React.useEffect(() => {
-    if (editingDay) return
-    if (draft.title || draft.prompt || draft.answer || draft.secret) return
+    if (loading || editingDay) return
+    // 只移动完全未碰过的默认表单；用户已经切换类型或开始填写时，
+    // 后台任务列表返回不能把正在编辑的内容重置掉。
+    if (draft.type !== 'memoryPuzzle' || draft.title || draft.prompt || draft.answer || draft.secret || draft.image || draft.chat) return
     if (usedDays.has(Number(draft.day))) {
       setDraft(emptyAdminTask(nextFreeDay))
     }
-  }, [tasks, editingDay, draft.day])
+  }, [loading, tasks, editingDay, draft.day, draft.type])
 
   if (!ok) {
     return (

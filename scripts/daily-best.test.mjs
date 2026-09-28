@@ -56,6 +56,7 @@ test('daily best UI keeps playback user-controlled and mobile-friendly', () => {
   assert.match(source, /function DailyBestCard/)
   assert.match(source, /controls\s+muted\s+playsInline\s+preload="metadata"/)
   assert.doesNotMatch(source.slice(source.indexOf('function DailyBestCard'), source.indexOf('function NightReadingQuest')), /autoPlay/)
+  assert.match(source, /if \(draft\.type !== 'memoryPuzzle'/)
 })
 
 test('daily best schema and media mapping are present', () => {
