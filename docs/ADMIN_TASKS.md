@@ -15,6 +15,7 @@
 | --- | --- | --- |
 | 谜语签到（推荐） | 输入谜底答案，答对自动点亮签到 | 谜面 prompt、谜底 answer、配图可选 |
 | 今日小卡（轻量签到） | 看一张 10 秒小卡：冷知识 / 生活技巧 / AI 小提示 / 脑筋急转弯；看完点“收下啦”即完成 | 小卡正文 secret、分类、配图可选 |
+| 今日最佳（幽默图片 / 视频） | 看一张趣图或主动播放一段短视频，读完一句正文后收下 | 图片或视频文件、一句正文；视频封面可选 |
 | 内容栏目（夜读 / 轻松一刻） | 看一篇温暖文字、轻松趣图或治愈漫画，读完点「我读完啦」即完成 | 栏目、可选来源、原文链接、封面、混排内容 |
 | 一封信 | 拆开信封 → 读信 → 点「我读完啦」 | 信的内容 secret |
 | 今日抽签 | 点一下签筒摇一摇，出签即完成 | 出签文案 secret |
@@ -30,6 +31,16 @@
 5. 发布后，她看完小卡点「收下啦，完成签到」，签到按钮就会亮起。
 
 这个类型没有答案、没有倒计时、没有失败状态；适合每天 10–30 秒完成。
+
+### 今日最佳怎么布置
+
+1. 任务类型选择「今日最佳（幽默图片 / 视频）」。
+2. 上传一张 JPG / PNG / WebP / GIF 图片，或 MP4 / WebM / MOV 视频；图片上限 12MB，视频上限 50MB。
+3. 视频可以再上传一张封面图。用户端不会自动播放，默认静音，可通过原生控制条打开声音。
+4. 填写一句正文，例如「今日最佳表情管理奖，颁给这位过分镇定的小猫。」
+5. 发布后，用户点「收下今日最佳」完成任务，再进行当天签到。
+
+素材应为原创或明确获得授权的公开内容。真人照片、聊天截图或带个人信息的视频发布前需确认隐私边界。
 
 ### 夜读 / 轻松一刻怎么布置
 
@@ -139,12 +150,20 @@
 
 ```sql
 alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
-alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'nightReading', 'letter', 'fortune', 'sticker', 'game'));
+alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'dailyBest', 'nightReading', 'letter', 'fortune', 'sticker', 'game'));
 alter table public.wwcxrl_daily_tasks add column if not exists game_id text not null default '';
 alter table public.wwcxrl_daily_tasks add column if not exists game_config jsonb not null default '{}'::jsonb;
 ```
 
 新库直接执行 `supabase_wwcxrl_schema.sql` 即可（建表已包含这些列）。
+
+当前代码对旧数据库有兼容处理，不执行 SQL 也能直接发布「今日最佳」。如希望数据库原生接受 `dailyBest` 类型，可在 Supabase SQL Editor 执行仓库根目录的：
+
+```text
+supabase_wwcxrl_daily_best_patch.sql
+```
+
+它会更新任务类型约束，并创建允许图片和短视频的 `wwcxrl-task-media` 媒体桶；可以重复执行。
 
 ## 5. 常用维护清单
 

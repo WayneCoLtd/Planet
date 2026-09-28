@@ -17015,6 +17015,88 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
   outline-offset: 2px;
 }
 
+/* ===== 今日最佳：幽默媒体小奖状 ===== */
+.daily-best-card {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  width: min(100%, 720px);
+  margin-inline: auto;
+  padding: clamp(16px, 3vw, 28px);
+  overflow: hidden;
+  border: 2px solid rgba(92, 63, 25, .15);
+  border-radius: 28px;
+  color: #4b3525;
+  background:
+    radial-gradient(circle at 88% 10%, rgba(255, 255, 255, .9) 0 4%, transparent 4.5%),
+    linear-gradient(145deg, #fff8c9, #ffdca8 54%, #ffc7d8);
+  box-shadow: 0 18px 42px rgba(137, 84, 36, .18), inset 0 0 0 3px rgba(255, 255, 255, .55);
+}
+.daily-best-card::after {
+  content: '★  BEST OF TODAY  ★';
+  position: absolute;
+  top: 18px;
+  right: -47px;
+  padding: 5px 48px;
+  color: #fff8d2;
+  background: #443126;
+  font: 800 .65rem/1 system-ui, sans-serif;
+  letter-spacing: .08em;
+  transform: rotate(35deg);
+}
+.daily-best-head { display: flex; align-items: center; gap: 11px; }
+.daily-best-head > span { display: grid; place-items: center; width: 48px; height: 48px; border-radius: 16px; background: rgba(255,255,255,.72); font-size: 1.55rem; }
+.daily-best-head div { display: grid; gap: 1px; }
+.daily-best-head small { color: #9d6d43; font-weight: 900; letter-spacing: .13em; }
+.daily-best-head strong { font-size: clamp(1.25rem, 4vw, 1.75rem); }
+.daily-best-media {
+  display: grid;
+  place-items: center;
+  min-height: 210px;
+  overflow: hidden;
+  border: 5px solid rgba(255,255,255,.86);
+  border-radius: 22px;
+  background: #2d2726;
+  box-shadow: 0 12px 28px rgba(66, 43, 32, .18);
+}
+.daily-best-media a { display: block; width: 100%; }
+.daily-best-media img,
+.daily-best-media video { display: block; width: 100%; max-height: min(62vh, 620px); object-fit: contain; background: #211e1d; }
+.daily-best-media-fallback { display: grid; justify-items: center; gap: 8px; padding: 30px; color: #fff5d8; text-align: center; }
+.daily-best-media-fallback span { font-size: 2.5rem; }
+.daily-best-media-fallback p { margin: 0; }
+.daily-best-caption { margin: 0; padding: 13px 16px; border-radius: 16px; background: rgba(255,255,255,.67); font-size: clamp(1rem, 2.7vw, 1.18rem); font-weight: 800; line-height: 1.75; text-align: center; }
+.daily-best-collect { justify-self: center; min-height: 46px; padding: 11px 24px; border: 0; border-radius: 999px; color: #fff9dd; background: #51372a; font-weight: 900; box-shadow: 0 9px 18px rgba(66,42,28,.22); }
+.daily-best-collect:hover:not(:disabled) { transform: translateY(-2px); }
+.daily-best-collect:disabled { opacity: .72; }
+.daily-best-note { color: #805b43; text-align: center; }
+.daily-best-card.is-collected { animation: dailyBestStamp .42s ease-out; }
+@keyframes dailyBestStamp { 50% { transform: scale(.985) rotate(-.25deg); } }
+
+.admin-daily-best-media { display: grid; gap: 12px; padding: 16px; border: 2px dashed rgba(160, 105, 53, .25); border-radius: 20px; background: rgba(255, 246, 199, .46); }
+.admin-daily-best-title { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.admin-daily-best-title small { color: #9b785d; }
+.admin-daily-best-media label { display: grid; gap: 6px; }
+.admin-daily-best-progress { margin: 0; color: #765031; font-weight: 800; }
+.admin-daily-best-preview { display: grid; justify-items: center; gap: 9px; }
+.admin-daily-best-preview img,
+.admin-daily-best-preview video { width: min(100%, 580px); max-height: 420px; object-fit: contain; border-radius: 18px; background: #211e1d; }
+.admin-daily-best-preview button { padding: 7px 14px; border: 0; border-radius: 999px; color: #a63b52; background: rgba(255, 220, 227, .8); font-weight: 800; }
+
+@media (max-width: 700px) {
+  .daily-best-card { padding: 14px; border-radius: 22px; }
+  .daily-best-card::after { right: -58px; font-size: .58rem; }
+  .daily-best-media { min-height: 160px; border-width: 3px; border-radius: 17px; }
+  .daily-best-media img,
+  .daily-best-media video { max-height: 54vh; }
+  .admin-daily-best-title { align-items: flex-start; flex-direction: column; gap: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .daily-best-card.is-collected { animation: none; }
+  .daily-best-collect { transition: none; }
+}
+
 @media (max-width: 700px) {
   .planet-nav button,
   .site-footer button,

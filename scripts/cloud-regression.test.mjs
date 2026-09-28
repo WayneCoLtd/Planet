@@ -20,8 +20,8 @@ function runtime(fetch, timeout = 100) {
     window: { location: { hostname: 'planet.test', origin: 'https://planet.test', search: '' },
       setTimeout, clearTimeout, dispatchEvent() {} }
   })
-  vm.runInContext(source + '\nglobalThis.run = cloudFetch; globalThis.apiUrl = getCloudApiUrl; globalThis.assetUrl = resolveCloudAssetUrl;', context)
-  return { run: context.run, apiUrl: context.apiUrl, assetUrl: context.assetUrl, storage }
+  vm.runInContext(source + '\nglobalThis.run = cloudFetch; globalThis.apiUrl = getCloudApiUrl; globalThis.assetUrl = resolveCloudAssetUrl; globalThis.mapAssets = mapCloudAssetUrls; globalThis.normalizeTask = normalizeCloudTask;', context)
+  return { run: context.run, apiUrl: context.apiUrl, assetUrl: context.assetUrl, mapAssets: context.mapAssets, normalizeTask: context.normalizeTask, storage }
 }
 const json = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })
 const url = 'https://planet.test/sb/rest/v1/tasks'
@@ -67,9 +67,17 @@ test('failed writes are submitted only once', async () => {
 })
 
 test('production cloud API and stored assets use the site origin', () => {
-  const { apiUrl, assetUrl } = runtime(async () => json([]))
+  const { apiUrl, assetUrl, mapAssets } = runtime(async () => json([]))
   assert.equal(apiUrl(), 'https://planet.test/sb')
   assert.equal(assetUrl('https://test.supabase.co/storage/v1/object/public/p/a.jpg'), 'https://planet.test/sb/storage/v1/object/public/p/a.jpg')
+  assert.equal(mapAssets({ mediaUrl: 'https://test.supabase.co/storage/v1/object/public/p/video.mp4' }, assetUrl).mediaUrl, 'https://planet.test/sb/storage/v1/object/public/p/video.mp4')
+})
+
+test('legacy nightReading row restores the dailyBest app type', () => {
+  const { normalizeTask } = runtime(async () => json([]))
+  const task = normalizeTask({ day: 351, type: 'nightReading', game_config: { taskVariant: 'dailyBest', mediaKind: 'video', mediaUrl: '' } })
+  assert.equal(task.type, 'dailyBest')
+  assert.equal(task.gameConfig.taskVariant, 'dailyBest')
 })
 
 test('old persisted route values do not affect the single endpoint', async () => {

@@ -107,6 +107,10 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('wwcxrl-photos', 'wwcxrl-photos', true, 10485760, array['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
 on conflict (id) do update set public = true, file_size_limit = 10485760, allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
 
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('wwcxrl-task-media', 'wwcxrl-task-media', true, 52428800, array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'])
+on conflict (id) do update set public = true, file_size_limit = 52428800, allowed_mime_types = array['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'video/mp4', 'video/webm', 'video/quicktime'];
+
 -- RLS: 当前是情侣暗号/私密链接型轻量站点；允许 publishable key 对这些表读写。
 -- 这不是银行级鉴权，但适合今晚快速上线。之后可加 Supabase Auth / Edge Function 收紧。
 alter table public.wwcxrl_profiles enable row level security;
@@ -186,7 +190,7 @@ create table if not exists public.wwcxrl_daily_tasks (
   date text not null,
   title text not null,
   icon text not null default '✨',
-  type text not null default 'memoryPuzzle' check (type in ('memoryPuzzle', 'dailyLight', 'nightReading', 'letter', 'fortune', 'sticker', 'game')),
+  type text not null default 'memoryPuzzle' check (type in ('memoryPuzzle', 'dailyLight', 'dailyBest', 'nightReading', 'letter', 'fortune', 'sticker', 'game')),
   theme text not null default '',
   reward text not null default '',
   prompt text not null default '',
@@ -313,7 +317,7 @@ create policy "wwcxrl_changelog_public_delete" on public.wwcxrl_changelog for de
 
 -- 已建表的老库执行下面两条即可（新库建表已包含）：
 -- alter table public.wwcxrl_daily_tasks drop constraint if exists wwcxrl_daily_tasks_type_check;
--- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'nightReading', 'letter', 'fortune', 'sticker', 'game'));
+-- alter table public.wwcxrl_daily_tasks add constraint wwcxrl_daily_tasks_type_check check (type in ('memoryPuzzle', 'dailyLight', 'dailyBest', 'nightReading', 'letter', 'fortune', 'sticker', 'game'));
 -- alter table public.wwcxrl_daily_tasks add column if not exists game_id text not null default '';
 -- alter table public.wwcxrl_daily_tasks add column if not exists game_config jsonb not null default '{}'::jsonb;
 

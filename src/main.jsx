@@ -39,12 +39,14 @@ const END_DATE = new Date(`${dailyAdventures[dailyAdventures.length - 1]?.date |
 const ADMIN_TASK_TYPES = [
   { id: 'memoryPuzzle', label: '谜语签到（推荐）', hint: '输入谜底答案，答对后自动亮起签到' },
   { id: 'dailyLight', label: '今日小卡（轻量签到）', hint: '一张 10 秒小卡：冷知识、生活技巧、AI 小提示、脑筋急转弯。看完点“收下啦”即可签到' },
+  { id: 'dailyBest', label: '今日最佳（幽默图片 / 视频）', hint: '上传一张趣图或一段短视频，配一句正文；看完收下即可签到' },
   { id: 'nightReading', label: '内容栏目（夜读 / 轻松一刻）', hint: '发布温暖夜读、轻松一刻或治愈漫画；支持混排、基础排版、封面、多图和原文链接' },
   { id: 'letter', label: '一封信', hint: '她先拆开信封，读完点“我读完啦”后完成签到' },
   { id: 'fortune', label: '砸金蛋', hint: '点一下金蛋，敲出今日的小奖励（奖品池可自定义），敲完即完成签到' },
   { id: 'sticker', label: '贴纸 / 心愿', hint: '小琳写下当天心愿，写好后自动签到，小琛这边也能看到' },
   { id: 'game', label: '小游戏', hint: '选择一款内置小游戏（迷宫/接爱心/戳泡泡/翻牌/拼图/三消/喂食/打地鼠/成语填空/星星记忆/井字棋/数独/2048/翻转棋/樱花拼图，以及鱼了个鱼/人生重开模拟器/五子棋/换装/矿工/砌砖/贪吃蛇/麻将连台/霓虹叠塔/点球热浪/菜摊敲敲乐等嵌入小游戏），玩完即可签到' }
 ]
+const TASK_MEDIA_API = '/api/task-media'
 
 const ADMIN_SECTIONS = [
   { id: 'form', icon: '✏️', label: '布置任务' },
@@ -1604,6 +1606,8 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
                     ? '🥚 砸开金蛋后可签到'
                     : item.type === 'dailyLight'
                       ? '💡 看完小卡后可签到'
+                    : item.type === 'dailyBest'
+                      ? '🏆 收下今日最佳后可签到'
                     : item.type === 'nightReading'
                       ? '🌙 读完夜读后可签到'
                     : '🍊 完成任务后可签到'
@@ -7821,6 +7825,61 @@ function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}
   )
 }
 
+// ---- 今日最佳：一份幽默媒体 + 一句正文，看完即可完成 ----
+function DailyBestCard({ item, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
+  const [collecting, setCollecting] = useState(false)
+  const [mediaFailed, setMediaFailed] = useState(false)
+  const config = item.gameConfig || {}
+  const mediaKind = config.mediaKind === 'video' ? 'video' : 'image'
+  const mediaUrl = String(config.mediaUrl || item.image || '').trim()
+  const posterUrl = String(config.posterUrl || '').trim()
+  const caption = String(item.secret || '').trim() || '今天的最佳选手正在赶来。'
+
+  function collectBest() {
+    if (taskCompleted || collecting) return
+    setCollecting(true)
+    window.setTimeout(() => {
+      onTaskComplete(item.day)
+      markCloudTaskCompleted(item.day, item.date)
+      logCloudEvent('daily_best_collected', { day: item.day, mediaKind }, item.day)
+      setCollecting(false)
+    }, 360)
+  }
+
+  return (
+    <section className={`daily-best-card ${embedded ? 'is-embedded' : ''} ${taskCompleted ? 'is-collected' : ''}`} aria-label="今日最佳">
+      <header className="daily-best-head">
+        <span aria-hidden="true">🏆</span>
+        <div><small>DAILY BEST</small><strong>今日最佳</strong></div>
+      </header>
+      <div className={`daily-best-media is-${mediaKind}`}>
+        {mediaFailed || !mediaUrl ? (
+          <div className="daily-best-media-fallback" role="status"><span>🎭</span><p>今日最佳的媒体暂时没有加载出来，但这句话还在。</p></div>
+        ) : mediaKind === 'video' ? (
+          <video
+            src={mediaUrl}
+            poster={posterUrl || undefined}
+            controls
+            muted
+            playsInline
+            preload="metadata"
+            onError={() => setMediaFailed(true)}
+          >当前浏览器暂不支持视频播放。</video>
+        ) : (
+          <a href={mediaUrl} target="_blank" rel="noreferrer" aria-label="打开今日最佳大图">
+            <img src={mediaUrl} alt={config.altText || '今日最佳趣图'} loading="lazy" onError={() => setMediaFailed(true)} />
+          </a>
+        )}
+      </div>
+      <p className="daily-best-caption">{caption}</p>
+      <button type="button" className="daily-best-collect" onClick={collectBest} disabled={taskCompleted || collecting}>
+        {taskCompleted ? '🏆 今日最佳已收下' : collecting ? '正在盖章…' : '🏆 收下今日最佳'}
+      </button>
+      {!taskCompleted && <small className="daily-best-note">{mediaKind === 'video' ? '视频默认静音，点播放器音量按钮即可打开声音。' : '点图片可以查看原图。'}</small>}
+    </section>
+  )
+}
+
 // ---- 夜读：温暖治愈的文字或漫画，读完即可完成 ----
 function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [collecting, setCollecting] = useState(false)
@@ -8225,6 +8284,10 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
 
   if (item.type === 'dailyLight') {
     return <DailyLightCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
+  }
+
+  if (item.type === 'dailyBest') {
+    return <DailyBestCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
   }
 
   if (item.type === 'nightReading') {
@@ -12289,6 +12352,14 @@ const ADMIN_TASK_EXAMPLES = {
     icon: '💡',
     gameConfig: { cardKind: '冷知识' }
   },
+  dailyBest: {
+    title: '今日最佳 · 本日快乐冠军',
+    prompt: '今日最佳选手已经就位，请查收。',
+    secret: '这个瞬间值得颁一座毫无用处但非常有排面的奖杯。',
+    reward: '收下今日最佳，笑一下再签到',
+    icon: '🏆',
+    gameConfig: { mediaKind: 'image', mediaUrl: '', posterUrl: '', altText: '今日最佳趣图' }
+  },
   nightReading: {
     title: '轻松一刻 · 今日份小能量',
     prompt: '如果你今晚还需要一点小能量，欢迎来到【轻松一刻】栏目',
@@ -12506,6 +12577,7 @@ function AdminTaskPage() {
   const [editingDay, setEditingDay] = useState(null)
   const [saving, setSaving] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [bestMediaProgress, setBestMediaProgress] = useState('')
   const [nightImporting, setNightImporting] = useState(false)
   const [nightImportProgress, setNightImportProgress] = useState('')
   const [nightBatchProgress, setNightBatchProgress] = useState('')
@@ -12744,6 +12816,10 @@ function AdminTaskPage() {
     if (!draft.title.trim()) missing.push('标题')
     if (draft.type === 'memoryPuzzle' && !draft.answer.trim()) missing.push('谜底答案')
     if (draft.type === 'dailyLight' && !draft.secret.trim()) missing.push('小卡内容')
+    if (draft.type === 'dailyBest') {
+      if (!draft.secret.trim()) missing.push('一句正文')
+      if (!String(draft.gameConfig?.mediaUrl || '').trim()) missing.push('图片或视频')
+    }
     if (draft.type === 'nightReading') {
       const galleryCount = Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery.filter(Boolean).length : 0
       const blockCount = Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks.filter(block => block.type === 'image' ? Boolean(block.url) : Boolean(block.text)).length : 0
@@ -12823,6 +12899,71 @@ function AdminTaskPage() {
     } else {
       setToast('配图上传失败：云端未连接或存储不可用，可改用图片链接。')
     }
+  }
+
+  function inferDailyBestContentType(file) {
+    if (file?.type) return file.type.toLowerCase()
+    const ext = String(file?.name || '').split('.').pop()?.toLowerCase()
+    return ({ jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif', mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime' })[ext] || ''
+  }
+
+  async function uploadDailyBestFile(file, target = 'mediaUrl') {
+    if (!file || uploadingImage) return
+    const contentType = inferDailyBestContentType(file)
+    const isVideo = contentType.startsWith('video/')
+    const isImage = contentType.startsWith('image/')
+    if (!isVideo && !isImage) { setToast('仅支持 JPG、PNG、WebP、GIF、MP4、WebM 和 MOV'); return }
+    if (target === 'posterUrl' && !isImage) { setToast('视频封面必须是图片'); return }
+    const limit = isVideo ? 50 * 1024 * 1024 : 12 * 1024 * 1024
+    if (file.size > limit) { setToast(`${isVideo ? '视频' : '图片'}不能超过 ${isVideo ? 50 : 12}MB`); return }
+
+    setUploadingImage(true)
+    setBestMediaProgress(`正在准备${target === 'posterUrl' ? '视频封面' : isVideo ? '视频' : '图片'}上传…`)
+    try {
+      const signResponse = await fetch(TASK_MEDIA_API, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'sign-upload', contentType, size: file.size })
+      })
+      const sign = await signResponse.json().catch(() => ({}))
+      if (!signResponse.ok || !sign.uploadUrl || !sign.publicUrl) throw new Error(sign.error || '拿不到上传地址')
+      setBestMediaProgress(`正在上传${target === 'posterUrl' ? '视频封面' : isVideo ? '视频' : '图片'}…`)
+      const uploadResponse = await fetch(resolveCloudAssetUrl(sign.uploadUrl) || sign.uploadUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': contentType },
+        body: file
+      })
+      if (!uploadResponse.ok) throw new Error(`上传失败（HTTP ${uploadResponse.status}）`)
+      setDraft(previous => ({
+        ...previous,
+        icon: previous.type === 'dailyBest' ? '🏆' : previous.icon,
+        gameConfig: {
+          ...(previous.gameConfig || {}),
+          ...(target === 'mediaUrl' ? { mediaKind: isVideo ? 'video' : 'image', posterUrl: isVideo ? previous.gameConfig?.posterUrl || '' : '' } : {}),
+          [target]: resolveCloudAssetUrl(sign.publicUrl) || sign.publicUrl,
+          [target === 'mediaUrl' ? 'mediaPath' : 'posterPath']: sign.path,
+          mediaFileName: target === 'mediaUrl' ? file.name : previous.gameConfig?.mediaFileName || '',
+          posterFileName: target === 'posterUrl' ? file.name : previous.gameConfig?.posterFileName || ''
+        }
+      }))
+      setToast(target === 'posterUrl' ? '视频封面已上传。' : `${isVideo ? '视频' : '图片'}已上传，可以预览和发布。`)
+    } catch (error) {
+      setToast(`媒体上传失败：${error.message || '请稍后重试'}`)
+    } finally {
+      setUploadingImage(false)
+      setBestMediaProgress('')
+    }
+  }
+
+  async function removeDailyBestMedia() {
+    const paths = [draft.gameConfig?.mediaPath, draft.gameConfig?.posterPath].filter(Boolean)
+    setDraft(previous => ({ ...previous, gameConfig: { ...(previous.gameConfig || {}), mediaUrl: '', posterUrl: '', mediaPath: '', posterPath: '', mediaFileName: '', posterFileName: '' } }))
+    if (!paths.length || isLocalDevHost()) return
+    fetch(TASK_MEDIA_API, {
+      method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'delete', paths })
+    }).catch(() => {})
   }
 
   function setNightReadingBlocks(blocks) {
@@ -13236,7 +13377,7 @@ function AdminTaskPage() {
   }
 
   const activeTypeHint = ADMIN_TASK_TYPES.find(type => type.id === draft.type)
-  const promptLabel = draft.type === 'nightReading' ? '夜读导语（选填，可写一两句开场白）' : '任务说明（她看到的第一段话，选填）'
+  const promptLabel = draft.type === 'nightReading' ? '夜读导语（选填，可写一两句开场白）' : draft.type === 'dailyBest' ? '栏目引导（选填）' : '任务说明（她看到的第一段话，选填）'
   const imageLabel = draft.type === 'nightReading' ? '封面图（可选）' : draft.type === 'memoryPuzzle' ? '谜题配图（可选）' : '配图（可选）'
   const nightGallery = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.gallery) ? draft.gameConfig.gallery : []
   const nightBlocks = draft.type === 'nightReading' && Array.isArray(draft.gameConfig?.blocks) ? draft.gameConfig.blocks : []
@@ -13247,8 +13388,8 @@ function AdminTaskPage() {
   const nightEditorIssues = getNightReadingEditorIssues(nightBlocks)
   const canUndoNight = nightHistoryVersion >= 0 && nightUndoRef.current.length > 0
   const canRedoNight = nightHistoryVersion >= 0 && nightRedoRef.current.length > 0
-  const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）', nightReading: '夜读正文（可分段；漫画类可以只留图集）' })[draft.type] || '完成后显示的内容'
-  const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : draft.type === 'nightReading' ? '把今晚想对她说的话，写成几段温柔的文字。' : '完成后显示的一段话'
+  const secretLabel = ({ letter: '信的内容（她拆开后看到）', sticker: '她写心愿时看到的引导语（选填）', fortune: '奖品池（每行一个，不填用默认：奶茶 / 咖啡 / 外卖 / 神秘大奖 / 蛋糕）', game: '完成后的祝贺语（可选）', memoryPuzzle: '答对后显示的话（可选）', dailyLight: '小卡内容（她看到的小知识 / 小技巧 / AI 提示 / 脑筋急转弯）', dailyBest: '一句正文（必填）', nightReading: '夜读正文（可分段；漫画类可以只留图集）' })[draft.type] || '完成后显示的内容'
+  const secretPlaceholder = draft.type === 'fortune' ? '每行一个奖品，例如：\n🧋 一杯奶茶\n🎁 神秘大奖' : draft.type === 'sticker' ? '写下你今天的心愿吧，我会好好收进小星球。' : draft.type === 'dailyLight' ? '例如：为什么会计里叫“借”和“贷”？……看完点收下啦即可签到。' : draft.type === 'dailyBest' ? '例如：今日最佳表情管理奖，颁给这位过分镇定的小猫。' : draft.type === 'nightReading' ? '把今晚想对她说的话，写成几段温柔的文字。' : '完成后显示的一段话'
   const activeGame = draft.type === 'game' ? MINI_GAMES.find(game => game.id === draft.gameId) || MINI_GAMES[0] : null
 
   return (
@@ -13326,6 +13467,10 @@ function AdminTaskPage() {
                 if (type === 'game' && !draft.gameId) next.gameId = 'mazeClassic'
                 if (type === 'game' && !draft.gameConfig) next.gameConfig = { ...getMiniGameDefaults(draft.gameId || 'mazeClassic') }
                 if (type === 'dailyLight') next.gameConfig = { ...(draft.gameConfig || {}), cardKind: draft.gameConfig?.cardKind || '冷知识' }
+                if (type === 'dailyBest') {
+                  next.icon = '🏆'
+                  next.gameConfig = { mediaKind: 'image', mediaUrl: '', posterUrl: '', altText: '今日最佳趣图' }
+                }
                 if (type === 'nightReading') next.gameConfig = {
                   ...(draft.gameConfig || {}),
                   readingKind: draft.gameConfig?.readingKind || 'article',
@@ -13375,6 +13520,38 @@ function AdminTaskPage() {
                 {['冷知识', '生活技巧', 'AI 小提示', '脑筋急转弯', '趣味小知识'].map(kind => <option key={kind} value={kind}>{kind}</option>)}
               </select>
             </label>
+          )}
+          {draft.type === 'dailyBest' && (
+            <div className="admin-full admin-daily-best-media">
+              <div className="admin-daily-best-title"><strong>🏆 今日最佳媒体</strong><small>图片 ≤ 12MB；视频 ≤ 50MB</small></div>
+              <label className={!draft.gameConfig?.mediaUrl && missingFields.includes('图片或视频') ? 'admin-field-missing' : ''}>上传图片或视频
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,.mov"
+                  disabled={uploadingImage}
+                  onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; uploadDailyBestFile(file, 'mediaUrl') }}
+                />
+              </label>
+              {bestMediaProgress && <p className="admin-daily-best-progress" role="status">{bestMediaProgress}</p>}
+              {draft.gameConfig?.mediaUrl && (
+                <div className="admin-daily-best-preview">
+                  {draft.gameConfig?.mediaKind === 'video' ? (
+                    <video src={draft.gameConfig.mediaUrl} poster={draft.gameConfig?.posterUrl || undefined} controls muted playsInline preload="metadata" />
+                  ) : (
+                    <img src={draft.gameConfig.mediaUrl} alt={draft.gameConfig?.altText || '今日最佳预览'} />
+                  )}
+                  <button type="button" onClick={removeDailyBestMedia}>移除媒体</button>
+                </div>
+              )}
+              {draft.gameConfig?.mediaKind === 'video' && draft.gameConfig?.mediaUrl && (
+                <label>视频封面（选填）
+                  <input type="file" accept="image/jpeg,image/png,image/webp" disabled={uploadingImage} onChange={event => { const file = event.target.files?.[0]; event.target.value = ''; uploadDailyBestFile(file, 'posterUrl') }} />
+                </label>
+              )}
+              <label>图片替代文字（选填）
+                <input value={draft.gameConfig?.altText || ''} maxLength={80} onChange={event => setDraft({ ...draft, gameConfig: { ...(draft.gameConfig || {}), altText: event.target.value } })} placeholder="例如：一只表情非常严肃的小猫" />
+              </label>
+            </div>
           )}
           {draft.type === 'nightReading' && (
             <div className="admin-full admin-night-meta">
@@ -13620,18 +13797,18 @@ function AdminTaskPage() {
               </label>
             )}
             <label className={`admin-full${missingFields.includes('完成后显示的内容') ? ' admin-field-missing' : ''}`}>{secretLabel}
-              <textarea value={draft.secret} onChange={event => { setDraft({ ...draft, secret: event.target.value }); setMissingFields([]) }} rows={draft.type === 'fortune' ? 4 : draft.type === 'nightReading' ? 10 : 2} placeholder={secretPlaceholder} />
+              <textarea value={draft.secret} maxLength={draft.type === 'dailyBest' ? 180 : undefined} onChange={event => { setDraft({ ...draft, secret: event.target.value }); setMissingFields([]) }} rows={draft.type === 'fortune' ? 4 : draft.type === 'nightReading' ? 10 : 2} placeholder={secretPlaceholder} />
             </label>
           </>
         )}
-        <label className="admin-full">{imageLabel}
+        {draft.type !== 'dailyBest' && <label className="admin-full">{imageLabel}
           <input value={draft.image} onChange={event => setDraft({ ...draft, image: event.target.value })} placeholder="/images/xxx.jpg 或 https://…" />
           <span className="admin-image-upload-row">
             <input type="file" accept="image/*" onChange={handleImageFile} disabled={uploadingImage || !draft.day} />
             <small>{uploadingImage ? '上传中…' : '选择图片后自动上传到云端'}</small>
           </span>
           {draft.image && <img className="admin-image-preview" src={draft.image} alt="配图预览" />}
-        </label>
+        </label>}
         <details className="admin-advanced">
           <summary>高级选项（选填）</summary>
           <div className="admin-form-grid">
@@ -13682,6 +13859,9 @@ function AdminTaskPage() {
             )}
             {draft.type === 'dailyLight' && (
               <p className="admin-preview-prompt">💡 {draft.gameConfig?.cardKind || '今日小卡'} · 看完点“收下啦”即可完成签到</p>
+            )}
+            {draft.type === 'dailyBest' && (
+              <p className="admin-preview-prompt">🏆 今日最佳 · {draft.gameConfig?.mediaKind === 'video' ? '短视频' : '趣图'} + 一句正文</p>
             )}
             {draft.type === 'nightReading' && (
               <p className="admin-preview-prompt">

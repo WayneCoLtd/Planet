@@ -74,7 +74,8 @@ function mapCloudAssetUrls(gameConfig, mapper) {
   if (!gameConfig || typeof gameConfig !== 'object') return gameConfig
   const blocks = Array.isArray(gameConfig.blocks) ? gameConfig.blocks : null
   const gallery = Array.isArray(gameConfig.gallery) ? gameConfig.gallery : null
-  if (!blocks && !gallery) return gameConfig
+  const hasDirectMedia = typeof gameConfig.mediaUrl === 'string' || typeof gameConfig.posterUrl === 'string'
+  if (!blocks && !gallery && !hasDirectMedia) return gameConfig
   const next = { ...gameConfig }
   if (blocks) {
     next.blocks = blocks.map(block => (block && typeof block === 'object' && block.url) ? { ...block, url: mapper(block.url) } : block)
@@ -82,6 +83,8 @@ function mapCloudAssetUrls(gameConfig, mapper) {
   if (gallery) {
     next.gallery = gallery.map(item => (typeof item === 'string' ? mapper(item) : item))
   }
+  if (typeof gameConfig.mediaUrl === 'string') next.mediaUrl = mapper(gameConfig.mediaUrl)
+  if (typeof gameConfig.posterUrl === 'string') next.posterUrl = mapper(gameConfig.posterUrl)
   return next
 }
 
@@ -450,12 +453,14 @@ export function getLocalJson(key, fallback) {
 
 // ---- 管理页：未来签到任务（wwcxrl_daily_tasks） ----
 function normalizeCloudTask(row) {
+  const rawGameConfig = row.game_config || {}
+  const normalizedType = row.type === 'nightReading' && rawGameConfig.taskVariant === 'dailyBest' ? 'dailyBest' : (row.type || 'memoryPuzzle')
   return {
     day: Number(row.day),
     date: row.date || '',
     title: row.title || '',
     icon: row.icon || '✨',
-    type: row.type || 'memoryPuzzle',
+    type: normalizedType,
     theme: row.theme || '',
     reward: row.reward || '',
     prompt: row.prompt || '',
@@ -466,7 +471,7 @@ function normalizeCloudTask(row) {
       memoryCaption: row.memory_caption || '',
       chatMessages: Array.isArray(row.chat_messages) ? row.chat_messages : [],
       gameId: row.game_id || '',
-      gameConfig: mapCloudAssetUrls(row.game_config || {}, resolveCloudAssetUrl),
+      gameConfig: mapCloudAssetUrls(rawGameConfig, resolveCloudAssetUrl),
     status: row.status || 'draft',
     updatedAt: row.updated_at || ''
   }
@@ -494,12 +499,16 @@ export async function saveCloudDailyTask(task) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return false
+    const compatibleGameConfig = task.type === 'dailyBest'
+      ? { ...(task.gameConfig || {}), taskVariant: 'dailyBest' }
+      : (task.gameConfig || {})
     const row = {
       day: Number(task.day),
       date: task.date || '',
       title: task.title || '',
       icon: task.icon || '✨',
-      type: task.type || 'memoryPuzzle',
+      // 老库的 type check 尚无 dailyBest：使用已有类型承载，读取时自动还原。
+      type: task.type === 'dailyBest' ? 'nightReading' : (task.type || 'memoryPuzzle'),
       theme: task.theme || '',
       reward: task.reward || '',
       prompt: task.prompt || '',
@@ -510,7 +519,7 @@ export async function saveCloudDailyTask(task) {
       memory_caption: task.memoryCaption || '',
       chat_messages: Array.isArray(task.chatMessages) ? task.chatMessages : [],
       game_id: task.gameId || '',
-      game_config: mapCloudAssetUrls(task.gameConfig || {}, toCanonicalCloudUrl),
+      game_config: mapCloudAssetUrls(compatibleGameConfig, toCanonicalCloudUrl),
       status: task.status || 'draft',
       created_by: identity.role,
       updated_at: new Date().toISOString()

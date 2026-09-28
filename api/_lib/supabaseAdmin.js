@@ -10,6 +10,7 @@ import { createClient } from '@supabase/supabase-js'
 const FALLBACK_URL = 'https://johtzljxyzcbijlniipc.supabase.co'
 
 export const MUSIC_BUCKET = 'wwcxrl-music'
+export const TASK_MEDIA_BUCKET = 'wwcxrl-task-media'
 
 let cached = null
 
