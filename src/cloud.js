@@ -7,14 +7,8 @@ installStorageGuard()
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
 const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 
-// 已经验证过的线路最多等 10 秒；失败后页面仍可继续使用本地缓存。
-const CLOUD_REQUEST_TIMEOUT_MS = 10000
-// 读取请求先走首选线路；700ms 还没结果就并发启动备用线路，避免串行超时。
-const CLOUD_HEDGE_DELAY_MS = 700
-// 线路是会随网络、代理节点和运营商变化的，只短期记住胜出的线路。
-const CLOUD_TRANSPORT_TTL_MS = 15 * 60 * 1000
-// v3 改为短期自适应 + 并发竞速，主动丢弃旧版永久保存的线路选择。
-const CLOUD_TRANSPORT_KEY = 'wwcxrl-cloud-transport-v3'
+// 恢复 9 月 16 日的单线路请求和 15 秒容错，不在正常慢响应上启动竞速。
+const CLOUD_REQUEST_TIMEOUT_MS = 15000
 const CLOUD_PROXY_PREFIX = '/sb'
 // 只有幂等的读取才允许自动换线路重试：写请求若在服务端已经落库、只是响应丢了，
 // 重试会造成重复插入，宁可让它按原来的方式失败。
@@ -59,18 +53,8 @@ function canUseSameOriginProxy() {
   return true
 }
 
-function readSavedTransport() {
-  if (!canUseSameOriginProxy()) return 'direct'
-  try {
-    const saved = JSON.parse(safeGetItem(CLOUD_TRANSPORT_KEY, 'null'))
-    if (saved && (saved.mode === 'direct' || saved.mode === 'proxy') && Number(saved.expiresAt) > Date.now()) {
-      return saved.mode
-    }
-  } catch {}
-  return 'direct'
-}
-
-let cloudTransport = readSavedTransport()
+// 不沿用旧版 localStorage 中的选线结果，单次失败不改变后续写入或图片地址。
+const cloudTransport = 'direct'
 
 function useSameOriginProxy(rawUrl) {
   if (typeof rawUrl !== 'string' || !supabaseUrl) return rawUrl
@@ -78,21 +62,9 @@ function useSameOriginProxy(rawUrl) {
   return `${window.location.origin}${CLOUD_PROXY_PREFIX}${rawUrl.slice(supabaseUrl.length)}`
 }
 
-function rememberTransport(next) {
-  cloudTransport = next
-  safeSetItem(CLOUD_TRANSPORT_KEY, JSON.stringify({
-    mode: next,
-    expiresAt: Date.now() + CLOUD_TRANSPORT_TTL_MS
-  }))
-}
-
-// 图片是浏览器直接向 supabase.co 取的，不走上面的请求出口。
-// 如果数据换了线路、图片还指向原地址，就会出现“数据有了、图全是裂的”，所以一并改写。
+// 图片保持稳定的 Supabase 地址；清理旧缓存中遗留的同域改写。
 export function resolveCloudAssetUrl(url) {
-  if (typeof url !== 'string' || !url) return url
-  if (!canUseSameOriginProxy() || cloudTransport !== 'proxy') return url
-  if (url.indexOf(supabaseUrl) !== 0) return url
-  return `${window.location.origin}${CLOUD_PROXY_PREFIX}${url.slice(supabaseUrl.length)}`
+  return toCanonicalCloudUrl(url)
 }
 
 // 写回数据库前还原成 Supabase 原始地址，避免把站点域名写进数据里。
@@ -171,8 +143,8 @@ function fetchOnce(input, init = {}, timeoutMs = CLOUD_REQUEST_TIMEOUT_MS) {
   const { signal: _signal, ...rest } = init || {}
   return fetch(input, { ...rest, signal: controller.signal })
     .then(async response => {
-      // 读取必须等正文完整到达才算完成，否则半截 JSON 会赢得竞速，
-      // 而真正可用的备用响应已被取消。写请求保留原始响应语义。
+      // 超时覆盖正文下载，避免响应头到达后半截 JSON 永久等待。
+      // 写请求保留原始响应语义。
       if (!CLOUD_RETRYABLE_METHODS.has(requestMethod(init))) return response
       const body = await response.arrayBuffer()
       return new Response([204, 205, 304].includes(response.status) ? null : body, {
@@ -213,73 +185,30 @@ async function fetchCloudCandidate(rawUrl, init, mode, controller) {
   return { response, mode }
 }
 
-// 幂等读取使用“快乐眼球”式竞速：先发首选线路，700ms 未完成再发备用线路，
-// 第一条成功响应胜出并取消另一条。比“等 6 秒再换线”更适合移动网络和代理切换。
-async function hedgedCloudRead(rawUrl, init, preferredMode) {
-  const secondaryMode = preferredMode === 'proxy' ? 'direct' : 'proxy'
-  const primaryController = new AbortController()
-  const secondaryController = new AbortController()
-  let secondaryStarted = false
-  let startSecondary
-  let hedgeTimer = null
-  let winnerMode = null
-  let settled = false
-  const cancel = () => {
-    primaryController.abort(init.signal?.reason)
-    secondaryController.abort(init.signal?.reason)
-    startSecondary?.()
-  }
-
-  const secondaryPromise = new Promise((resolve, reject) => {
-    startSecondary = () => {
-      if (secondaryStarted || settled) return
-      secondaryStarted = true
-      fetchCloudCandidate(rawUrl, init, secondaryMode, secondaryController).then(resolve, reject)
-    }
-    hedgeTimer = window.setTimeout(startSecondary, CLOUD_HEDGE_DELAY_MS)
-  })
-
-  const primaryPromise = fetchCloudCandidate(rawUrl, init, preferredMode, primaryController)
-    .catch(error => {
-      startSecondary()
-      throw error
-    })
-  if (init.signal?.aborted) cancel()
-  else init.signal?.addEventListener('abort', cancel, { once: true })
-
-  try {
-    const winner = await Promise.any([primaryPromise, secondaryPromise])
-    winnerMode = winner.mode
-    if (winner.response.ok) rememberTransport(winner.mode)
-    return noteCloudResponse(winner.response)
-  } catch (error) {
-    noteCloudUnreachable()
-    throw error
-  } finally {
-    settled = true
-    init.signal?.removeEventListener('abort', cancel)
-    if (hedgeTimer !== null) window.clearTimeout(hedgeTimer)
-    // Response 返回后 Supabase 还要读取 body，不能中止胜出线路，只取消落后者。
-    if (!winnerMode || winnerMode !== preferredMode) primaryController.abort()
-    if (!winnerMode || winnerMode !== secondaryMode) secondaryController.abort()
-  }
-}
-
-// 所有云端请求的出口。只对幂等读取做双线路竞速；写请求始终只提交一次，
-// 避免服务端已落库但响应丢失时产生重复数据。
+// 单线路读取。直连网络失败/5xx 才尝试一次同域备用，不将备用路径传播给写入。
 async function cloudFetch(input, init = {}) {
-  cloudTransport = readSavedTransport()
   const rawUrl = typeof input === 'string' ? input : String((input && input.url) || '')
   const proxyAvailable = canUseSameOriginProxy() && Boolean(supabaseUrl) && rawUrl.indexOf(supabaseUrl) === 0
   const retryable = proxyAvailable && CLOUD_RETRYABLE_METHODS.has(requestMethod(init))
-  if (retryable) return hedgedCloudRead(rawUrl, init, cloudTransport)
-
-  const writeMode = proxyAvailable ? cloudTransport : 'direct'
   try {
-    const response = await fetchOnce(cloudCandidateUrl(rawUrl, writeMode), init)
+    let response
+    try {
+      response = await fetchOnce(input, init)
+      if (retryable && response.status >= 500) throw new Error(`Cloud HTTP ${response.status}`)
+    } catch (error) {
+      if (!retryable || init.signal?.aborted) throw error
+      const controller = new AbortController()
+      const cancel = () => controller.abort(init.signal?.reason)
+      init.signal?.addEventListener('abort', cancel, { once: true })
+      try {
+        response = (await fetchCloudCandidate(rawUrl, init, 'proxy', controller)).response
+      } finally {
+        init.signal?.removeEventListener('abort', cancel)
+      }
+    }
     return noteCloudResponse(response)
   } catch (error) {
-    noteCloudUnreachable()
+    if (!init.signal?.aborted) noteCloudUnreachable()
     throw error
   }
 }

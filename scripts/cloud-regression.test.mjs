@@ -3,15 +3,14 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 
-function runtime(fetch) {
+function runtime(fetch, timeout = 100) {
   const storage = new Map()
   const source = readFileSync(new URL('../src/cloud.js', import.meta.url), 'utf8')
     .replace(/^import .*$/m, '')
     .replaceAll('import.meta.env.VITE_SUPABASE_URL', "'https://test.supabase.co'")
     .replaceAll('import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY', "'test-key'")
     .replaceAll('export ', '')
-    .replace('const CLOUD_REQUEST_TIMEOUT_MS = 10000', 'const CLOUD_REQUEST_TIMEOUT_MS = 100')
-    .replace('const CLOUD_HEDGE_DELAY_MS = 700', 'const CLOUD_HEDGE_DELAY_MS = 10')
+    .replace('const CLOUD_REQUEST_TIMEOUT_MS = 15000', `const CLOUD_REQUEST_TIMEOUT_MS = ${timeout}`)
   const context = vm.createContext({
     fetch, Response, AbortController, URLSearchParams, console, setTimeout, clearTimeout,
     installStorageGuard() {},
@@ -35,7 +34,7 @@ test('fast direct read does not start a second request', async () => {
   assert.equal(calls, 1)
 })
 
-test('stalled response body loses to complete fallback JSON', async () => {
+test('stalled response body times out before fallback starts', async () => {
   let cancelled = false
   const { run } = runtime(async (target, { signal }) => {
     if (target.startsWith('https://planet.test')) return json([2])
@@ -47,13 +46,16 @@ test('stalled response body loses to complete fallback JSON', async () => {
   assert.equal(cancelled, true)
 })
 
-test('HTML fallback cannot win against valid database response', async () => {
+test('slow but successful direct response never starts fallback', async () => {
+  let calls = 0
   const { run } = runtime(async target => {
+    calls++
     if (target.startsWith('https://planet.test')) return new Response('<html>error</html>')
-    await new Promise(r => setTimeout(r, 30))
+    await new Promise(r => setTimeout(r, 800))
     return json([3])
-  })
+  }, 2000)
   assert.deepEqual(await (await run(url)).json(), [3])
+  assert.equal(calls, 1)
 })
 
 test('failed writes are submitted only once', async () => {
@@ -63,15 +65,23 @@ test('failed writes are submitted only once', async () => {
   assert.equal(calls, 1)
 })
 
-test('expired route is re-evaluated without reloading page', async () => {
+test('old persisted proxy preference cannot redirect reads or writes', async () => {
   const paths = []
   const { run, storage } = runtime(async target => { paths.push(target); return json([]) })
   storage.set('wwcxrl-cloud-transport-v3', JSON.stringify({ mode: 'proxy', expiresAt: Date.now() + 1000 }))
   await run(url)
   storage.set('wwcxrl-cloud-transport-v3', JSON.stringify({ mode: 'proxy', expiresAt: 1 }))
-  await run(url)
-  assert.ok(paths[0].startsWith('https://planet.test'))
+  await run(url, { method: 'POST', body: '{}' })
+  assert.equal(paths[0], url)
   assert.equal(paths[1], url)
+})
+
+test('HTML from fallback is rejected after failed direct request', async () => {
+  const { run } = runtime(async target => {
+    if (target.startsWith('https://planet.test')) return new Response('<html>Error</html>')
+    throw new Error('direct unreachable')
+  })
+  await assert.rejects(run(url), /proxy unavailable/)
 })
 
 test('failed task reads preserve last successful calendar', () => {
@@ -83,7 +93,7 @@ test('failed task reads preserve last successful calendar', () => {
   return context.run().then(result => assert.equal(result, cached))
 })
 
-test('caller cancellation aborts both read routes', async () => {
+test('caller cancellation never starts fallback', async () => {
   let aborted = 0
   const { run } = runtime((_url, { signal }) => new Promise((resolve, reject) => {
     const stop = () => { aborted++; reject(new Error('cancelled')) }
@@ -94,7 +104,7 @@ test('caller cancellation aborts both read routes', async () => {
   const result = run(url, { signal: controller.signal })
   setTimeout(() => controller.abort(), 20)
   await assert.rejects(result)
-  assert.equal(aborted, 2)
+  assert.equal(aborted, 1)
 })
 
 test('access check tolerates responses past the former four-second cutoff', async () => {

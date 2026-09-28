@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>网站连接检查</title>
+<style>body{font:17px/1.7 system-ui,sans-serif;max-width:680px;margin:32px auto;padding:0 20px;color:#222}button{font:inherit;padding:12px 22px}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#f3f5f7;padding:16px;border-radius:12px}</style>
+<h1>网站连接检查</h1>
+<p>此页只使用少量文字，无需登录。请在出现问题的手机上关闭 VPN 后运行。结果仅显示在本页，不会自动上传，也不会改动签到数据。</p>
+<button id="start">开始检查</button><pre id="result" role="status">等待开始</pre>
+<script>
+const start=document.getElementById('start'),result=document.getElementById('result');
+async function probe(path,label){
+ const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000),begin=performance.now();
+ try{const response=await fetch(path,{cache:'no-store',signal:controller.signal});const body=await response.text();
+ result.textContent+=`${label}：HTTP ${response.status}，${((performance.now()-begin)/1000).toFixed(2)} 秒\n`;
+ return response.ok?body:null;
+ }catch(error){result.textContent+=`${label}：${error.name==='AbortError'?'超过20秒未完成':error.message}\n`;return null}
+ finally{clearTimeout(timer)}
+}
+start.onclick=async()=>{start.disabled=true;result.textContent=`检测时间：${new Date().toLocaleString()}\n本诊断页已成功打开。\n`;
+ try{for(let i=1;i<=3;i++){await probe('/?connection-check='+Date.now(),`第${i}次：首页`);await probe('/api/access',`第${i}次：访问校验`)}
+ result.textContent+='检查完成。可以复制以上结果，或截图发给维护者。';}
+ finally{start.disabled=false}
+};
+</script></html>
