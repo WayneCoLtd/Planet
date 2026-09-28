@@ -83,6 +83,8 @@ function getDailyAdventures() {
 
 async function hydrateDailyAdventures() {
   const cloudTasks = await loadCloudDailyTasks('published')
+  // 失败与“成功但任务为空”必须区分，网络失败不能覆盖最后一次成功缓存。
+  if (cloudTasks === null) return getDailyAdventures()
   const merged = new Map()
   dailyAdventures.forEach(item => merged.set(Number(item.day), item))
   cloudTasks.forEach(item => merged.set(Number(item.day), item))
@@ -1403,11 +1405,16 @@ function CheckIn() {
     }
     const handleFocus = () => refreshTasks()
     const handleVisibility = () => { if (!document.hidden) refreshTasks() }
+    // 一次失败后无需手动刷新整页；可见时自动恢复完整星图。
+    const recoveryTimer = window.setInterval(handleVisibility, 60000)
+    window.addEventListener('online', handleFocus)
     window.addEventListener('storage', handleAdminLocalStorage)
     window.addEventListener('focus', handleFocus)
     document.addEventListener('visibilitychange', handleVisibility)
     return () => {
       alive = false
+      window.clearInterval(recoveryTimer)
+      window.removeEventListener('online', handleFocus)
       window.removeEventListener('wwcxrl-tasks-updated', handleTasksUpdated)
       window.removeEventListener('storage', handleAdminLocalStorage)
       window.removeEventListener('focus', handleFocus)
@@ -13937,14 +13944,13 @@ function isLocalDevHost() {
 }
 
 async function callAccessApi(options = {}) {
-  // 门禁只是入口校验；网络不可用时站点会 fail-open。把等待压到 4 秒，
-  // 避免代理线路异常时长时间停在“正在确认身份”。
-  const timeoutMs = 4000
+  // 返回用户已有缓存可先显示，后台校验应容忍冷启动和慢网络。
+  const timeoutMs = 12000
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const timer = controller ? window.setTimeout(() => controller.abort(), timeoutMs) : null
   try {
     const response = await fetch(ACCESS_API, { ...options, signal: controller ? controller.signal : undefined })
-    const data = await response.json().catch(() => ({}))
+    const data = await response.json()
     return { reached: true, status: response.status, data }
   } catch (error) {
     return { reached: false, status: 0, data: {}, error }
@@ -13981,36 +13987,54 @@ function AccessGate({ children }) {
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState('')
+  const accessRevisionRef = React.useRef(0)
 
   React.useEffect(() => {
     if (isLocalDevHost()) return
     let alive = true
-    callAccessApi({ method: 'GET' }).then(result => {
-      if (!alive) return
-      // 接口不可用时放行，避免因为一次网络抖动或部署异常把人挡在自己的站点外面。
-      // 真正需要保护的是音乐文件本身，那部分由私有存储桶把关，不依赖这里。
-      const unavailable = !result.reached || result.status === 404 || result.status >= 500
-      if (unavailable) {
-        setNotice('访问校验暂时不可用，已按公开模式打开')
-        setPhase(previous => previous === 'checking' ? 'open' : previous)
-        return
-      }
-      const data = result.data || {}
-      if (data.enabled === false || data.ok === true) {
-        safeSetItem(ACCESS_HINT_KEY, '1')
-        setNotice('')
-        setPhase('open')
-      } else {
-        safeRemoveItem(ACCESS_HINT_KEY)
-        setPhase('locked')
-      }
-    })
-    return () => { alive = false }
+    let retryTimer
+    let inFlight = false
+    const check = () => {
+      if (!alive || inFlight) return
+      inFlight = true
+      const revision = accessRevisionRef.current
+      callAccessApi({ method: 'GET' }).then(result => {
+        if (!alive || revision !== accessRevisionRef.current) return
+        // 校验失败后自动恢复；新访客不能因网络故障被当作验证成功。
+        const unavailable = !result.reached || result.status === 404 || result.status >= 500
+        if (unavailable) {
+          setNotice('连接暂时中断，正在重新确认访问状态…')
+          setMessage('连接暂时中断，稍后自动重试，也可以输入口令重新连接。')
+          setPhase(previous => previous === 'checking' ? 'locked' : previous)
+          retryTimer = window.setTimeout(check, 15000)
+          return
+        }
+        const data = result.data || {}
+        if (data.enabled === false || data.ok === true) {
+          safeSetItem(ACCESS_HINT_KEY, '1')
+          setNotice('')
+          setMessage('')
+          setPhase('open')
+        } else {
+          safeRemoveItem(ACCESS_HINT_KEY)
+          setPhase('locked')
+        }
+      }).finally(() => { inFlight = false })
+    }
+    const reconnect = () => { window.clearTimeout(retryTimer); check() }
+    check()
+    window.addEventListener('online', reconnect)
+    return () => {
+      alive = false
+      window.clearTimeout(retryTimer)
+      window.removeEventListener('online', reconnect)
+    }
   }, [])
 
   async function submit(event) {
     event.preventDefault()
     if (busy) return
+    accessRevisionRef.current += 1
     setBusy(true)
     setMessage('')
     const result = await callAccessApi({
@@ -14026,6 +14050,7 @@ function AccessGate({ children }) {
     if (result.status === 200 && result.data && result.data.ok) {
       setPassword('')
       safeSetItem(ACCESS_HINT_KEY, '1')
+      setNotice('')
       setPhase('open')
       return
     }

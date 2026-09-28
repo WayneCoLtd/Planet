@@ -170,6 +170,15 @@ function fetchOnce(input, init = {}, timeoutMs = CLOUD_REQUEST_TIMEOUT_MS) {
   const timer = window.setTimeout(() => controller.abort(), timeoutMs)
   const { signal: _signal, ...rest } = init || {}
   return fetch(input, { ...rest, signal: controller.signal })
+    .then(async response => {
+      // 读取必须等正文完整到达才算完成，否则半截 JSON 会赢得竞速，
+      // 而真正可用的备用响应已被取消。写请求保留原始响应语义。
+      if (!CLOUD_RETRYABLE_METHODS.has(requestMethod(init))) return response
+      const body = await response.arrayBuffer()
+      return new Response([204, 205, 304].includes(response.status) ? null : body, {
+        status: response.status, statusText: response.statusText, headers: response.headers
+      })
+    })
     .finally(() => {
       window.clearTimeout(timer)
       externalSignal?.removeEventListener?.('abort', abortFromExternal)
@@ -194,7 +203,7 @@ function cloudCandidateUrl(rawUrl, mode) {
 
 async function fetchCloudCandidate(rawUrl, init, mode, controller) {
   const response = await fetchOnce(cloudCandidateUrl(rawUrl, mode), { ...init, signal: controller.signal })
-  if (mode === 'proxy' && looksLikeProxyMiss(response)) {
+  if (mode === 'proxy' && (looksLikeProxyMiss(response) || !String(response.headers.get('content-type')).includes('application/json'))) {
     throw new Error('[wwcxrl cloud] same-origin proxy unavailable')
   }
   // 5xx 表示这条线路暂时没有给出可用结果，让另一条线路继续争胜。
@@ -214,10 +223,16 @@ async function hedgedCloudRead(rawUrl, init, preferredMode) {
   let startSecondary
   let hedgeTimer = null
   let winnerMode = null
+  let settled = false
+  const cancel = () => {
+    primaryController.abort(init.signal?.reason)
+    secondaryController.abort(init.signal?.reason)
+    startSecondary?.()
+  }
 
   const secondaryPromise = new Promise((resolve, reject) => {
     startSecondary = () => {
-      if (secondaryStarted) return
+      if (secondaryStarted || settled) return
       secondaryStarted = true
       fetchCloudCandidate(rawUrl, init, secondaryMode, secondaryController).then(resolve, reject)
     }
@@ -229,16 +244,20 @@ async function hedgedCloudRead(rawUrl, init, preferredMode) {
       startSecondary()
       throw error
     })
+  if (init.signal?.aborted) cancel()
+  else init.signal?.addEventListener('abort', cancel, { once: true })
 
   try {
     const winner = await Promise.any([primaryPromise, secondaryPromise])
     winnerMode = winner.mode
-    rememberTransport(winner.mode)
+    if (winner.response.ok) rememberTransport(winner.mode)
     return noteCloudResponse(winner.response)
   } catch (error) {
     noteCloudUnreachable()
     throw error
   } finally {
+    settled = true
+    init.signal?.removeEventListener('abort', cancel)
     if (hedgeTimer !== null) window.clearTimeout(hedgeTimer)
     // Response 返回后 Supabase 还要读取 body，不能中止胜出线路，只取消落后者。
     if (!winnerMode || winnerMode !== preferredMode) primaryController.abort()
@@ -249,6 +268,7 @@ async function hedgedCloudRead(rawUrl, init, preferredMode) {
 // 所有云端请求的出口。只对幂等读取做双线路竞速；写请求始终只提交一次，
 // 避免服务端已落库但响应丢失时产生重复数据。
 async function cloudFetch(input, init = {}) {
+  cloudTransport = readSavedTransport()
   const rawUrl = typeof input === 'string' ? input : String((input && input.url) || '')
   const proxyAvailable = canUseSameOriginProxy() && Boolean(supabaseUrl) && rawUrl.indexOf(supabaseUrl) === 0
   const retryable = proxyAvailable && CLOUD_RETRYABLE_METHODS.has(requestMethod(init))
@@ -580,12 +600,12 @@ export async function loadCloudDailyTasks(status = null) {
     const { data, error } = await query.order('day', { ascending: true })
     if (error) {
       console.warn('[wwcxrl cloud] daily tasks load failed', error.message)
-      return []
+      return null
     }
     return (data || []).map(normalizeCloudTask)
   } catch (error) {
     console.warn('[wwcxrl cloud] daily tasks load exception', error)
-    return []
+    return null
   }
 }
 
