@@ -17082,6 +17082,25 @@ body:has(.interstellar-voyage-theme) .access-gate-submit {
 .admin-daily-best-preview img,
 .admin-daily-best-preview video { width: min(100%, 580px); max-height: 420px; object-fit: contain; border-radius: 18px; background: #211e1d; }
 .admin-daily-best-preview button { padding: 7px 14px; border: 0; border-radius: 999px; color: #a63b52; background: rgba(255, 220, 227, .8); font-weight: 800; }
+.daily-best-media a:focus-visible,
+.daily-best-collect:focus-visible,
+.admin-daily-best-media input:focus-visible,
+.admin-daily-best-preview button:focus-visible { outline: 3px solid rgba(255, 123, 80, .9); outline-offset: 3px; }
+
+.interstellar-voyage-theme .daily-best-card {
+  color: #eafcff;
+  border-color: rgba(126, 246, 255, .28);
+  background: linear-gradient(145deg, rgba(16, 38, 74, .96), rgba(40, 29, 82, .95) 56%, rgba(71, 36, 92, .96));
+  box-shadow: 0 20px 48px rgba(0, 0, 0, .45), inset 0 0 0 2px rgba(126, 246, 255, .12);
+}
+.interstellar-voyage-theme .daily-best-head > span,
+.interstellar-voyage-theme .daily-best-caption { background: rgba(126, 246, 255, .1); }
+.interstellar-voyage-theme .daily-best-head small,
+.interstellar-voyage-theme .daily-best-note { color: #aeeefa; }
+.interstellar-voyage-theme .daily-best-collect { color: #062033; background: linear-gradient(135deg, #ffe39a, #74f6ff); }
+.interstellar-voyage-theme .admin-daily-best-media { color: #eafcff; border-color: rgba(126, 246, 255, .28); background: rgba(10, 28, 58, .78); }
+.interstellar-voyage-theme .admin-daily-best-title small,
+.interstellar-voyage-theme .admin-daily-best-progress { color: #aeeefa; }
 
 @media (max-width: 700px) {
   .daily-best-card { padding: 14px; border-radius: 22px; }
