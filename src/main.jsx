@@ -10,6 +10,7 @@ import { installStorageGuard, safeGetItem, safeSetItem, safeRemoveItem } from '.
 import './styles.css'
 import { createReadResource } from './readResource'
 import { toCanonicalCloudUrl } from './cloud'
+import { ENERGY_TARGET, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from './energyLedger'
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -8673,10 +8674,10 @@ async function loadCloudUploadedPhotoDays(targetUserId = null) {
 async function grantEnergyChanceForPhotoDay(dayNumber, ownerId = '') {
   const day = Number(dayNumber)
   if (!day) return null
-  const { next, newPhotoDays } = await loadLatestEnergyStateWithSignins()
+  const { next, newPhotoDays, updatedAt } = await loadLatestEnergyStateWithSignins()
   const grantedNow = (newPhotoDays || []).includes(`${day}-${ownerId}`)
   if (newPhotoDays?.length) {
-    const saved = await persistEnergyState(next, 'energy_chance_granted_from_photo_upload')
+    const saved = await persistEnergyState(next, 'energy_chance_granted_from_photo_upload', updatedAt)
     return { state: saved, granted: grantedNow }
   }
   const local = saveEnergyLocalState(next)
@@ -10013,12 +10014,12 @@ const ENERGY_PROGRESS_DAY = 1
 const ENERGY_SHARED_USER_ID = 'wwcxrl-pomelo-main'
 const ENERGY_STATE_KEY = 'wwcxrl-capsule-energy-state'
 const ENERGY_AUTO_REFRESH_MS = 7000
-const ENERGY_MAX = 669
 const ENERGY_EMPTY_STATE = { energy: 0, drawChances: 0, claimedSignedDays: [], claimedPhotoDays: [], draws: [] }
 const ENERGY_MILESTONES = [
   { at: 100, icon: '🥛', name: '第一杯气泡' },
   { at: 459, icon: '🧸', name: '软软的小熊' },
-  { at: 669, icon: '🪐', name: '小星球点亮' }
+  { at: 669, icon: '🪐', name: '小星球点亮' },
+  { at: ENERGY_TARGET, icon: '🌠', name: '下一站 · 1314' }
 ]
 
 function normalizeEnergyState(progress = {}) {
@@ -10026,14 +10027,13 @@ function normalizeEnergyState(progress = {}) {
   const claimedPhotoDays = Array.isArray(progress.claimedPhotoDays)
     ? Array.from(new Set(progress.claimedPhotoDays.map(String).filter(value => /^\d+(-(orange|pomelo))?$/.test(value))))
     : []
-  const draws = Array.isArray(progress.draws) ? progress.draws.slice(-80) : []
+  const ledger = normalizeEnergyLedger(progress)
   return {
     ...ENERGY_EMPTY_STATE,
-    energy: Math.max(0, Math.min(ENERGY_MAX, Number(progress.energy || 0))),
+    ...ledger,
     drawChances: Math.max(0, Number(progress.drawChances || 0)),
     claimedSignedDays: Array.from(new Set(claimed)).sort((a, b) => a - b),
-    claimedPhotoDays: Array.from(claimedPhotoDays).sort(),
-    draws
+    claimedPhotoDays: Array.from(claimedPhotoDays).sort()
   }
 }
 
@@ -10043,7 +10043,8 @@ function getEnergyProgressOnly(progress = {}) {
     drawChances: progress?.drawChances,
     claimedSignedDays: progress?.claimedSignedDays,
     claimedPhotoDays: progress?.claimedPhotoDays,
-    draws: progress?.draws
+    draws: progress?.draws,
+    energyLedger: progress?.energyLedger
   })
 }
 
@@ -10058,29 +10059,27 @@ function saveEnergyLocalState(next) {
   return normalized
 }
 
-async function persistEnergyState(next, eventType = 'energy_state_saved') {
-  const normalized = saveEnergyLocalState(next)
-  let remoteProgress = {}
-  try {
-    const remote = await loadCloudDayProgress(ENERGY_PROGRESS_DAY, ENERGY_SHARED_USER_ID)
-    remoteProgress = remote?.progress || {}
-  } catch (error) {
-    console.warn('[wwcxrl cloud] energy merge load failed', error.message)
+async function loadEnergyCloudProgress() {
+  if (!cloudEnabled) return { progress: null, updatedAt: null }
+  return readEnergyProgress(await getSupabase(), ENERGY_SHARED_USER_ID, ENERGY_PROGRESS_DAY)
+}
+
+async function persistEnergyState(next, eventType = 'energy_state_saved', expectedUpdatedAt) {
+  if (!cloudEnabled) return saveEnergyLocalState(next)
+  const remote = await loadEnergyCloudProgress()
+  if (expectedUpdatedAt !== undefined && remote.updatedAt !== expectedUpdatedAt) {
+    throw new Error('能量进度已在另一处更新，请同步后再试。')
   }
+  const remoteProgress = remote.progress || {}
+  const normalized = normalizeEnergyState({ ...next, energyLedger: next.energyLedger || remoteProgress.energyLedger })
   const merged = {
     ...remoteProgress,
     ...normalized,
     global: remoteProgress.global || loadGlobalLocalState()
   }
-  await saveCloudDayProgress(ENERGY_PROGRESS_DAY, merged, ENERGY_SHARED_USER_ID)
-  logCloudEvent(eventType, { energy: normalized.energy, drawChances: normalized.drawChances, claimedSignedDays: normalized.claimedSignedDays, claimedPhotoDays: normalized.claimedPhotoDays, draws: normalized.draws?.length || 0 }, ENERGY_PROGRESS_DAY)
-  return normalized
-}
-
-function syncEnergyState(next, eventType = 'energy_state_saved') {
-  const normalized = saveEnergyLocalState(next)
-  persistEnergyState(normalized, eventType).catch(error => console.warn('[wwcxrl cloud] energy save failed', error.message))
-  return normalized
+  await writeEnergyProgress(await getSupabase(), ENERGY_SHARED_USER_ID, ENERGY_PROGRESS_DAY, merged, remote.updatedAt)
+  void logCloudEvent(eventType, { energy: normalized.energy, drawChances: normalized.drawChances, claimedSignedDays: normalized.claimedSignedDays, claimedPhotoDays: normalized.claimedPhotoDays, draws: normalized.draws.length, ...(eventType === 'energy_lottery_drawn' ? { draw: normalized.draws.at(-1) } : {}) }, ENERGY_PROGRESS_DAY)
+  return saveEnergyLocalState(normalized)
 }
 
 function getLocalUploadedPhotoDays() {
@@ -10097,7 +10096,7 @@ function getLocalUploadedPhotoDays() {
 
 async function loadLatestEnergyStateWithSignins() {
   const [remoteProgress, orangeCheckins, pomeloCheckins, cloudPhotoDays, legacyOrangeProgress] = await Promise.all([
-    loadCloudDayProgress(ENERGY_PROGRESS_DAY, ENERGY_SHARED_USER_ID),
+    loadEnergyCloudProgress(),
     loadCloudCheckins('wwcxrl-orange-main'),
     loadCloudCheckins('wwcxrl-pomelo-main'),
     loadCloudUploadedPhotoDays(),
@@ -10111,7 +10110,7 @@ async function loadLatestEnergyStateWithSignins() {
     const legacy = getEnergyProgressOnly(legacyOrangeProgress.progress)
     if (legacy.drawChances > 0 || legacy.energy > 0 || legacy.draws.length) {
       remoteState = normalizeEnergyState({
-        energy: Math.min(ENERGY_MAX, Number(remoteState.energy || 0) + Number(legacy.energy || 0)),
+        energy: Number(remoteState.energy || 0) + Number(legacy.energy || 0),
         drawChances: Number(remoteState.drawChances || 0) + Number(legacy.drawChances || 0),
         claimedSignedDays: [...remoteState.claimedSignedDays, ...legacy.claimedSignedDays],
         claimedPhotoDays: [...remoteState.claimedPhotoDays, ...legacy.claimedPhotoDays],
@@ -10150,7 +10149,7 @@ async function loadLatestEnergyStateWithSignins() {
     claimedSignedDays: Array.from(new Set([...remoteState.claimedSignedDays, ...newSignedDays])).sort((a, b) => a - b),
     claimedPhotoDays: Array.from(new Set([...(remoteState.claimedPhotoDays || []), ...newPhotoDays])).sort()
   })
-  return { next, newSignedDays, newPhotoDays }
+  return { next, newSignedDays, newPhotoDays, updatedAt: remoteProgress.updatedAt }
 }
 
 function BackpackView() {
@@ -11704,14 +11703,16 @@ function EnergyCapsule() {
   const [burst, setBurst] = useState(null)
   const refreshInFlightRef = React.useRef(false)
   const rollingRef = React.useRef(false)
-  const energy = Math.min(ENERGY_MAX, Number(energyState.energy || 0))
-  const percent = Math.round((energy / ENERGY_MAX) * 100)
+  const energy = Number(energyState.energy || 0)
+  const percent = Math.min(100, Math.round((energy / ENERGY_TARGET) * 100))
   const drawChances = Math.max(0, Number(energyState.drawChances || 0))
   const signedCount = energyState.claimedSignedDays.length
   const photoCount = energyState.claimedPhotoDays.length
   const reachedCount = ENERGY_MILESTONES.filter(milestone => energy >= milestone.at).length
-  const sealCopy = energy >= ENERGY_MAX
-    ? '小星球已经点亮，封存的内容随时可以开启。'
+  const sealCopy = energy >= ENERGY_TARGET
+    ? '1314 目标已达成！每次抽到的能量仍会继续累计。'
+    : energy >= 669
+      ? `小星球已点亮，向 1314 出发，还差 ${ENERGY_TARGET - energy} 点能量。`
     : energy >= 459
       ? '第二枚印章亮了，离完全点亮只差最后一段光。'
       : energy >= 100
@@ -11728,11 +11729,11 @@ function EnergyCapsule() {
       if (refreshInFlightRef.current || rollingRef.current) return
       refreshInFlightRef.current = true
       try {
-        const { next, newSignedDays, newPhotoDays } = await loadLatestEnergyStateWithSignins()
+        const { next, newSignedDays, newPhotoDays, updatedAt } = await loadLatestEnergyStateWithSignins()
         if (!alive) return
         const grantedCount = newSignedDays.length + newPhotoDays.length
         if (grantedCount) {
-          const saved = await persistEnergyState(next, newPhotoDays.length ? 'energy_chances_granted_from_activity' : 'energy_chances_granted_from_signins')
+          const saved = await persistEnergyState(next, newPhotoDays.length ? 'energy_chances_granted_from_activity' : 'energy_chances_granted_from_signins', updatedAt)
           if (!alive) return
           setEnergyState(saved)
           const parts = []
@@ -11776,15 +11777,16 @@ function EnergyCapsule() {
   }, [])
 
   function drawEnergy() {
-    if (rolling || drawChances <= 0) {
+    if (rollingRef.current || drawChances <= 0) {
       setStatus('暂时没有抽能量次数，完成每日签到就会获得新的机会。')
       return
     }
+    rollingRef.current = true
     setRolling(true)
     setStatus('小星球能量正在摇奖中…')
     window.setTimeout(async () => {
       try {
-        const { next: latest } = await loadLatestEnergyStateWithSignins()
+        const { next: latest, updatedAt } = await loadLatestEnergyStateWithSignins()
         if (Number(latest.drawChances || 0) <= 0) {
           const local = saveEnergyLocalState(latest)
           setEnergyState(local)
@@ -11794,15 +11796,15 @@ function EnergyCapsule() {
         }
         const gain = Math.floor(Math.random() * 11) + 5
         const previousEnergy = Number(latest.energy || 0)
-        const nextEnergy = Math.min(ENERGY_MAX, previousEnergy + gain)
+        const nextEnergy = previousEnergy + gain
         const crossedMilestones = ENERGY_MILESTONES.filter(milestone => previousEnergy < milestone.at && nextEnergy >= milestone.at)
         const next = normalizeEnergyState({
           ...latest,
-          energy: Math.min(ENERGY_MAX, Number(latest.energy || 0) + gain),
+          energy: nextEnergy,
           drawChances: Math.max(0, Number(latest.drawChances || 0) - 1),
           draws: [...(latest.draws || []), { gain, at: new Date().toISOString() }]
         })
-        const saved = await persistEnergyState(next, 'energy_lottery_drawn')
+        const saved = await persistEnergyState(next, 'energy_lottery_drawn', updatedAt)
         setEnergyState(saved)
         const milestoneText = crossedMilestones.length
           ? ` 并点亮${crossedMilestones.map(milestone => `「${milestone.name}」`).join('、')}印章！`
@@ -11811,8 +11813,9 @@ function EnergyCapsule() {
         setBurst({ gain, key: Date.now() })
       } catch (error) {
         console.warn('[wwcxrl cloud] energy draw sync failed', error.message)
-        setStatus('网络打了个盹，稍后再试一次，别让两台设备的进度不一样哦。')
+        setStatus('这次抽取尚未确认，请等待进度同步后再试。')
       } finally {
+        rollingRef.current = false
         setRolling(false)
       }
     }, 900)
@@ -11840,9 +11843,9 @@ function EnergyCapsule() {
           <h3>彩蛋内容暂时封存中</h3>
           <p className="capsule-seal-copy">{sealCopy}</p>
           <p>抽奖次数、抽到的能量和历史记录都会自动同步。下次打开，进度不会丢。</p>
-          <div className="capsule-energy-meter" aria-label={`小星球能量 ${energy} / ${ENERGY_MAX}`}>
-            <div><strong>小星球能量</strong><span>{energy}/{ENERGY_MAX}</span></div>
-            <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} /><em style={{ left: '14.9%' }} /><em style={{ left: '68.6%' }} /><em style={{ left: '100%' }} /></b>
+          <div className="capsule-energy-meter" aria-label={`累计能量 ${energy} / 目标 ${ENERGY_TARGET}`}>
+            <div><strong>累计能量 · 目标 {ENERGY_TARGET}</strong><span>{energy}/{ENERGY_TARGET}</span></div>
+            <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} />{ENERGY_MILESTONES.map(milestone => <em key={milestone.at} style={{ left: `${milestone.at / ENERGY_TARGET * 100}%` }} />)}</b>
             <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '完成每日签到或上传当天相册照片后，会先获得抽能量次数。'}</small>
           </div>
           <div className="capsule-milestones" aria-label={`能量印章 ${reachedCount} / ${ENERGY_MILESTONES.length}`}>
@@ -12703,9 +12706,9 @@ function AdminTaskPage() {
     if (!window.confirm('确定把剩余抽奖次数清零吗？已获得的能量和印章会保留，历史已计过的日子不会重复发放。')) return
     setEnergySaving(true)
     try {
-      const remote = await loadCloudDayProgress(ENERGY_PROGRESS_DAY, ENERGY_SHARED_USER_ID)
+      const remote = await loadEnergyCloudProgress()
       const current = getEnergyProgressOnly(remote?.progress || loadEnergyLocalState())
-      const cleared = await persistEnergyState({ ...current, drawChances: 0 }, 'energy_chances_reset_by_admin')
+      const cleared = await persistEnergyState({ ...current, drawChances: 0 }, 'energy_chances_reset_by_admin', remote.updatedAt)
       setToast(`剩余抽奖次数已清零（当前 ${cleared.drawChances} 次）。`)
     } catch (error) {
       console.warn('[wwcxrl admin] energy reset failed', error)
