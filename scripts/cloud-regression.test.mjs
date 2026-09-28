@@ -20,11 +20,11 @@ function runtime(fetch, timeout = 100) {
     window: { location: { hostname: 'planet.test', origin: 'https://planet.test', search: '' },
       setTimeout, clearTimeout, dispatchEvent() {} }
   })
-  vm.runInContext(source + '\nglobalThis.run = cloudFetch;', context)
-  return { run: context.run, storage }
+  vm.runInContext(source + '\nglobalThis.run = cloudFetch; globalThis.apiUrl = getCloudApiUrl; globalThis.assetUrl = resolveCloudAssetUrl;', context)
+  return { run: context.run, apiUrl: context.apiUrl, assetUrl: context.assetUrl, storage }
 }
 const json = value => new Response(JSON.stringify(value), { headers: { 'content-type': 'application/json' } })
-const url = 'https://test.supabase.co/rest/v1/tasks'
+const url = 'https://planet.test/sb/rest/v1/tasks'
 
 test('fast direct read does not start a second request', async () => {
   let calls = 0
@@ -34,23 +34,24 @@ test('fast direct read does not start a second request', async () => {
   assert.equal(calls, 1)
 })
 
-test('stalled response body times out before fallback starts', async () => {
+test('stalled response body times out without duplicate requests', async () => {
+  let calls = 0
   let cancelled = false
-  const { run } = runtime(async (target, { signal }) => {
-    if (target.startsWith('https://planet.test')) return json([2])
+  const { run } = runtime(async (_target, { signal }) => {
+    calls++
     return new Response(new ReadableStream({ start(controller) {
       signal.addEventListener('abort', () => { cancelled = true; controller.error(new Error('aborted')) })
     } }), { headers: { 'content-type': 'application/json' } })
   })
-  assert.deepEqual(await (await run(url)).json(), [2])
+  await assert.rejects(run(url))
   assert.equal(cancelled, true)
+  assert.equal(calls, 1)
 })
 
 test('slow but successful direct response never starts fallback', async () => {
   let calls = 0
   const { run } = runtime(async target => {
     calls++
-    if (target.startsWith('https://planet.test')) return new Response('<html>error</html>')
     await new Promise(r => setTimeout(r, 800))
     return json([3])
   }, 2000)
@@ -65,23 +66,18 @@ test('failed writes are submitted only once', async () => {
   assert.equal(calls, 1)
 })
 
-test('old persisted proxy preference cannot redirect reads or writes', async () => {
-  const paths = []
-  const { run, storage } = runtime(async target => { paths.push(target); return json([]) })
-  storage.set('wwcxrl-cloud-transport-v3', JSON.stringify({ mode: 'proxy', expiresAt: Date.now() + 1000 }))
-  await run(url)
-  storage.set('wwcxrl-cloud-transport-v3', JSON.stringify({ mode: 'proxy', expiresAt: 1 }))
-  await run(url, { method: 'POST', body: '{}' })
-  assert.equal(paths[0], url)
-  assert.equal(paths[1], url)
+test('production cloud API and stored assets use the site origin', () => {
+  const { apiUrl, assetUrl } = runtime(async () => json([]))
+  assert.equal(apiUrl(), 'https://planet.test/sb')
+  assert.equal(assetUrl('https://test.supabase.co/storage/v1/object/public/p/a.jpg'), 'https://planet.test/sb/storage/v1/object/public/p/a.jpg')
 })
 
-test('HTML from fallback is rejected after failed direct request', async () => {
-  const { run } = runtime(async target => {
-    if (target.startsWith('https://planet.test')) return new Response('<html>Error</html>')
-    throw new Error('direct unreachable')
-  })
-  await assert.rejects(run(url), /proxy unavailable/)
+test('old persisted route values do not affect the single endpoint', async () => {
+  const paths = []
+  const { run, storage } = runtime(async target => { paths.push(target); return json([]) })
+  storage.set('wwcxrl-cloud-transport-v3', JSON.stringify({ mode: 'direct', expiresAt: Date.now() + 1000 }))
+  await run(url)
+  assert.deepEqual(paths, [url])
 })
 
 test('failed task reads preserve last successful calendar', () => {
@@ -105,6 +101,13 @@ test('caller cancellation never starts fallback', async () => {
   setTimeout(() => controller.abort(), 20)
   await assert.rejects(result)
   assert.equal(aborted, 1)
+})
+
+test('service worker leaves API and cloud data uncached', () => {
+  const source = readFileSync(new URL('../public/sw.js', import.meta.url), 'utf8')
+  assert.match(source, /pathname\.startsWith\('\/api\/'\)/)
+  assert.match(source, /pathname\.startsWith\('\/sb\/'\)/)
+  assert.match(source, /cache\.match\(APP_SHELL\)/)
 })
 
 test('access check tolerates responses past the former four-second cutoff', async () => {

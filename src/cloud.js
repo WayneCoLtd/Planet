@@ -10,9 +10,7 @@ const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY
 // 恢复 9 月 16 日的单线路请求和 15 秒容错，不在正常慢响应上启动竞速。
 const CLOUD_REQUEST_TIMEOUT_MS = 15000
 const CLOUD_PROXY_PREFIX = '/sb'
-// 只有幂等的读取才允许自动换线路重试：写请求若在服务端已经落库、只是响应丢了，
-// 重试会造成重复插入，宁可让它按原来的方式失败。
-const CLOUD_RETRYABLE_METHODS = new Set(['GET', 'HEAD'])
+const CLOUD_BUFFERED_METHODS = new Set(['GET', 'HEAD'])
 
 const FIXED_ROLE_IDS = {
   orange: 'wwcxrl-orange-main',
@@ -42,29 +40,24 @@ export const cloudEnabled = Boolean(supabaseUrl && supabaseKey)
 
 let supabasePromise = null
 
-// ---- 云端线路：直连 supabase.co，或走站点自己的域名（/sb/* 由 vercel.json 转发） ----
-// 站点域名是唯一被证明「一定能访问」的地址：能打开网页就说明它通。
-// 因此当 supabase.co 直连不通时，改走同域代理就能把数据救回来。
-function canUseSameOriginProxy() {
+// 线上浏览器只连接本站：复用已经建立的 DNS/TLS/HTTP 连接，减少 Safari 在
+// 国内网络上同时连接 Vercel 与 Supabase 时的失败面。本地开发仍直连 Supabase。
+function canUseSameOriginCloud() {
   if (!cloudEnabled || !supabaseUrl || typeof window === 'undefined') return false
   const host = window.location.hostname
   if (!host || host === 'localhost' || host === '127.0.0.1' || host === '0.0.0.0') return false
-  // 本地 vite dev 没有 vercel.json 的转发规则，走了只会拿到 404。
   return true
 }
 
-// 不沿用旧版 localStorage 中的选线结果，单次失败不改变后续写入或图片地址。
-const cloudTransport = 'direct'
-
-function useSameOriginProxy(rawUrl) {
-  if (typeof rawUrl !== 'string' || !supabaseUrl) return rawUrl
-  if (rawUrl.indexOf(supabaseUrl) !== 0) return rawUrl
-  return `${window.location.origin}${CLOUD_PROXY_PREFIX}${rawUrl.slice(supabaseUrl.length)}`
+function getCloudApiUrl() {
+  return canUseSameOriginCloud() ? `${window.location.origin}${CLOUD_PROXY_PREFIX}` : supabaseUrl
 }
 
-// 图片保持稳定的 Supabase 地址；清理旧缓存中遗留的同域改写。
+// 数据库保存 canonical Supabase URL，显示时在线上改成同域地址。
 export function resolveCloudAssetUrl(url) {
-  return toCanonicalCloudUrl(url)
+  if (typeof url !== 'string' || !url || !canUseSameOriginCloud()) return url
+  if (url.indexOf(supabaseUrl) !== 0) return url
+  return `${window.location.origin}${CLOUD_PROXY_PREFIX}${url.slice(supabaseUrl.length)}`
 }
 
 // 写回数据库前还原成 Supabase 原始地址，避免把站点域名写进数据里。
@@ -145,7 +138,7 @@ function fetchOnce(input, init = {}, timeoutMs = CLOUD_REQUEST_TIMEOUT_MS) {
     .then(async response => {
       // 超时覆盖正文下载，避免响应头到达后半截 JSON 永久等待。
       // 写请求保留原始响应语义。
-      if (!CLOUD_RETRYABLE_METHODS.has(requestMethod(init))) return response
+      if (!CLOUD_BUFFERED_METHODS.has(requestMethod(init))) return response
       const body = await response.arrayBuffer()
       return new Response([204, 205, 304].includes(response.status) ? null : body, {
         status: response.status, statusText: response.statusText, headers: response.headers
@@ -161,52 +154,11 @@ function requestMethod(init) {
   return String((init || {}).method || 'GET').toUpperCase()
 }
 
-// 万一线上还没有 /sb/* 的转发规则（例如客户端先上线、配置还没生效），
-// 请求会落到 Vercel 的 404 页而不是 Supabase。这种情况不能把线路记成“代理可用”。
-function looksLikeProxyMiss(response) {
-  if (!response || Number(response.status) !== 404) return false
-  const type = String((response.headers && response.headers.get && response.headers.get('content-type')) || '').toLowerCase()
-  return !type.includes('application/json')
-}
-
-function cloudCandidateUrl(rawUrl, mode) {
-  return mode === 'proxy' ? useSameOriginProxy(rawUrl) : rawUrl
-}
-
-async function fetchCloudCandidate(rawUrl, init, mode, controller) {
-  const response = await fetchOnce(cloudCandidateUrl(rawUrl, mode), { ...init, signal: controller.signal })
-  if (mode === 'proxy' && (looksLikeProxyMiss(response) || !String(response.headers.get('content-type')).includes('application/json'))) {
-    throw new Error('[wwcxrl cloud] same-origin proxy unavailable')
-  }
-  // 5xx 表示这条线路暂时没有给出可用结果，让另一条线路继续争胜。
-  if (Number(response.status) >= 500) {
-    throw new Error(`[wwcxrl cloud] ${mode} returned ${response.status}`)
-  }
-  return { response, mode }
-}
-
-// 单线路读取。直连网络失败/5xx 才尝试一次同域备用，不将备用路径传播给写入。
+// 所有云端请求使用 createClient 选定的唯一地址；不竞速、不持久化选线、
+// 不自动重放写入。失败时保留页面上的最后成功缓存。
 async function cloudFetch(input, init = {}) {
-  const rawUrl = typeof input === 'string' ? input : String((input && input.url) || '')
-  const proxyAvailable = canUseSameOriginProxy() && Boolean(supabaseUrl) && rawUrl.indexOf(supabaseUrl) === 0
-  const retryable = proxyAvailable && CLOUD_RETRYABLE_METHODS.has(requestMethod(init))
   try {
-    let response
-    try {
-      response = await fetchOnce(input, init)
-      if (retryable && response.status >= 500) throw new Error(`Cloud HTTP ${response.status}`)
-    } catch (error) {
-      if (!retryable || init.signal?.aborted) throw error
-      const controller = new AbortController()
-      const cancel = () => controller.abort(init.signal?.reason)
-      init.signal?.addEventListener('abort', cancel, { once: true })
-      try {
-        response = (await fetchCloudCandidate(rawUrl, init, 'proxy', controller)).response
-      } finally {
-        init.signal?.removeEventListener('abort', cancel)
-      }
-    }
-    return noteCloudResponse(response)
+    return noteCloudResponse(await fetchOnce(input, init))
   } catch (error) {
     if (!init.signal?.aborted) noteCloudUnreachable()
     throw error
@@ -214,13 +166,13 @@ async function cloudFetch(input, init = {}) {
 }
 
 export function getCloudTransport() {
-  return cloudTransport
+  return canUseSameOriginCloud() ? 'proxy' : 'direct'
 }
 
 export async function getSupabase() {
   if (!cloudEnabled) return null
   if (!supabasePromise) {
-    supabasePromise = import('@supabase/supabase-js').then(({ createClient }) => createClient(supabaseUrl, supabaseKey, {
+    supabasePromise = import('@supabase/supabase-js').then(({ createClient }) => createClient(getCloudApiUrl(), supabaseKey, {
       auth: { persistSession: false, autoRefreshToken: false },
       global: { fetch: cloudFetch }
     }))

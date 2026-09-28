@@ -13982,59 +13982,16 @@ async function verifyAdminPassword(password) {
 // 通过之后靠 HttpOnly Cookie 记住 180 天，平时访问完全无感。
 function AccessGate({ children }) {
   const accessHintAtBootRef = React.useRef(!isLocalDevHost() && safeGetItem(ACCESS_HINT_KEY) === '1')
-  const [phase, setPhase] = useState(() => (isLocalDevHost() || accessHintAtBootRef.current ? 'open' : 'checking'))
+  // 不在启动阶段调用 Serverless GET：返回用户立即打开；首次用户直接看到口令框。
+  // 需要保护的服务端接口仍会验证 HttpOnly Cookie。
+  const [phase, setPhase] = useState(() => (isLocalDevHost() || accessHintAtBootRef.current ? 'open' : 'locked'))
   const [password, setPassword] = useState('')
   const [message, setMessage] = useState('')
   const [busy, setBusy] = useState(false)
-  const [notice, setNotice] = useState('')
-  const accessRevisionRef = React.useRef(0)
-
-  React.useEffect(() => {
-    if (isLocalDevHost()) return
-    let alive = true
-    let retryTimer
-    let inFlight = false
-    const check = () => {
-      if (!alive || inFlight) return
-      inFlight = true
-      const revision = accessRevisionRef.current
-      callAccessApi({ method: 'GET' }).then(result => {
-        if (!alive || revision !== accessRevisionRef.current) return
-        // 校验失败后自动恢复；新访客不能因网络故障被当作验证成功。
-        const unavailable = !result.reached || result.status === 404 || result.status >= 500
-        if (unavailable) {
-          setNotice('连接暂时中断，正在重新确认访问状态…')
-          setMessage('连接暂时中断，稍后自动重试，也可以输入口令重新连接。')
-          setPhase(previous => previous === 'checking' ? 'locked' : previous)
-          retryTimer = window.setTimeout(check, 15000)
-          return
-        }
-        const data = result.data || {}
-        if (data.enabled === false || data.ok === true) {
-          safeSetItem(ACCESS_HINT_KEY, '1')
-          setNotice('')
-          setMessage('')
-          setPhase('open')
-        } else {
-          safeRemoveItem(ACCESS_HINT_KEY)
-          setPhase('locked')
-        }
-      }).finally(() => { inFlight = false })
-    }
-    const reconnect = () => { window.clearTimeout(retryTimer); check() }
-    check()
-    window.addEventListener('online', reconnect)
-    return () => {
-      alive = false
-      window.clearTimeout(retryTimer)
-      window.removeEventListener('online', reconnect)
-    }
-  }, [])
 
   async function submit(event) {
     event.preventDefault()
     if (busy) return
-    accessRevisionRef.current += 1
     setBusy(true)
     setMessage('')
     const result = await callAccessApi({
@@ -14050,7 +14007,6 @@ function AccessGate({ children }) {
     if (result.status === 200 && result.data && result.data.ok) {
       setPassword('')
       safeSetItem(ACCESS_HINT_KEY, '1')
-      setNotice('')
       setPhase('open')
       return
     }
@@ -14058,12 +14014,7 @@ function AccessGate({ children }) {
   }
 
   if (phase === 'open') {
-    return (
-      <>
-        {children}
-        {notice && <div className="access-gate-notice" role="status">{notice}</div>}
-      </>
-    )
+    return children
   }
 
   return (
@@ -14902,6 +14853,15 @@ function AdminMusicPanel() {
 
 // 播放器全局初始化放在最后执行：确保上面这些常量都已经就位。
 musicBootstrap()
+
+// Safari 再次访问时由 Service Worker 提供最近成功的应用壳；云端数据接口仍只走网络，
+// 页面打开后继续使用本地缓存并在连接恢复时同步。
+if (typeof window !== 'undefined' && 'serviceWorker' in navigator && !isLocalDevHost()) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js', { scope: '/' })
+      .catch(error => console.warn('[wwcxrl] service worker registration failed', error.message))
+  }, { once: true })
+}
 
 createRoot(document.getElementById('root')).render(
   <AppErrorBoundary>
