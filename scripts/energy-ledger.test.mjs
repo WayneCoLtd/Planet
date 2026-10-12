@@ -1,6 +1,37 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { ENERGY_TARGET, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from '../src/energyLedger.js'
+import { ENERGY_TARGET, createEnergyDraw, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from '../src/energyLedger.js'
+
+const finale = { id: 'test-finale', startEnergy: 1300, target: 1314, gains: [5, 5, 4] }
+
+test('three finale draws add exactly 14 across reloads and preserve the final four points', () => {
+  let state = { energy: 1300, energyFinale: finale, draws: [] }
+  const totals = []
+  for (let index = 0; index < 3; index++) {
+    const draw = createEnergyDraw(state, () => { throw new Error('Finale must not use random') })
+    state = normalizeEnergyLedger(JSON.parse(JSON.stringify({ ...state, energy: state.energy + draw.gain,
+      draws: [...state.draws, {...draw, at: new Date(index * 1000).toISOString()}] })))
+    totals.push(state.energy)
+  }
+  assert.deepEqual(totals, [1305, 1310, 1314])
+  assert.deepEqual(state.draws.map(draw => draw.gain), [5, 5, 4])
+  assert.equal(createEnergyDraw(state, () => 0).gain, 5)
+})
+
+test('failed attempts do not advance the finale and unexpected energy cannot overshoot', () => {
+  const state = {energy:1300, energyFinale:finale, draws:[]}
+  assert.deepEqual(createEnergyDraw(state), createEnergyDraw(state))
+  assert.throws(() => createEnergyDraw({...state,energy:1307}), /进度已改变/)
+  assert.throws(() => createEnergyDraw({...state,draws:[{gain:5,finaleId:finale.id,finaleStep:1,at:'2026-01-01'}]}), /记录不一致/)
+})
+
+test('four-point exception requires a matching finale entry and is included in baseline recovery', () => {
+  const state = normalizeEnergyLedger({energy:0, energyFinale:finale,
+    energyLedger:{version:1,baselineEnergy:1300,baselineAt:'2026-01-01'},
+    draws:[{gain:4,at:'2026-01-02'}, {gain:4,finaleId:finale.id,finaleStep:2,at:'2026-01-03'}]})
+  assert.equal(state.draws.length,1)
+  assert.equal(state.energy,1304)
+})
 
 test('target does not cap earned points or truncate draw history', () => {
   const draws = Array.from({ length: 150 }, (_, n) => ({ gain: 10, at: new Date(n * 1000).toISOString() }))

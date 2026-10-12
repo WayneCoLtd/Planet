@@ -10,7 +10,7 @@ import { installStorageGuard, safeGetItem, safeSetItem, safeRemoveItem } from '.
 import './styles.css'
 import { createReadResource } from './readResource'
 import { toCanonicalCloudUrl } from './cloud'
-import { ENERGY_TARGET, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from './energyLedger'
+import { ENERGY_TARGET, createEnergyDraw, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from './energyLedger'
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -10044,7 +10044,8 @@ function getEnergyProgressOnly(progress = {}) {
     claimedSignedDays: progress?.claimedSignedDays,
     claimedPhotoDays: progress?.claimedPhotoDays,
     draws: progress?.draws,
-    energyLedger: progress?.energyLedger
+    energyLedger: progress?.energyLedger,
+    energyFinale: progress?.energyFinale
   })
 }
 
@@ -11794,7 +11795,8 @@ function EnergyCapsule() {
           setRolling(false)
           return
         }
-        const gain = Math.floor(Math.random() * 11) + 5
+        const draw = createEnergyDraw(latest)
+        const { gain } = draw
         const previousEnergy = Number(latest.energy || 0)
         const nextEnergy = previousEnergy + gain
         const crossedMilestones = ENERGY_MILESTONES.filter(milestone => previousEnergy < milestone.at && nextEnergy >= milestone.at)
@@ -11802,7 +11804,7 @@ function EnergyCapsule() {
           ...latest,
           energy: nextEnergy,
           drawChances: Math.max(0, Number(latest.drawChances || 0) - 1),
-          draws: [...(latest.draws || []), { gain, at: new Date().toISOString() }]
+          draws: [...(latest.draws || []), { ...draw, at: new Date().toISOString() }]
         })
         const saved = await persistEnergyState(next, 'energy_lottery_drawn', updatedAt)
         setEnergyState(saved)
@@ -11826,7 +11828,7 @@ function EnergyCapsule() {
       <header className="section-heading playful-heading premium-heading">
         <span>Small Planet Energy</span>
         <h2>小星球能量胶囊</h2>
-        <p>每天完成签到、或当天至少上传一张相册照片，都会存下一次抽能量机会。来到这里就能真实抽取随机 5-15 点小星球能量。</p>
+        <p>每天完成签到、或当天至少上传一张相册照片，都会存下一次抽能量机会。{energyState.energyFinale ? '最后一段能量旅程已经准备好，一起点亮 1314。' : '来到这里就能真实抽取随机 5-15 点小星球能量。'}</p>
       </header>
       <MeetingCountdownCalendar />
       <div className={`capsule-vault sticker-card premium-card ${rolling ? 'is-rolling' : ''}`}>
@@ -11863,7 +11865,7 @@ function EnergyCapsule() {
           </div>
           <div className="capsule-draw-panel">
             <strong>抽能量次数：{drawChances}</strong>
-            <button type="button" onClick={drawEnergy} disabled={rolling || drawChances <= 0}>{rolling ? '抽取中…' : '抽取 5-15 点能量'}</button>
+            <button type="button" onClick={drawEnergy} disabled={rolling || drawChances <= 0}>{rolling ? '抽取中…' : energyState.energyFinale ? '抽取能量' : '抽取 5-15 点能量'}</button>
             <p aria-live="polite">{status}</p>
             <small className="capsule-auto-refresh-note">已开启自动同步；另一台设备抽完后，这里会自动跟上。</small>
           </div>
