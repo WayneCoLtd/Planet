@@ -56,3 +56,4 @@ dev2.err
 preview.pid
 tmp-*.html
 
+.vercel/
