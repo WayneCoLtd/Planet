@@ -16409,6 +16409,8 @@ html { overflow-x: hidden; }
   margin: 0;
   color: #653f26;
   line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 .music-request-list li > button {
@@ -16945,4 +16947,19 @@ html { overflow-x: hidden; }
     width: min(92vw, 520px);
     text-align: center;
   }
+}
+
+/* Multi-line author input: preserve newlines, blank lines and indentation.
+   Keep this scoped to content outputs, not navigation or structural wrappers. */
+.user-multiline,
+.daily-light-card-intro,
+.daily-best-caption,
+.night-reading-intro,
+.night-reading-block-figure figcaption,
+.night-reading-ending,
+.letter-paper-body,
+.wish-write-title,
+.sticker-reveal.wish-reveal {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }

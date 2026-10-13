@@ -1748,7 +1748,7 @@ function DailyPanel({ item, unlocked, resetAvailable = unlocked, signed, taskCom
       </div>
       {unlocked && NEWBIE_DAY_HINTS[item.day] && <aside className="daily-newbie-hint" role="note"><strong>现在玩这里：</strong>{NEWBIE_DAY_HINTS[item.day]}</aside>}
       <div className="daily-body">
-        {unlocked && item.prompt && item.type !== 'foamDrawingReview' ? <p>{item.prompt}</p> : null}
+        {unlocked && item.prompt && item.type !== 'foamDrawingReview' ? <p className="user-multiline">{item.prompt}</p> : null}
         {unlocked ? <DailyInteraction item={item} signed={signed} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded /> : <LockedPreview item={item} />}
       </div>
       <div className="daily-actions">
@@ -2613,7 +2613,7 @@ function FoamDrawingReview({ item, taskCompleted, onTaskComplete }) {
       <div className="foam-story-card">
         <img src={item.originalImage} alt="2025年5月22日卡布奇诺原图" />
         <div className="foam-story-copy">
-          <strong>{item.prompt}</strong>
+          <strong className="user-multiline">{item.prompt}</strong>
           <p>尝试用画笔画一画吧~</p>
         </div>
       </div>
@@ -4974,7 +4974,7 @@ function MazeGame({ item, taskCompleted, onTaskComplete }) {
       )}
       {state.opened && (
         <div className="maze-classic-done">
-          <p>{item.secret || '迷宫完成啦！'}</p>
+          <p className="user-multiline">{item.secret || '迷宫完成啦！'}</p>
         </div>
       )}
       <button type="button" className="maze-classic-restart" onClick={resetGame}>↺ 重新开始</button>
@@ -5504,7 +5504,7 @@ function CatchHeartsGame({ item, taskCompleted, onTaskComplete }) {
         <button type="button" onClick={() => moveBasket(-14)} aria-label="向左移动">◀</button>
         <button type="button" onClick={() => moveBasket(14)} aria-label="向右移动">▶</button>
       </div>
-      {done && <div className="game-done-panel"><p>{item.secret || '全部接住啦！'}</p></div>}
+      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || '全部接住啦！'}</p></div>}
       <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
     </div>
   )
@@ -5596,7 +5596,7 @@ function PopBubblesGame({ item, taskCompleted, onTaskComplete }) {
         ))}
       </div>
       <p className="pop-status">已戳破 <strong>{Math.min(popped, target)}</strong> / {target}</p>
-      {done && <div className="game-done-panel"><p>{item.secret || '泡泡全破啦！'}</p></div>}
+      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || '泡泡全破啦！'}</p></div>}
       <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
     </div>
   )
@@ -5671,7 +5671,7 @@ function MemoryMatchGame({ item, taskCompleted, onTaskComplete }) {
         })}
       </div>
       <p className="memory-status">已配对 <strong>{matchedIds.length / 2}</strong> / {pairs}</p>
-      {matchedIds.length === cards.length && cards.length > 0 && <div className="game-done-panel"><p>{item.secret || '全部配对成功啦！'}</p></div>}
+      {matchedIds.length === cards.length && cards.length > 0 && <div className="game-done-panel"><p className="user-multiline">{item.secret || '全部配对成功啦！'}</p></div>}
       <button type="button" className="game-restart" onClick={resetGame}>↺ 重新洗牌</button>
     </div>
   )
@@ -5744,7 +5744,7 @@ function SlidePuzzleGame({ item, taskCompleted, onTaskComplete }) {
         ))}
       </div>
       <p className="slide-status">已走 <strong>{moves}</strong> 步{solved ? ' · 拼好啦！' : ''}</p>
-      {solved && <div className="game-done-panel"><p>{item.secret || '拼图完成啦！'}</p></div>}
+      {solved && <div className="game-done-panel"><p className="user-multiline">{item.secret || '拼图完成啦！'}</p></div>}
       <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开始</button>
     </div>
   )
@@ -5990,7 +5990,7 @@ function MatchThreeGame({ item, taskCompleted, onTaskComplete }) {
       </div>
       {message && <p className="match3-message" role="status">{message}</p>}
       <p className="match3-status">已消除 <strong>{Math.min(matches, target)}</strong> / {target} 颗</p>
-      {done && <div className="game-done-panel"><p>{item.secret || '甜到心里啦，消除目标完成！'}</p></div>}
+      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || '甜到心里啦，消除目标完成！'}</p></div>}
       <button type="button" className="game-restart" onClick={resetGame}>↺ 重新开局</button>
     </div>
   )
@@ -6187,7 +6187,7 @@ function FeedDogGame({ item, taskCompleted, onTaskComplete }) {
         <button type="button" onClick={() => moveDog(-14)} aria-label="向左移动">◀</button>
         <button type="button" onClick={() => moveDog(14)} aria-label="向右移动">▶</button>
       </div>
-      {done && <div className="game-done-panel"><p>{item.secret || '狗狗吃饱饱啦！'}</p></div>}
+      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || '狗狗吃饱饱啦！'}</p></div>}
       {failed && (
         <div className="game-fail-panel">
           <p>时间到啦，还差 <strong>{target - Math.min(caught, target)}</strong> 份，再来一次吧！</p>
@@ -6326,7 +6326,7 @@ function WhackAMoleGame({ item, taskCompleted, onTaskComplete }) {
         })}
       </div>
       <p className="whack-status">已敲中 <strong>{Math.min(hits, target)}</strong> / {target} 只 · 剩余 <strong className={timeLeft <= 10 ? 'is-urgent' : ''}>{timeLeft}</strong> 秒</p>
-      {done && <div className="game-done-panel"><p>{item.secret || '手速超快，小动物都被敲中啦！'}</p></div>}
+      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || '手速超快，小动物都被敲中啦！'}</p></div>}
       {failed && (
         <div className="game-fail-panel">
           <p>时间到啦，还差 <strong>{target - Math.min(hits, target)}</strong> 只，再来一次吧！</p>
@@ -6511,7 +6511,7 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
       {done && rating && (
         <div className="game-done-panel">
           <p>评级 <strong>{rating.grade}</strong> · 称号「{rating.title}」</p>
-          <p>{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
+          <p className="user-multiline">{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
           <button type="button" className="game-restart" onClick={restart}>🔁 再玩一轮</button>
         </div>
       )}
@@ -6852,7 +6852,7 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
             <div className="game-done-panel star-memory-done">
               <p className="star-memory-stars">{'⭐'.repeat(rating.stars)}</p>
               <p>评级 <strong>{rating.grade}</strong> · 称号「{rating.title}」</p>
-              <p>{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
+              <p className="user-multiline">{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
             </div>
           )}
         </>
@@ -6975,7 +6975,7 @@ function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
           {final ? (
             <>
               <p>{final === 'win' ? `你以 ${bestOf}:${wins.moon} 拿下比赛！` : `月亮先拿到 ${bestOf} 局…`}</p>
-              <p>{item.secret || `最终得分 ${score} 分，可以签到啦！`}</p>
+              <p className="user-multiline">{item.secret || `最终得分 ${score} 分，可以签到啦！`}</p>
             </>
           ) : (
             <p>今天的任务已经完成啦，直接去签到吧～</p>
@@ -7084,7 +7084,7 @@ function SudokuMiniGame({ item, taskCompleted, onTaskComplete }) {
       {wrong && <p className="sudoku-wrong">{wrong}</p>}
       {done && (
         <div className="game-done-panel">
-          <p>{item.secret || `数独填好啦，用时 ${formatTime(elapsed)}，可以签到啦！`}</p>
+          <p className="user-multiline">{item.secret || `数独填好啦，用时 ${formatTime(elapsed)}，可以签到啦！`}</p>
         </div>
       )}
     </div>
@@ -7229,7 +7229,7 @@ function Merge2048Game({ item, taskCompleted, onTaskComplete }) {
           <button type="button" className="game-restart" onClick={restart}>↺ 再来一局</button>
         </div>
       )}
-      {done && <div className="game-done-panel"><p>{item.secret || '小星球数字合并成功，可以签到啦！'}</p></div>}
+      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || '小星球数字合并成功，可以签到啦！'}</p></div>}
     </div>
   )
 }
@@ -7391,7 +7391,7 @@ function OthelloGame({ item, taskCompleted, onTaskComplete }) {
       {done && over && (
         <div className="game-done-panel">
           <p>{resultText} 最终比分 {playerCount} : {moonCount}</p>
-          <p>{item.secret || '一整盘下完啦，可以签到！'}</p>
+          <p className="user-multiline">{item.secret || '一整盘下完啦，可以签到！'}</p>
         </div>
       )}
     </div>
@@ -7710,7 +7710,7 @@ function SakuraPuzzleGame({ item, taskCompleted, onTaskComplete }) {
         })}
       </div>
       <p className="sakura-status">已走 <strong>{moves}</strong> 步{solved ? ' · 拼好啦！' : ''}</p>
-      {solved && <div className="game-done-panel"><p>{item.secret || '樱花图拼好啦，春天也住进小星球啦！'}</p></div>}
+      {solved && <div className="game-done-panel"><p className="user-multiline">{item.secret || '樱花图拼好啦，春天也住进小星球啦！'}</p></div>}
       <div className="sakura-actions">
         <button type="button" className="game-restart" onClick={resetGame}>↺ 重新打乱</button>
         <button type="button" className="sakura-preview-button" onClick={showPreview}>👀 看一眼原图</button>
@@ -7888,7 +7888,8 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
   const sourceName = String(config.source || '').trim()
   const sourceUrl = String(config.sourceUrl || '').trim()
   const body = String(item.secret || '').trim()
-  const paragraphs = body ? body.split(/\n+/).map(line => line.trim()).filter(Boolean) : []
+  // Keep authored line breaks and blank lines; CSS handles wrapping.
+  const paragraphs = body ? [body] : []
   const gallery = Array.isArray(config.gallery) ? config.gallery.map(String).filter(Boolean) : []
   const blocks = Array.isArray(config.blocks) ? config.blocks.filter(Boolean) : []
   const hasBlocks = blocks.length > 0
@@ -8093,7 +8094,7 @@ function FortuneQuest({ item, taskCompleted, onTaskComplete }) {
           )}
         </div>
       )}
-      <p>{rolling ? '金蛋轻轻晃了晃，裂纹慢慢爬上来……' : picked ? (isVoyageBottle ? item.secret : (pickText ? `今天的小确幸：${pickText}` : item.secret || '今天也要开开心心。')) : isVoyageBottle ? '木门后的第一只心情瓶正在慢慢漂过来，轻轻点一下。' : '点一下金蛋，敲出今日的小惊喜。'}</p>
+      <p className="user-multiline">{rolling ? '金蛋轻轻晃了晃，裂纹慢慢爬上来……' : picked ? (isVoyageBottle ? item.secret : (pickText ? `今天的小确幸：${pickText}` : item.secret || '今天也要开开心心。')) : isVoyageBottle ? '木门后的第一只心情瓶正在慢慢漂过来，轻轻点一下。' : '点一下金蛋，敲出今日的小惊喜。'}</p>
       {isVoyageBottle && <small>{picked ? '瓶口冒出一圈小星星：524 的航线已经亮起一点点。' : '它里面装着一点点薄荷色银河、一颗小橙子星和小柚子的气泡。'}</small>}
     </div>
   )
@@ -8420,7 +8421,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
                         </div>
                         <div className={`chat-row ${message.side}`} style={{ '--chat-delay': delay }}>
                           <img className="chat-avatar-img" src={message.side === 'me' ? '/images/柯基.png' : '/images/金毛.png'} alt={message.side === 'me' ? '小琛' : '小琳'} />
-                          <p>{message.text}</p>
+                          <p className="user-multiline">{message.text}</p>
                         </div>
                       </React.Fragment>
                     )
@@ -8440,7 +8441,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     return (
       <div className="mini-game puzzle-game">
         <input value={answer} onChange={event => setAnswer(event.target.value)} placeholder="输入答案" />
-        <p>{puzzleOk ? item.secret : '答对以后会出现隐藏句子。'}</p>
+        <p className="user-multiline">{puzzleOk ? item.secret : '答对以后会出现隐藏句子。'}</p>
       </div>
     )
   }
@@ -8461,14 +8462,14 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
     return (
       <div className="daily-album-page">
         <div className="album-blank"><span>{item.icon}</span><strong>Photo Slot Day {item.day}</strong></div>
-        <p>{item.secret}</p>
+        <p className="user-multiline">{item.secret}</p>
       </div>
     )
   }
 
   return (
     <div className="daily-letter">
-      <p>{item.secret}</p>
+      <p className="user-multiline">{item.secret}</p>
       {!taskCompleted && (
         <button type="button" className="letter-done-button" onClick={() => onTaskComplete(item.day)}>我读完啦，可以签到</button>
       )}
@@ -12536,19 +12537,17 @@ function parseNightReadingPasteHtml(html) {
 }
 
 function parseNightReadingPasteText(text) {
-  return String(text || '')
-    .split(/\n{2,}/)
-    .map(normalizeNightReadingText)
-    .filter(Boolean)
-    .map(text => ({ id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: 'text', text }))
+  const content = String(text || '').replace(/\r\n?/g, '\n').trim()
+  return content ? [{ id: `nr-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, type: 'text', text: content }] : []
 }
 
 function buildNightReadingBlocksFromLegacy(secret = '', gallery = [], ensureTextBlock = false) {
   const blocks = []
   const stamp = Date.now()
-  String(secret || '').split(/\n+/).map(text => text.trim()).filter(Boolean).forEach(text => {
+  const text = String(secret || '').trim()
+  if (text) {
     blocks.push({ id: `nr-legacy-${stamp}-${blocks.length}`, type: 'text', text, align: 'left', fontSize: 'normal', color: '#4f3e68' })
-  })
+  }
   ;(Array.isArray(gallery) ? gallery : []).map(String).map(url => url.trim()).filter(Boolean).forEach(url => {
     blocks.push({ id: `nr-legacy-${stamp}-${blocks.length}`, type: 'image', url, caption: '' })
   })
@@ -14724,7 +14723,7 @@ function MusicRoom() {
             {requests.map(item => (
               <li key={item.id} className={item.role === 'orange' ? 'is-orange' : 'is-pomelo'}>
                 <span className="music-request-who">{item.role === 'orange' ? '🌞' : '🌟'} {item.displayName}</span>
-                <p>{item.content}</p>
+                <p className="user-multiline">{item.content}</p>
                 <button type="button" onClick={() => removeRequest(item.id)} aria-label="删除这条点歌"><MusicIcon name="close" size={11} /></button>
               </li>
             ))}
