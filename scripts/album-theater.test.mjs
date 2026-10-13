@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { orderedMemories, layoutMemories, rowWindow } from '../src/album/galleryLayout.js'
+import { orderedMemories, layoutMemories, needsImagesAhead, rowWindow } from '../src/album/galleryLayout.js'
 import { createImageQueue } from '../src/album/imageQueue.js'
 
 const memories = Array.from({ length: 132 }, (_, index) => ({
@@ -33,6 +33,39 @@ test('large album mounts only a small window, including the last photograph', ()
     assert.equal(rowWindow(rows, height - 844, 844).at(-1).items.at(-1).key, memories.at(-1).key)
   }
   assert.deepEqual(layoutMemories([], 390), { rows: [], height: 0 })
+})
+
+test('desktop pairs the same date, with no standalone feature rows or cross-date pairings', () => {
+  const {rows} = layoutMemories(memories, 1440)
+  assert.equal(rows.length, 66)
+  assert.ok(rows.every(row => row.items.length === 2 && row.items[0].day.day === row.items[1].day.day))
+  const missing = memories.filter(item => item.key !== '300-pomelo')
+  const partial = layoutMemories(missing, 1440).rows
+  assert.equal(partial[0].items.length,1)
+  assert.equal(partial[1].items[0].day.day,301)
+})
+
+test('portrait and long pictures receive proportional frames without height caps', () => {
+  const sizes = new Map([[memories[0].photo.src,{width:800,height:1200}], [memories[1].photo.src,{width:600,height:2400}]])
+  const row = layoutMemories(memories,1440,sizes).rows[0]
+  // 1100px content, 56px gap, 28px paper edges per frame.
+  const imageWidth = (1100-56)/2-28
+  assert.equal(row.mediaHeights[0],imageWidth*1.5+28)
+  assert.equal(row.mediaHeights[1],imageWidth*4+28)
+  assert.ok(row.height > row.mediaHeights[1])
+})
+
+test('cruising waits for visible and upcoming pictures, but not the entire album', () => {
+  const {rows} = layoutMemories(memories,1440)
+  const states = new Map()
+  assert.equal(needsImagesAhead(rows,0,300,states),true)
+  for(const item of rows[0].items) states.set(item.photo.src,{width:800,height:1200})
+  assert.equal(needsImagesAhead(rows,0,300,states),false)
+  assert.equal(needsImagesAhead(rows,rows[1].offset-200,300,states),true)
+  states.set(rows[0].items[0].photo.src,{pending:true})
+  assert.equal(needsImagesAhead(rows,0,300,states),true)
+  states.set(rows[0].items[0].photo.src,{error:true})
+  assert.equal(needsImagesAhead(rows,0,300,states),true)
 })
 
 test('image queue limits concurrency, caches success, and cancels on close', async () => {

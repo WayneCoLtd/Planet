@@ -1,3 +1,8 @@
+// Dimensions are tiny, reusable metadata. No image pixels or private URLs are
+// persisted to disk. Keeping these avoids fresh height shifts on reopening.
+const knownDimensions = new Map()
+export function getKnownDimensions() { return new Map(knownDimensions) }
+
 // Per-viewer queue: no background photo downloads after the curtain closes.
 export function createImageQueue(limit = 3) {
   const waiting = []
@@ -24,6 +29,8 @@ export function createImageQueue(limit = 3) {
           else {
             const result = { width: image.naturalWidth, height: image.naturalHeight }
             cache.set(job.src, result)
+            knownDimensions.set(job.src, result)
+            if (knownDimensions.size > 512) knownDimensions.delete(knownDimensions.keys().next().value)
             if (cache.size > 32) cache.delete(cache.keys().next().value)
             job.callback(result)
           }

@@ -2,27 +2,32 @@ export function orderedMemories(items) {
   return items.filter(item => item.photo?.src).slice().sort((a, b) => Number(a.day.day) - Number(b.day.day) || String(a.owner.id).localeCompare(String(b.owner.id)))
 }
 
-// Rows have reserved geometry, so late images cannot move the reader's place.
-// Only a small window of these rows gets mounted; the rest is one spacer.
-export function layoutMemories(items, width) {
+// Keep each date together on desktop. Heights follow actual image proportions;
+// the viewer restores its scroll anchor when newly decoded dimensions arrive.
+export function layoutMemories(items, width, dimensions = new Map()) {
   const mobile = width < 640
   const pageWidth = Math.min(1100, Math.max(240, width - (mobile ? 40 : width <= 900 ? 100 : 144)))
   const rows = []
   let offset = 0
   for (let index = 0; index < items.length;) {
-    const feature = mobile || rows.length % 4 === 0
-    const count = feature ? 1 : Math.min(2, items.length - index)
-    const mediaHeight = mobile ? Math.min(420, Math.max(260, pageWidth * 1.12))
-      : feature ? Math.min(530, pageWidth * .56) : Math.min(450, pageWidth * .45)
-    const height = Math.round(mediaHeight + (mobile ? 104 : 132))
-    rows.push({ key: items[index].key, items: items.slice(index, index + count), offset, height, mediaHeight, feature })
+    const count = !mobile && items[index + 1]?.day.day === items[index].day.day ? 2 : 1
+    const rowItems = items.slice(index, index + count)
+    const columnWidth = mobile ? pageWidth : (pageWidth - (width <= 900 ? 28 : 56)) / 2
+    const edges = mobile ? 20 : 28
+    const mediaHeights = rowItems.map(item => {
+      const size = dimensions.get(item.photo.src)
+      const ratio = size?.width > 0 && size?.height > 0 ? size.width / size.height : .8
+      return (columnWidth - edges) / ratio + edges
+    })
+    const height = Math.ceil(Math.max(...mediaHeights) + (mobile ? 104 : 132))
+    rows.push({ key: items[index].key, items: rowItems, offset, height, mediaHeights, mobile })
     offset += height
     index += count
   }
   return { rows, height: offset }
 }
 
-export function rowWindow(rows, top, viewport, overscan = 320) {
+export function rowWindow(rows, top, viewport, overscan = 700) {
   let low = 0, high = rows.length
   while (low < high) {
     const mid = (low + high) >> 1
@@ -37,4 +42,12 @@ export function rowWindow(rows, top, viewport, overscan = 320) {
 export function monthLabel(date) {
   const match = /^(\d{4})-(\d{2})/.exec(date || '')
   return match ? `${match[1]} · ${Number(match[2])} 月` : '这些日子'
+}
+
+export function needsImagesAhead(rows, top, viewport, states) {
+  return rowWindow(rows, top, viewport + 120, 0).some(row => row.offset + row.height > top
+    && row.items.some(item => {
+      const state = states.get(item.photo.src)
+      return !state || state.pending || state.error
+    }))
 }

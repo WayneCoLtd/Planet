@@ -1,16 +1,17 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { layoutMemories, monthLabel, orderedMemories, rowWindow } from './galleryLayout'
-import { createImageQueue } from './imageQueue'
+import { layoutMemories, monthLabel, needsImagesAhead, orderedMemories, rowWindow } from './galleryLayout'
+import { createImageQueue, getKnownDimensions } from './imageQueue'
 import './albumTheater.css'
 
-function MemoryImage({ src, alt, queue }) {
+function MemoryImage({ src, alt, queue, onResult }) {
   const [result, setResult] = useState(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     setResult(null)
-    return queue.request(src, setResult)
-  }, [src, queue, attempt])
+    onResult(src, { pending: true })
+    return queue.request(src, value => { setResult(value); onResult(src, value) })
+  }, [src, queue, attempt, onResult])
   return <>
     {!result && <span className="mt-image-placeholder" role="status"><span>✧</span>正在展开这一帧…</span>}
     {result?.error ? <span className="mt-image-error">这一帧暂时没能打开<button type="button" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1) }}>重新加载</button></span>
@@ -31,11 +32,23 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
   const [size, setSize] = useState({ width: window.innerWidth, height: window.innerHeight })
   const [viewport, setViewport] = useState({ top: 0, height: window.innerHeight })
   const [playing, setPlaying] = useState(false)
+  const [speed, setSpeed] = useState(90)
+  const [waiting, setWaiting] = useState(false)
+  const [dimensions, setDimensions] = useState(getKnownDimensions)
+  const imageStatesRef = useRef(new Map())
+  const onImageResult = useCallback((src, result) => {
+    imageStatesRef.current.set(src, result)
+    if (result.width > 0 && result.height > 0) setDimensions(previous => {
+      const known = previous.get(src)
+      if (known?.width === result.width && known?.height === result.height) return previous
+      return new Map(previous).set(src, result)
+    })
+  }, [])
   const [selected, setSelected] = useState(null)
   const [unfolded, setUnfolded] = useState(false)
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const queue = useMemo(() => createImageQueue(3), [])
-  const { rows, height } = useMemo(() => layoutMemories(memories, size.width), [memories, size.width])
+  const { rows, height } = useMemo(() => layoutMemories(memories, size.width, dimensions), [memories, size.width, dimensions])
   const mountedRows = rowWindow(rows, viewport.top, viewport.height)
   const currentRow = rows.find(row => row.offset + row.height > viewport.top + 80) || rows.at(-1)
   const current = currentRow?.items[0]
@@ -110,18 +123,41 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
   }, [rows, size.height])
 
   useEffect(() => {
-    if (!playing || reduced || detail) return
+    if (!playing || reduced || detail) { setWaiting(false); return }
     const scroller = scrollRef.current
     let frame, previous = 0, position = scroller.scrollTop
+    const diagnostics = new URLSearchParams(window.location.search).get('albumDiagnostics') === '1'
+    let intervals = [], waitingFrames = 0, sampleStart = position, lastWaiting = null
     const step = now => {
-      if (previous) { position += Math.min(now - previous, 50) * .027; scroller.scrollTop = position }
+      // Geometry may change as a portrait or long screenshot finishes loading.
+      // Follow the restored scroll position instead of jumping to the old one.
+      if (Math.abs(scroller.scrollTop - position) > 2) position = scroller.scrollTop
+      const top = Math.max(0, scroller.scrollTop - streamRef.current.offsetTop)
+      const needsImage = needsImagesAhead(rowsRef.current, top, scroller.clientHeight, imageStatesRef.current)
+      if (lastWaiting !== needsImage) { lastWaiting = needsImage; setWaiting(needsImage) }
+      // Opt-in read-only QA sample. No visible UI, storage, telemetry or React
+      // frame updates; browser checks can inspect the completed DOM sample.
+      if (diagnostics && previous) {
+        intervals.push(now - previous)
+        if (needsImage) waitingFrames++
+        if (intervals.length === 120) {
+          const sorted = intervals.slice().sort((a, b) => a - b)
+          dialogRef.current.dataset.motionSample = JSON.stringify({
+            fps: Math.round(120000 / intervals.reduce((sum, value) => sum + value, 0)),
+            p95: Math.round(sorted[114]), max: Math.round(sorted[119]),
+            over50ms: intervals.filter(value => value > 50).length, waitingFrames, speed, distance: Math.round(scroller.scrollTop - sampleStart)
+          })
+          intervals = []; waitingFrames = 0; sampleStart = scroller.scrollTop
+        }
+      }
+      if (previous && !needsImage) { position += Math.min(now - previous, 50) * speed / 1000; scroller.scrollTop = position }
       previous = now
       if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2) { setPlaying(false); return }
       frame = requestAnimationFrame(step)
     }
     frame = requestAnimationFrame(step)
     return () => cancelAnimationFrame(frame)
-  }, [playing, reduced, Boolean(detail)])
+  }, [playing, speed, reduced, Boolean(detail)])
 
   useEffect(() => {
     if (detail) { setPlaying(false); setUnfolded(false); detailCloseRef.current?.focus({ preventScroll: true }) }
@@ -174,10 +210,10 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
         </section>
         {!memories.length && <div className="mt-empty" role="status"><span>✧</span><h3>{loading ? '正在翻开相册…' : '这一卷，留给接下来的照片。'}</h3><p>{loading ? '照片正在路上，先在这里等一小会儿。' : '暂时没有可显示的照片，可以回到相册查看或上传。'}</p><button type="button" onClick={onClose}>回到相册</button></div>}
         <div ref={streamRef} className="mt-stream" style={{ height }}>
-          {mountedRows.map(row => <div key={row.key} className={`mt-row ${row.feature ? 'is-feature' : 'is-pair'}`} style={{ top: row.offset, height: row.height, '--mt-media-height': `${row.mediaHeight}px` }}>
-            {row.items.map((item, slotIndex) => <figure className={`mt-memory ${slotIndex ? 'is-second' : ''}`} key={`${item.key}:${item.photo.src}`}>
+          {mountedRows.map(row => <div key={row.key} className="mt-row is-pair" style={{ top: row.offset, height: row.height }}>
+            {row.items.map((item, slotIndex) => <figure className="mt-memory" key={`${item.key}:${item.photo.src}`} style={{ '--mt-media-height': `${row.mediaHeights[slotIndex]}px`, gridColumn: row.mobile ? 1 : item.owner.id === 'pomelo' ? 2 : 1 }}>
               <div className="mt-photo-surface">
-                <span className="mt-image-slot"><MemoryImage src={item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} /></span>
+                <span className="mt-image-slot"><MemoryImage src={item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} onResult={onImageResult} /></span>
                 <button type="button" className="mt-photo-open" aria-label={`放大查看 ${signedBy(item)} Day ${item.day.day} 的照片`}
                   onClick={event => { lastFocusedPhoto.current = event.currentTarget; setSelected(item.key) }}>
                   <span className="mt-enlarge" aria-hidden="true">↗</span>
@@ -190,16 +226,21 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
         {memories.length > 0 && <footer className="mt-ending"><span>✧</span><h3>这一卷，先看到这里。</h3><p>每一张，都还好好地留在这里。</p><button type="button" onClick={() => { setPlaying(false); scrollRef.current.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }) }}>从头再看 <span aria-hidden="true">↑</span></button></footer>}
       </div>
       <footer className="mt-controls">
-        <label className="mt-month-control"><span>翻到</span><select aria-label="跳到月份" value={String(current?.day.date || '').slice(0, 7)} disabled={!months.length}
+        <label className="mt-month-control"><span>翻到</span><select aria-label="跳到月份" onFocus={() => setPlaying(false)} value={String(current?.day.date || '').slice(0, 7)} disabled={!months.length}
           onChange={event => jumpTo(memories.findIndex(item => String(item.day.date || '').startsWith(event.target.value)))}>
           {!months.length && <option value="">这些日子</option>}{months.map(month => <option key={month} value={month}>{monthLabel(month)}</option>)}
         </select></label>
         <span className="mt-position">{current ? `DAY ${current.day.day}` : 'MEMORY ALBUM'}</span>
+        <div className="mt-playback">
+        <select className="mt-speed" aria-label="巡游速度" value={speed} onChange={event => setSpeed(Number(event.target.value))} disabled={reduced}>
+          <option value={60}>舒缓</option><option value={90}>适中</option><option value={140}>轻快</option>
+        </select>
         <button className={`mt-play ${playing ? 'is-playing' : ''}`} type="button" aria-pressed={playing} disabled={!memories.length || reduced}
           title={reduced ? '已按系统设置减少动态效果，请手动翻阅' : '以慢速自动向下翻阅，触摸或滚动即可暂停'}
           onClick={() => { if (!playing && scrollRef.current.scrollTop + scrollRef.current.clientHeight >= scrollRef.current.scrollHeight - 2) scrollRef.current.scrollTop = 0; setPlaying(value => !value) }}>
-          <span aria-hidden="true">{playing ? 'Ⅱ' : '▷'}</span>{reduced ? '手动翻阅' : playing ? '暂停巡游' : '慢慢看'}
+          <span aria-hidden="true">{playing ? 'Ⅱ' : '▷'}</span>{reduced ? '手动翻阅' : playing ? waiting ? '等图中 · 暂停' : '暂停巡游' : '慢慢看'}
         </button>
+        </div>
       </footer>
     </div>
     <div className="mt-curtain mt-curtain-left" aria-hidden="true" /><div className="mt-curtain mt-curtain-right" aria-hidden="true" />

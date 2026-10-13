@@ -61,9 +61,7 @@
 .memory-theater .mt-mobile-break { display: none; }
 .memory-theater .mt-stream { position: relative; width: min(1100px, calc(100% - 144px)); margin: 0 auto; }
 .memory-theater .mt-row { position: absolute; left: 0; right: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; padding-top: 10px; }
-.memory-theater .mt-row.is-feature { grid-template-columns: minmax(0, 1fr); }
-.memory-theater .mt-memory { min-width: 0; margin: 0; }
-.memory-theater .is-feature .mt-memory { width: min(840px, 100%); justify-self: center; }
+.memory-theater .mt-memory { min-width: 0; margin: 0; align-self: start; }
 .memory-theater .mt-photo-surface {
   position: relative; height: var(--mt-media-height); padding: 13px; background: #fffcf5;
   border: 1px solid #bba98a2b; border-radius: 2px;
@@ -103,6 +101,8 @@
 .memory-theater .mt-play { display: inline-flex; align-items: center; justify-content: center; gap: 10px; min-height: 44px; padding: 7px 17px; border: 1px solid #b7a98f88; border-radius: 30px; font-size: 12px; }
 .memory-theater .mt-play:hover { background: #e9e0d3; }
 .memory-theater .mt-play.is-playing { background: #e8dfcf; }
+.memory-theater .mt-playback { display: flex; align-items: center; gap: 12px; }
+.memory-theater .mt-speed { min-height: 44px; padding: 4px 8px; border: 1px solid var(--mt-line); border-radius: 6px; background: transparent; color: var(--mt-ink); font: inherit; font-size: 12px; }
 .memory-theater .mt-curtain { pointer-events: none; position: absolute; z-index: 3; top: 0; bottom: 0; width: 51%; background: repeating-linear-gradient(90deg, #ffffff12 0, #86694110 25px, #ffffff1f 48px, #6c503009 73px), linear-gradient(110deg, #deceb4, #ede0c9 48%, #cfb995); box-shadow: 0 0 60px #66503335; }
 .memory-theater .mt-curtain-left { left: 0; animation: mt-curtain-left .85s cubic-bezier(.22,.65,.25,1) .05s both; }
 .memory-theater .mt-curtain-right { right: 0; animation: mt-curtain-right .85s cubic-bezier(.22,.65,.25,1) .05s both; }
@@ -141,6 +141,8 @@
   .memory-theater .mt-month-control > span, .memory-theater .mt-position { display: none; }
   .memory-theater .mt-month-control select { max-width: 142px; font-size: 12px; }
   .memory-theater .mt-play { font-size: 11px; padding: 7px 14px; }
+  .memory-theater .mt-playback { gap: 6px; }
+  .memory-theater .mt-speed { max-width: 65px; font-size: 11px; padding: 4px; }
   .memory-theater .mt-enlarge { opacity: 1; width: 26px; height: 26px; right: 16px; bottom: 16px; }
   .memory-theater .mt-detail header, .memory-theater .mt-detail footer { padding: 10px 12px; gap: 6px; }
   .memory-theater .mt-detail-scroll { padding: 8px 12px; }
