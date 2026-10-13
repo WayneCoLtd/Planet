@@ -45,14 +45,16 @@ test('desktop pairs the same date, with no standalone feature rows or cross-date
   assert.equal(partial[1].items[0].day.day,301)
 })
 
-test('portrait and long pictures receive proportional frames without height caps', () => {
+test('portrait and long pictures fit the viewing area in proportional portrait frames', () => {
   const sizes = new Map([[memories[0].photo.src,{width:800,height:1200}], [memories[1].photo.src,{width:600,height:2400}]])
-  const row = layoutMemories(memories,1440,sizes).rows[0]
-  // 1100px content, 56px gap, 28px paper edges per frame.
-  const imageWidth = (1100-56)/2-28
-  assert.equal(row.mediaHeights[0],imageWidth*1.5+28)
-  assert.equal(row.mediaHeights[1],imageWidth*4+28)
-  assert.ok(row.height > row.mediaHeights[1])
+  for(const viewport of [400,530,900]) {
+    const row = layoutMemories(memories,1440,sizes,viewport).rows[0]
+    assert.ok(row.mediaHeights.every(height=>height<=viewport-112+.001))
+    assert.ok(Math.abs((row.mediaWidths[0]-28)/(row.mediaHeights[0]-28)-800/1200)<.0001)
+    assert.ok(Math.abs((row.mediaWidths[1]-28)/(row.mediaHeights[1]-28)-600/2400)<.0001)
+    assert.ok(row.mediaWidths[1]<row.mediaWidths[0])
+    assert.ok(row.height > Math.max(...row.mediaHeights))
+  }
 })
 
 test('cruising waits for visible and upcoming pictures, but not the entire album', () => {

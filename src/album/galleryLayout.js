@@ -4,7 +4,7 @@ export function orderedMemories(items) {
 
 // Keep each date together on desktop. Heights follow actual image proportions;
 // the viewer restores its scroll anchor when newly decoded dimensions arrive.
-export function layoutMemories(items, width, dimensions = new Map()) {
+export function layoutMemories(items, width, dimensions = new Map(), viewportHeight = 900) {
   const mobile = width < 640
   const pageWidth = Math.min(1100, Math.max(240, width - (mobile ? 40 : width <= 900 ? 100 : 144)))
   const rows = []
@@ -14,13 +14,17 @@ export function layoutMemories(items, width, dimensions = new Map()) {
     const rowItems = items.slice(index, index + count)
     const columnWidth = mobile ? pageWidth : (pageWidth - (width <= 900 ? 28 : 56)) / 2
     const edges = mobile ? 20 : 28
-    const mediaHeights = rowItems.map(item => {
+    const mediaSizes = rowItems.map(item => {
       const size = dimensions.get(item.photo.src)
       const ratio = size?.width > 0 && size?.height > 0 ? size.width / size.height : .8
-      return (columnWidth - edges) / ratio + edges
+      const maxImageHeight = Math.max(140, viewportHeight - (mobile ? 104 : 112) - edges)
+      const imageWidth = Math.min(columnWidth - edges, maxImageHeight * ratio)
+      return { width: imageWidth + edges, height: imageWidth / ratio + edges }
     })
+    const mediaHeights = mediaSizes.map(size => size.height)
+    const mediaWidths = mediaSizes.map(size => size.width)
     const height = Math.ceil(Math.max(...mediaHeights) + (mobile ? 104 : 132))
-    rows.push({ key: items[index].key, items: rowItems, offset, height, mediaHeights, mobile })
+    rows.push({ key: items[index].key, items: rowItems, offset, height, mediaHeights, mediaWidths, mobile })
     offset += height
     index += count
   }

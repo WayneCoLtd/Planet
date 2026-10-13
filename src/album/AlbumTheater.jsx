@@ -48,7 +48,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
   const [unfolded, setUnfolded] = useState(false)
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const queue = useMemo(() => createImageQueue(3), [])
-  const { rows, height } = useMemo(() => layoutMemories(memories, size.width, dimensions), [memories, size.width, dimensions])
+  const { rows, height } = useMemo(() => layoutMemories(memories, size.width, dimensions, size.height), [memories, size.width, size.height, dimensions])
   const mountedRows = rowWindow(rows, viewport.top, viewport.height)
   const currentRow = rows.find(row => row.offset + row.height > viewport.top + 80) || rows.at(-1)
   const current = currentRow?.items[0]
@@ -211,7 +211,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
         {!memories.length && <div className="mt-empty" role="status"><span>✧</span><h3>{loading ? '正在翻开相册…' : '这一卷，留给接下来的照片。'}</h3><p>{loading ? '照片正在路上，先在这里等一小会儿。' : '暂时没有可显示的照片，可以回到相册查看或上传。'}</p><button type="button" onClick={onClose}>回到相册</button></div>}
         <div ref={streamRef} className="mt-stream" style={{ height }}>
           {mountedRows.map(row => <div key={row.key} className="mt-row is-pair" style={{ top: row.offset, height: row.height }}>
-            {row.items.map((item, slotIndex) => <figure className="mt-memory" key={`${item.key}:${item.photo.src}`} style={{ '--mt-media-height': `${row.mediaHeights[slotIndex]}px`, gridColumn: row.mobile ? 1 : item.owner.id === 'pomelo' ? 2 : 1 }}>
+            {row.items.map((item, slotIndex) => <figure className="mt-memory" key={`${item.key}:${item.photo.src}`} style={{ '--mt-media-height': `${row.mediaHeights[slotIndex]}px`, '--mt-card-width': `${row.mediaWidths[slotIndex]}px`, gridColumn: row.mobile ? 1 : item.owner.id === 'pomelo' ? 2 : 1 }}>
               <div className="mt-photo-surface">
                 <span className="mt-image-slot"><MemoryImage src={item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} onResult={onImageResult} /></span>
                 <button type="button" className="mt-photo-open" aria-label={`放大查看 ${signedBy(item)} Day ${item.day.day} 的照片`}

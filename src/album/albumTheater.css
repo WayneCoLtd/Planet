@@ -63,7 +63,7 @@
 .memory-theater .mt-row { position: absolute; left: 0; right: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; padding-top: 10px; }
 .memory-theater .mt-memory { min-width: 0; margin: 0; align-self: start; }
 .memory-theater .mt-photo-surface {
-  position: relative; height: var(--mt-media-height); padding: 13px; background: #fffcf5;
+  position: relative; height: var(--mt-media-height); width: var(--mt-card-width); max-width: 100%; margin-inline: auto; padding: 13px; background: #fffcf5;
   border: 1px solid #bba98a2b; border-radius: 2px;
   box-shadow: 0 2px 3px #5d48270a, 0 10px 24px #5d482715, 0 28px 40px -30px #5d48274d;
 }
@@ -75,7 +75,7 @@
 .memory-theater .mt-photo-image { display: block; width: 100%; height: 100%; object-fit: contain; animation: mt-photo-appear .45s ease both; }
 .memory-theater .mt-enlarge { position: absolute; right: 21px; bottom: 20px; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: #fffaf0e8; color: #514333; opacity: 0; transition: opacity .2s; }
 .memory-theater .mt-photo-open:hover .mt-enlarge, .memory-theater .mt-photo-open:focus-visible .mt-enlarge { opacity: 1; }
-.memory-theater figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 4px 0; }
+.memory-theater figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 16px 4px 0; width: min(100%, max(180px, var(--mt-card-width))); margin-inline: auto; }
 .memory-theater .mt-photo-date { color: #665746; font-size: 12px; letter-spacing: .14em; }
 .memory-theater .mt-photo-date small { display: block; margin-top: 2px; color: #9b8b76; font: 9px/1.6 system-ui, sans-serif; letter-spacing: .18em; }
 .memory-theater .mt-photo-owner { display: inline-flex; gap: 6px; align-items: center; color: var(--mt-muted); font-size: 11px; letter-spacing: .08em; }
