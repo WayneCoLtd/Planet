@@ -11,6 +11,7 @@ import './styles.css'
 import { createReadResource } from './readResource'
 import { toCanonicalCloudUrl } from './cloud'
 import { ENERGY_TARGET, createEnergyDraw, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from './energyLedger'
+import AlbumTheater from './album/AlbumTheater'
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -9010,6 +9011,8 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
 
 function PhotoWall() {
   const [curtainOpen, setCurtainOpen] = useState(false)
+  const theaterPositionRef = React.useRef(null)
+  const [albumLoading, setAlbumLoading] = useState(cloudEnabled)
   const [localPhotos, setLocalPhotos] = useState(loadPhotoWallLocal)
   const [cloudPhotos, setCloudPhotos] = useState(() => photoWallResource.peek())
   const [status, setStatus] = useState('')
@@ -9036,10 +9039,6 @@ function PhotoWall() {
     const key = `${day.day}-${owner.id}`
     return { key, day, owner, photo: photos[key] }
   })).filter(slot => slot.photo?.src)
-  const wallCount = Math.max(1, filledPhotos.length)
-  const wallColumns = wallCount <= 1 ? 1 : wallCount <= 4 ? 2 : wallCount <= 9 ? 3 : wallCount <= 16 ? 4 : wallCount <= 25 ? 5 : wallCount <= 36 ? 6 : 7
-  const wallRows = Math.max(1, Math.ceil(wallCount / wallColumns))
-  const wallGap = wallCount <= 4 ? 18 : wallCount <= 16 ? 14 : wallCount <= 36 ? 10 : 8
   const prevAlbumCountRef = React.useRef(albumDays.length)
 
   // 日期列表数量变化（管理员发布新一天等）时回到第一页，保证看到最新日期。
@@ -9080,6 +9079,7 @@ function PhotoWall() {
   async function refreshCloudPhotoWall() {
     if (photoRefreshInFlightRef.current) return { rows: null, flushed: null }
     photoRefreshInFlightRef.current = true
+    setAlbumLoading(true)
     try {
       const rows = await loadCloudPhotoWallRows()
       setCloudPhotos(rows)
@@ -9101,6 +9101,7 @@ function PhotoWall() {
       return { rows: null, flushed: null }
     } finally {
       photoRefreshInFlightRef.current = false
+      setAlbumLoading(false)
     }
   }
 
@@ -9283,7 +9284,7 @@ function PhotoWall() {
       <div className={`curtain-upload-stage ${curtainOpen ? 'curtain-open' : ''}`}>
         <div className="curtain-panel curtain-left" aria-hidden="true" />
         <div className="curtain-panel curtain-right" aria-hidden="true" />
-        <button type="button" className="curtain-cord" onClick={() => setCurtainOpen(open => !open)}>
+        <button type="button" className="curtain-cord" aria-haspopup="dialog" onClick={() => setCurtainOpen(open => !open)}>
           <span className="cord-line" />
           <span className="cord-pull">{curtainOpen ? '合上帷幕' : '拉开帷幕'}</span>
         </button>
@@ -9342,18 +9343,8 @@ function PhotoWall() {
           </div>
           {renderAlbumPagination('bottom')}
         </div>
-        <div className="photo-wall-layer" aria-hidden={!curtainOpen}>
-          <div className="photo-wall-header"><span>🖼️</span><strong>我们的照片墙</strong><small>每次新增照片都会自动补到这里，每天 2 栏，天数越多照片位越多。</small></div>
-          <div className="photo-wall-grid" style={{ '--wall-cols': wallColumns, '--wall-rows': wallRows, '--wall-gap': `${wallGap}px`, '--wall-count': wallCount }}>
-            {!curtainOpen ? null : filledPhotos.length === 0 ? <div className="empty-wall-note">还没有照片被裱起来。先合上帷幕，在上面上传第一张吧。</div> : filledPhotos.map((slot, index) => (
-              <button key={slot.key} type="button" className={`wall-photo-card frame-cream owner-${slot.owner.id}`} style={{ '--tilt': `${index % 2 === 0 ? -2 : 2}deg` }} onClick={() => setLightbox(slot)} aria-label={`放大查看 ${slot.owner.label} Day ${slot.day.day} 的照片`}>
-                <img src={slot.photo.src} loading="lazy" decoding="async" alt={`${slot.owner.label} Day ${slot.day.day}`} />
-                <span><img className="owner-avatar owner-avatar-sm" src={slot.owner.icon} alt="" /> Day {slot.day.day}</span>
-              </button>
-            ))}
-          </div>
-        </div>
       </div>
+      {curtainOpen && <AlbumTheater items={filledPhotos} loading={albumLoading} onClose={() => setCurtainOpen(false)} remembered={theaterPositionRef.current} onRemember={position => { theaterPositionRef.current = position }} />}
       {lightbox && (
         <button type="button" className="photo-lightbox" onClick={() => setLightbox(null)} aria-label="关闭照片预览">
           <span className="lightbox-frame frame-cream">
