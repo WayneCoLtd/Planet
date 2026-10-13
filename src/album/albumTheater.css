@@ -59,6 +59,11 @@
 .memory-theater .mt-intro-meta i { width: 36px; height: 1px; background: #a48d625c; }
 .memory-theater .mt-scroll-hint { display: inline-flex; gap: 12px; color: #9a876c; font-size: 10px; letter-spacing: .2em; }
 .memory-theater .mt-mobile-break { display: none; }
+.memory-theater .mt-intro .mt-dialog-title { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.memory-theater .literary-quote { max-width: 760px; margin: 24px auto 16px; color: var(--mt-ink); }
+.memory-theater .mt-opening-quote .lq-text { font-size: clamp(19px, 2.4vw, 30px); line-height: 1.85; letter-spacing: .05em; }
+.memory-theater .mt-ending-quote .lq-text { font-size: clamp(18px, 2.1vw, 25px); line-height: 1.95; }
+.memory-theater .literary-quote .lq-credit { color: var(--mt-muted); opacity: 1; }
 .memory-theater .mt-stream { position: relative; width: min(1100px, calc(100% - 144px)); margin: 0 auto; }
 .memory-theater .mt-row { position: absolute; left: 0; right: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 56px; padding-top: 10px; }
 .memory-theater .mt-memory { min-width: 0; margin: 0; align-self: start; }

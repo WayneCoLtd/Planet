@@ -1,0 +1,15 @@
+.literary-quote.literary-quote { margin: 18px 0; padding: 0; color: inherit; }
+.literary-quote.literary-quote blockquote { margin: 0; padding: 0; border: 0; background: none; }
+.literary-quote.literary-quote .lq-text { margin: 0; max-width: none; color: inherit; font-family: "Songti SC", "STSong", SimSun, serif; font-size: clamp(16px, 2vw, 21px); font-weight: 400; line-height: 1.85; letter-spacing: .035em; white-space: pre-line; overflow-wrap: anywhere; }
+.literary-quote.literary-quote .lq-credit { display: block; margin: 9px 0 0; padding: 0; width: auto; color: inherit; opacity: .75; font-size: 12px; line-height: 1.8; letter-spacing: .025em; }
+.literary-quote.literary-quote cite { font-style: normal; }
+.literary-quote.literary-quote a { color: inherit; text-decoration: none; text-underline-offset: 4px; }
+.literary-quote.literary-quote a:hover { text-decoration: underline; }
+.literary-quote.literary-quote a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+.literary-quote.lq-compact { margin: 6px 0 14px; }
+.literary-quote.lq-compact .lq-text { font-size: clamp(14px, 1.8vw, 18px); }
+.section-heading .literary-quote { margin: 12px auto; }
+@media (max-width: 639px) {
+  .literary-quote.literary-quote .lq-text { font-size: 16px; line-height: 1.9; }
+  .literary-quote.literary-quote .lq-credit { font-size: 11px; }
+}

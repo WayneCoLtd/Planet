@@ -12,6 +12,8 @@ import { createReadResource } from './readResource'
 import { toCanonicalCloudUrl } from './cloud'
 import { ENERGY_TARGET, createEnergyDraw, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from './energyLedger'
 import AlbumTheater from './album/AlbumTheater'
+import LiteraryQuote from './LiteraryQuote'
+import { literaryQuotes } from './data/literaryQuotes'
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -1201,9 +1203,7 @@ function Hero({ setCurrent }) {
         <div className="tiny-label">{dayCount}Days — Our Small Universe</div>
         <h1>300Days</h1>
         <h2>我们已经走过的每一个今天</h2>
-        <p>
-          这是只属于你的小城堡，一段慢慢翻开的纪念日日记。我们一起走过 {dayCount} 天，第 {dayCount} 天也在认真继续。
-        </p>
+        <LiteraryQuote quote={literaryQuotes.home} />
         <div className="hero-stats">
           <span>✨ 已一起走过 {dayCount} 天</span>
           <span>🌙 一周年：{yearOneReached ? '已达成' : `还有 ${daysToYearOne} 天`}</span>
@@ -9279,6 +9279,7 @@ function PhotoWall() {
       <header className="section-heading playful-heading">
         <span>Memory Wall</span>
         <h2>我们的每一天 · 双栏相册</h2>
+        <LiteraryQuote quote={literaryQuotes.album} />
         <p>每天两栏上传位：小琛一张，小琳一张。选好照片或聊天记录裱起来，拉开帷幕后就会挂到照片墙上。</p>
       </header>
       <div className={`curtain-upload-stage ${curtainOpen ? 'curtain-open' : ''}`}>
@@ -10298,13 +10299,14 @@ function BackpackView() {
       <header className="section-heading playful-heading premium-heading">
         <span>Backpack</span>
         <h2>小背包 · 道具收纳室</h2>
-        <p>这里保存每天任务留下来的小证据。真正拿到的道具会亮起，暂时没拿到的会安静躺在星尘格子里。</p>
+        <LiteraryQuote quote={literaryQuotes.backpack} />
+        <p>已获得的道具会亮起，可在下方查看数量和使用方式。</p>
       </header>
       <div className="backpack-hero sticker-card premium-card">
         <div>
           <div className="tiny-label">Inventory Status</div>
           <h3>{entries.length ? `已经收好 ${entries.length} 种小道具` : '背包现在空空的，但已经准备好接住惊喜'}</h3>
-          <p>{entries.length ? '每一件小道具都安静躺在这里，偶尔会偷偷发生一点变化。' : '完成每日任务后，小道具会带着盖章动画来到这里。'}</p>
+          <p>{entries.length ? '道具数量和使用方式显示在下方。' : '完成每日任务后，小道具会带着盖章动画来到这里。'}</p>
         </div>
         <div className="backpack-orb" aria-hidden="true"><span>🎒</span><i /></div>
       </div>
@@ -10476,7 +10478,7 @@ function MeetingCountdownCalendar() {
   return (
     <section className="meeting-calendar-card sticker-card" aria-label="异地见面倒计时与见面日历">
       <div className="meeting-countdown">
-        <span className="meeting-countdown-kicker">♡ 异地也要数着日子 ♡</span>
+        <LiteraryQuote quote={literaryQuotes.meeting} className="lq-compact" />
         <div className="meeting-countdown-main">
           <strong>{countdownCopy}</strong>
           {loaded && data.next && daysLeft !== null && (
@@ -11427,7 +11429,7 @@ function MessageBoard() {
       <header className="section-heading playful-heading">
         <span>Little Mailbox</span>
         <h2>💌 小信箱</h2>
-        <p>想说的话、开心或是烦恼、怕打扰到你的思念，都写在这里。等你有空了打开，就能看见。</p>
+        <LiteraryQuote quote={literaryQuotes.mailbox} />
       </header>
 
       <div className="message-compose sticker-card">
@@ -14649,7 +14651,8 @@ function MusicRoom() {
       <header className="section-heading playful-heading">
         <span>🎵 我们的歌</span>
         <h2>音乐室</h2>
-        <p>把想一起听的歌放进来，随时点开就能放。切到别的页面也不会停。</p>
+        <LiteraryQuote quote={literaryQuotes.music} />
+        <p>选择歌曲即可播放，切换页面也不会中断。</p>
       </header>
 
       <div className="music-room-layout">

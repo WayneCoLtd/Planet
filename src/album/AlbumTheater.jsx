@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useSta
 import { createPortal } from 'react-dom'
 import { layoutMemories, monthLabel, needsImagesAhead, orderedMemories, rowWindow } from './galleryLayout'
 import { createImageQueue, getKnownDimensions } from './imageQueue'
+import LiteraryQuote from '../LiteraryQuote'
+import { literaryQuotes } from '../data/literaryQuotes'
 import './albumTheater.css'
 
 function MemoryImage({ src, alt, queue, onResult }) {
@@ -203,8 +205,8 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
         onWheel={() => setPlaying(false)} onTouchStart={() => setPlaying(false)} onPointerDown={() => setPlaying(false)}>
         <section className="mt-intro">
           <span className="mt-eyebrow">THE DAYS WE KEPT</span>
-          <h2 id="mt-title">把日子，<br className="mt-mobile-break" />再慢慢看一遍。</h2>
-          <p>照片替我们收好了，那些平常又珍贵的瞬间。</p>
+          <h2 id="mt-title" className="mt-dialog-title">我们的每一天 · 回忆画廊</h2>
+          <LiteraryQuote quote={literaryQuotes.albumOpening} className="mt-opening-quote" />
           <div className="mt-intro-meta"><span>{memories.length ? memories[0].day.date?.replaceAll('-', '.') : '尚待收藏'}</span><i /><span>{memories.length} 帧记忆</span></div>
           <span className="mt-scroll-hint">向下翻阅 <span aria-hidden="true">↓</span></span>
         </section>
@@ -223,7 +225,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
             </figure>)}
           </div>)}
         </div>
-        {memories.length > 0 && <footer className="mt-ending"><span>✧</span><h3>这一卷，先看到这里。</h3><p>每一张，都还好好地留在这里。</p><button type="button" onClick={() => { setPlaying(false); scrollRef.current.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }) }}>从头再看 <span aria-hidden="true">↑</span></button></footer>}
+        {memories.length > 0 && <footer className="mt-ending"><span>✧</span><LiteraryQuote quote={literaryQuotes.albumEnding} className="mt-ending-quote" /><button type="button" onClick={() => { setPlaying(false); scrollRef.current.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }) }}>从头再看 <span aria-hidden="true">↑</span></button></footer>}
       </div>
       <footer className="mt-controls">
         <label className="mt-month-control"><span>翻到</span><select aria-label="跳到月份" onFocus={() => setPlaying(false)} value={String(current?.day.date || '').slice(0, 7)} disabled={!months.length}
