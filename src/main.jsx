@@ -17,6 +17,7 @@ import { literaryQuotes } from './data/literaryQuotes'
 import { countJourneySignedDays, JOURNEY_TOTAL_DAYS } from './checkinProgress'
 import './nextChapter.css'
 const LifeAlbum = React.lazy(() => import('./album/LifeAlbum'))
+const GrowthJournal = React.lazy(() => import('./journal/GrowthJournal'))
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -1117,7 +1118,7 @@ function Nav({ current, setCurrent }) {
   const observatoryNavOpen = Number(bag.observatory_nav_unlocked || 0) > 0
   const items = [
     ['home', '首页', '🏠'],
-    ['checkin', '随便翻翻', '📮'],
+    ['checkin', '每日签到', '📮'],
     ['album', '相册', '📷'],
     ['music', '音乐室', '🎵'],
     ...(observatoryNavOpen ? [['telescope', '星空观测站', '🔭']] : []),
@@ -1219,7 +1220,7 @@ function Hero({ setCurrent }) {
           <small>那 65 天</small>
         </div>
         <div className="hero-actions">
-          <button onClick={() => setCurrent('checkin')}>📮 随便翻翻</button>
+          <button onClick={() => setCurrent('checkin')}>📮 每日签到</button>
         </div>
 
       </div>
@@ -1269,7 +1270,7 @@ function getInitialCheckinDay() {
 }
 
 function NextChapter() {
-  const [section, setSection] = useState('new')
+  const [section, setSection] = useState('journal')
   const [items, setItems] = useState(getDailyAdventures)
   const [selected, setSelected] = useState(null)
   React.useEffect(() => {
@@ -1285,13 +1286,14 @@ function NextChapter() {
   }, [])
   const entries = items.filter(item => Number(item.day) > 365).sort((a, b) => Number(b.day) - Number(a.day))
   const active = entries.find(item => item.day === selected)
-  return <section className="content-section next-chapter">
+  return <section className={`content-section next-chapter ${section === 'journal' ? 'has-journal' : ''}`}>
     <div className="chapter-switch" role="group" aria-label="内容篇章">
-      <button aria-pressed={section === 'new'} onClick={() => setSection('new')}>随便翻翻</button>
+      <button aria-pressed={section === 'journal'} onClick={() => setSection('journal')}>每日签到</button>
+      <button aria-pressed={section === 'new'} onClick={() => setSection('new')}>内容小册</button>
       <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
     </div>
-    {section === 'archive' ? <CheckIn archive /> : <>
-      <header className="section-heading playful-heading"><span>NOTES & FINDS</span><h2>随便翻翻</h2><LiteraryQuote quote={literaryQuotes.nextReading} /></header>
+    {section === 'journal' ? <React.Suspense fallback={<p role="status">正在打开签到簿…</p>}><GrowthJournal /></React.Suspense> : section === 'archive' ? <CheckIn archive /> : <>
+      <header className="section-heading playful-heading"><span>NOTES & FINDS</span><h2>内容小册</h2><LiteraryQuote quote={literaryQuotes.nextReading} /></header>
       {!entries.length && <div className="chapter-empty"><span aria-hidden="true">✧</span><p>还没有新的分享</p><button onClick={() => setSection('archive')}>翻翻那 65 天</button></div>}
       {active ? <article className="chapter-reading sticker-card"><button onClick={() => setSelected(null)}>‹ 返回目录</button><small>{active.date}</small><h3>{active.title}</h3>
         {!['nightReading', 'dailyLight'].includes(active.type) && active.prompt && <p className="user-multiline">{active.prompt}</p>}
