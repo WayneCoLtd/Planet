@@ -72,23 +72,47 @@ function harness(level = 1) {
   const records = [],
     tables = []
   const db = {
+    storage: {
+      from() {
+        return {
+          createSignedUrls: async (paths) => ({
+            data: paths.map((path) => ({
+              path,
+              signedUrl: `https://test.invalid/${path}`,
+            })),
+          }),
+        }
+      },
+    },
     from(table) {
       tables.push(table)
       let filters = [],
         mode = 'read',
         payload
       function execute(single) {
-        const matching = records.filter((row) =>
-          filters.every(([key, value]) => row[key] === value),
+        const matching = records.filter(
+          (row) =>
+            row._table === table &&
+            filters.every(([key, value, op]) =>
+              op === 'gte'
+                ? row[key] >= value
+                : op === 'lte'
+                  ? row[key] <= value
+                  : row[key] === value,
+            ),
         )
         if (mode === 'insert') {
           if (
             records.some(
-              (row) => row.owner === payload.owner && row.date === payload.date,
+              (row) =>
+                row._table === table &&
+                row.owner === payload.owner &&
+                (row.date || row.week_start) ===
+                  (payload.date || payload.week_start),
             )
           )
             return { error: { code: '23505' } }
-          records.push(payload)
+          records.push({ ...payload, _table: table })
           return { data: payload }
         }
         if (mode === 'update')
@@ -101,6 +125,20 @@ function harness(level = 1) {
         },
         eq(key, value) {
           filters.push([key, value])
+          return query
+        },
+        gte(key, value) {
+          filters.push([key, value, 'gte'])
+          return query
+        },
+        lte(key, value) {
+          filters.push([key, value, 'lte'])
+          return query
+        },
+        order() {
+          return query
+        },
+        limit() {
           return query
         },
         insert(value) {
@@ -151,7 +189,7 @@ function harness(level = 1) {
         },
       }
       await context.handler(
-        { method, body, headers: {}, url: '/api/journal' },
+        { method, body, headers: {}, url: '/api/journal?date=2026-10-14' },
         response,
       )
       return response
@@ -171,6 +209,7 @@ test('backfill preserves separate owners and an outdated device cannot overwrite
     action: 'save',
     checkedIn: true,
     activities: '第一行\n\n第二行',
+    notes: [{ id: 'first-note', text: '第一行\n\n第二行', images: [] }],
   }
   const first = await h.run(entry)
   assert.equal(first.code, 200)
@@ -206,4 +245,149 @@ test('future checkins and cross-owner screenshot references are rejected', async
     400,
   )
   assert.equal(h.records.length, 0)
+})
+
+test('legacy text becomes one note without losing original whitespace or mutating the record', () => {
+  const legacy = {
+    ...model.emptyEntry('pomelo', '2026-10-14'),
+    activities: '旧文字\n\n  原始缩进',
+  }
+  const notes = model.entryNotes(legacy)
+  assert.equal(notes.length, 1)
+  assert.equal(notes[0].text, legacy.activities)
+  assert.equal(legacy.notes, undefined)
+  assert.deepEqual(model.entryNotes({ ...legacy, notes: [] }), [])
+})
+
+test('note serialization preserves ordering and image-only notes but excludes signed URLs and pending bytes', () => {
+  const note = {
+    id: 'n1',
+    text: '',
+    images: [
+      {
+        id: 'image1',
+        path: 'some-path',
+        thumbPath: 'thumb-path',
+        url: 'secret-token',
+        pendingImage: { data: 'bytes' },
+      },
+    ],
+  }
+  const normalized = model.normalizeNotes([
+    note,
+    { id: 'n2', text: '第二条', images: [] },
+  ])
+  assert.deepEqual(
+    normalized.map((n) => n.id),
+    ['n1', 'n2'],
+  )
+  assert.equal(normalized[0].images[0].url, undefined)
+  assert.equal(normalized[0].images[0].pendingImage, undefined)
+  assert.equal(normalized[0].images[0].path, 'some-path')
+  assert.throws(() => model.normalizeNotes([note, note]))
+})
+
+test('current-week goal updates are versioned and reject writes to past or next week', async () => {
+  const h = harness()
+  const goal = {
+    action: 'goal',
+    owner: 'pomelo',
+    week_start: '2026-10-12',
+    nights: 5,
+    before: '00:00',
+    version: 0,
+  }
+  assert.equal((await h.run(goal)).code, 200)
+  assert.equal((await h.run({ ...goal, nights: 4, version: 1 })).code, 200)
+  assert.equal((await h.run({ ...goal, nights: 3, version: 1 })).code, 409)
+  assert.equal((await h.run({ ...goal, week_start: '2026-10-05' })).code, 400)
+  assert.equal((await h.run({ ...goal, week_start: '2026-10-19' })).code, 400)
+})
+
+test('an old client cannot erase the new note structure', async () => {
+  const h = harness()
+  const old = {
+    ...model.emptyEntry('pomelo', '2026-10-14'),
+    action: 'save',
+    activities: '原记录',
+  }
+  assert.equal((await h.run(old)).code, 200)
+  const result = await h.run({ ...old, version: 1, activities: '旧客户端改写' })
+  assert.equal(result.code, 409)
+  assert.equal(result.data.current.notes[0].text, '原记录')
+})
+
+test('a note cannot attach another person’s private image', async () => {
+  const h = harness()
+  const result = await h.run({
+    ...model.emptyEntry('pomelo', '2026-10-14'),
+    action: 'save',
+    notes: [
+      {
+        id: 'n',
+        text: '',
+        images: [
+          {
+            id: 'i',
+            path: 'orange/2026-10-14/11111111-1111-4111-8111-111111111111.jpg',
+            thumbPath: '',
+          },
+        ],
+      },
+    ],
+  })
+  assert.equal(result.code, 400)
+  assert.equal(h.records.length, 0)
+})
+
+test('signed media refresh never replaces a draft’s text, order or pending image', () => {
+  const remote = {
+    notes: [
+      {
+        id: 'n',
+        text: 'remote',
+        images: [
+          { id: 'i', path: 'a.jpg', url: 'fresh', thumbUrl: 'fresh-thumb' },
+        ],
+      },
+    ],
+  }
+  const local = {
+    activities: 'legacy',
+    notes: [
+      {
+        id: 'n',
+        text: 'unsaved edits',
+        images: [
+          { id: 'i', path: 'a.jpg', url: 'expired', thumbUrl: 'expired-thumb' },
+          { id: 'pending', path: '', pendingImage: { data: 'local' } },
+        ],
+      },
+    ],
+  }
+  const result = model.mergeEntryMedia(local, remote)
+  assert.equal(result.notes[0].text, 'unsaved edits')
+  assert.equal(result.notes[0].images[0].url, 'fresh')
+  assert.equal(result.notes[0].images[1].pendingImage.data, 'local')
+  assert.equal(local.notes[0].images[0].url, 'expired')
+})
+
+test('reading a legacy record with a sleep screenshot keeps the original activity text', async () => {
+  const h = harness()
+  h.records.push({
+    _table: 'wwcxrl_journal_entries',
+    owner: 'pomelo',
+    date: '2026-10-14',
+    version: 3,
+    content: {
+      activities: '旧记录\n\n原文',
+      screenshotPath:
+        'pomelo/2026-10-14/11111111-1111-4111-8111-111111111111.jpg',
+    },
+  })
+  const result = await h.run({}, 'GET')
+  assert.equal(result.code, 200)
+  assert.equal(result.data.entries[0].notes[0].text, '旧记录\n\n原文')
+  assert.equal(result.data.entries[0].activities, '旧记录\n\n原文')
+  assert.equal(h.records[0].content.notes, undefined)
 })

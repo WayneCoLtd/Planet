@@ -1,5 +1,5 @@
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
-import { shiftDate, weekStart } from './journalModel'
+import { entryNotes, shiftDate, weekStart } from './journalModel'
 
 // Keep the newest draft readable during a quick in-app page turn while IndexedDB
 // is still committing. Persistent-write failures are still reported to the UI.
@@ -109,6 +109,7 @@ export async function loadWeek(date) {
   }
 }
 export async function saveEntry(entry) {
+  const notes = entryNotes(entry)
   if (cloudEnabled) {
     let screenshotPath = entry.screenshotPath
     if (entry.pendingImage)
@@ -121,9 +122,41 @@ export async function saveEntry(entry) {
           image: entry.pendingImage.data,
         })
       ).screenshotPath
+    const uploaded = []
+    for (const note of notes) {
+      const images = []
+      for (const image of note.images) {
+        let path = image.path,
+          thumbPath = image.thumbPath
+        if (image.pendingImage) {
+          path = (
+            await journalRequest({
+              action: 'image',
+              owner: entry.owner,
+              date: entry.date,
+              id: image.id,
+              image: image.pendingImage.data,
+            })
+          ).screenshotPath
+          thumbPath = (
+            await journalRequest({
+              action: 'image',
+              owner: entry.owner,
+              date: entry.date,
+              id: image.id,
+              variant: 'thumb',
+              image: image.pendingImage.thumbnail,
+            })
+          ).screenshotPath
+        }
+        images.push({ id: image.id, path, thumbPath })
+      }
+      uploaded.push({ id: note.id, text: note.text, images })
+    }
     return (
       await journalRequest({
         ...entry,
+        notes: uploaded,
         pendingImage: undefined,
         screenshotPath,
         action: 'save',
@@ -133,6 +166,16 @@ export async function saveEntry(entry) {
   const key = entryKey(entry.owner, entry.date)
   return saveLocalVersion('entries', key, {
     ...entry,
+    notes: notes.map((note) => ({
+      ...note,
+      images: note.images.map((image) => ({
+        id: image.id,
+        path: image.path || '',
+        thumbPath: image.thumbPath || '',
+        url: image.pendingImage?.data || image.url,
+        thumbUrl: image.pendingImage?.thumbnail || image.thumbUrl,
+      })),
+    })),
     screenshotUrl: entry.pendingImage?.data || entry.screenshotUrl,
     pendingImage: undefined,
     updatedAt: new Date().toISOString(),

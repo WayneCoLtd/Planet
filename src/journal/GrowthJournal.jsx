@@ -8,6 +8,8 @@ import {
   OWNER_NAMES,
   OWNERS,
   emptyEntry,
+  entryNotes,
+  mergeEntryMedia,
   normalizeEntry,
   normalizeGoal,
   shiftDate,
@@ -25,6 +27,7 @@ import {
   saveGoal,
 } from './journalStore'
 import './growthJournal.css'
+import JournalNotes from './JournalNotes'
 
 function ScreenshotViewer({ entry, close }) {
   const ref = useRef(null)
@@ -69,11 +72,14 @@ function JournalPage({
   onGoalSaved,
   connected,
   active,
+  onRefresh,
 }) {
   const key = entryKey(owner, date)
   const remote =
     entries.find((item) => item.owner === owner && item.date === date) ||
     emptyEntry(owner, date)
+  const remoteRef = useRef(remote)
+  remoteRef.current = remote
   const [entry, setEntry] = useState(remote)
   const currentRef = useRef(remote)
   const [ready, setReady] = useState(false)
@@ -84,6 +90,7 @@ function JournalPage({
   const [note, setNote] = useState('')
   const [conflict, setConflict] = useState(null)
   const [viewImage, setViewImage] = useState(false)
+  const [sleepEditing, setSleepEditing] = useState(false)
   const [imageFailed, setImageFailed] = useState(false)
   const [draftFailure, setDraftFailure] = useState(false)
   const draftWrites = useRef(Promise.resolve())
@@ -95,13 +102,13 @@ function JournalPage({
     ? { nights: goalRow.nights, before: goalRow.before_time }
     : DEFAULT_GOAL
   const summary = weekSummary(entries, owner, start, goal)
-  const nextWeek = shiftDate(weekStart(todayInShanghai()), 7)
-  const nextGoal = goals.find(
-    (item) => item.owner === owner && item.week_start === nextWeek,
+  const currentWeek = weekStart(todayInShanghai())
+  const currentGoal = goals.find(
+    (item) => item.owner === owner && item.week_start === currentWeek,
   )
   const [goalForm, setGoalForm] = useState({
-    nights: nextGoal?.nights || goal.nights,
-    before: nextGoal?.before_time || goal.before,
+    nights: currentGoal?.nights || goal.nights,
+    before: currentGoal?.before_time || goal.before,
   })
   const goalDetails = useRef(null)
 
@@ -111,9 +118,9 @@ function JournalPage({
       .then((draft) => {
         if (!alive) return
         if (draft) {
-          currentRef.current = draft.entry
+          currentRef.current = mergeEntryMedia(draft.entry, remoteRef.current)
           dirtyRef.current = true
-          setEntry(draft.entry)
+          setEntry(currentRef.current)
           setDirty(true)
           setNote('已恢复本机草稿')
         }
@@ -131,12 +138,22 @@ function JournalPage({
     }
   }, [key])
   useEffect(() => {
-    if (!dirtyRef.current && !lock.current) {
-      currentRef.current = remote
-      setEntry(remote)
+    if (!lock.current) {
+      currentRef.current = dirtyRef.current
+        ? mergeEntryMedia(currentRef.current, remote)
+        : remote
+      setEntry(currentRef.current)
       setImageFailed(false)
     }
-  }, [remote.version, remote.screenshotUrl])
+  }, [
+    remote.version,
+    remote.screenshotUrl,
+    JSON.stringify(
+      entryNotes(remote).flatMap((note) =>
+        note.images.map((image) => [image.url, image.thumbUrl]),
+      ),
+    ),
+  ])
   useEffect(() => {
     const warn = (event) => {
       if (lock.current || (dirtyRef.current && draftFailure)) {
@@ -191,6 +208,45 @@ function JournalPage({
       setBusy(false)
     }
   }
+  async function chooseNoteImages(id, files) {
+    if (!files.length || lock.current) return
+    lock.current = true
+    setBusy(true)
+    let done = 0
+    try {
+      for (const file of files) {
+        setNote(`正在整理附图 ${done + 1}/${files.length}…`)
+        const prepared = await prepareLifePhoto(file, {})
+        const notes = entryNotes(currentRef.current).map((note) =>
+          note.id === id
+            ? {
+                ...note,
+                images: [
+                  ...note.images,
+                  {
+                    id: prepared.id,
+                    path: '',
+                    thumbPath: '',
+                    pendingImage: {
+                      data: prepared.image,
+                      thumbnail: prepared.thumbnail,
+                    },
+                  },
+                ],
+              }
+            : note,
+        )
+        change({ notes })
+        done++
+      }
+      setNote(`${done} 张附图已加入草稿`)
+    } catch (error) {
+      setNote(`已保留 ${done} 张，${error.message}`)
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
   async function save(checkIn = false) {
     if (lock.current || !ready) return
     lock.current = true
@@ -201,6 +257,7 @@ function JournalPage({
       const normalized = normalizeEntry(currentRef.current)
       const result = await saveEntry({
         ...normalized,
+        notes: entryNotes(currentRef.current),
         screenshotUrl: currentRef.current.screenshotUrl,
         pendingImage: currentRef.current.pendingImage,
         checkedIn: checkIn || normalized.checkedIn,
@@ -234,11 +291,11 @@ function JournalPage({
       const result = await saveGoal({
         ...checked,
         owner,
-        week_start: nextWeek,
-        version: nextGoal?.version || 0,
+        week_start: currentWeek,
+        version: currentGoal?.version || 0,
       })
       onGoalSaved(result)
-      setNote('目标从下周一生效')
+      setNote('本周目标已更新')
       goalDetails.current.open = false
     } catch (error) {
       setNote(error.message)
@@ -265,32 +322,9 @@ function JournalPage({
           {entry.checkedIn ? '已签到' : '未签到'}
         </span>
       </header>
-      <div className="journal-week">
-        <div>
-          <span>
-            本周 · {goal.before === '00:00' ? '午夜前' : `${goal.before} 前`}
-            入睡
-          </span>
-          <strong>
-            {summary.reached}
-            <small> / {goal.nights} 晚</small>
-          </strong>
-        </div>
-        <div className="journal-week-bottom">
-          <div
-            className="journal-week-dots"
-            aria-label={`本周已达标 ${summary.reached} 晚，目标 ${goal.nights} 晚`}
-          >
-            {summary.days.map((day, index) => (
-              <span
-                key={day.date}
-                className={day.reached === true ? 'is-reached' : ''}
-                title={`${day.date}：${day.reached === null ? '未记录睡眠' : day.reached ? '已达标' : '未达标'}`}
-              >
-                {'一二三四五六日'[index]}
-              </span>
-            ))}
-          </div>
+      <section className="journal-sleep compact-sleep">
+        <div className="journal-sleep-heading">
+          <h4>昨夜睡眠</h4>{' '}
           {start === weekStart(todayInShanghai()) && (
             <details
               ref={goalDetails}
@@ -298,14 +332,16 @@ function JournalPage({
               onToggle={(event) => {
                 if (event.currentTarget.open)
                   setGoalForm({
-                    nights: nextGoal?.nights || goal.nights,
-                    before: nextGoal?.before_time || goal.before,
+                    nights: currentGoal?.nights || goal.nights,
+                    before: currentGoal?.before_time || goal.before,
                   })
               }}
             >
-              <summary>目标</summary>
+              <summary>
+                本周 {summary.reached}/{goal.nights} 晚 · 目标
+              </summary>
               <div>
-                <strong>下周目标</strong>
+                <strong>本周睡眠目标</strong>
                 <label>
                   每周
                   <select
@@ -338,7 +374,23 @@ function JournalPage({
                     }
                   />
                 </label>
-                <small>{nextWeek} 起生效</small>
+                <small>
+                  {currentWeek} — {shiftDate(currentWeek, 6)}
+                </small>
+                <div
+                  className="journal-week-dots"
+                  aria-label={`本周已达标 ${summary.reached} 晚`}
+                >
+                  {summary.days.map((day, index) => (
+                    <span
+                      key={day.date}
+                      className={day.reached === true ? 'is-reached' : ''}
+                      title={`${day.date}：${day.reached === null ? '未记录' : day.reached ? '已达标' : '未达标'}`}
+                    >
+                      {'一二三四五六日'[index]}
+                    </span>
+                  ))}
+                </div>
                 <button disabled={busy || !connected} onClick={updateGoal}>
                   保存目标
                 </button>
@@ -346,25 +398,67 @@ function JournalPage({
             </details>
           )}
         </div>
-      </div>
-      <section className="journal-sleep">
-        <h4>昨夜睡眠</h4>
-        <div className="journal-sleep-fields">
-          <div>
-            <label htmlFor={`sleep-${owner}`}>入睡时间</label>
-            <input
-              id={`sleep-${owner}`}
-              type="time"
-              value={entry.sleepTime}
+        <div className="journal-sleep-line">
+          <div className="journal-sleep-value">
+            {entry.sleepTime ? (
+              <>
+                <strong>{entry.sleepTime}</strong>
+                <small>{entry.sleepPreviousDay ? '前夜' : '当天'}入睡</small>
+              </>
+            ) : (
+              <span>未记录</span>
+            )}
+            <button
               disabled={disabled}
-              onChange={(event) =>
-                change({
-                  sleepTime: event.target.value,
-                  sleepPreviousDay:
-                    Number(event.target.value.slice(0, 2)) >= 12,
-                })
-              }
-            />
+              onClick={() => setSleepEditing((value) => !value)}
+            >
+              {sleepEditing ? '收起' : entry.sleepTime ? '修改' : '填写'}
+            </button>
+          </div>
+          <div className="journal-screenshot">
+            {screenshot && !imageFailed && (
+              <button
+                className="journal-screenshot-preview"
+                onClick={() => setViewImage(true)}
+                aria-label={`查看${OWNER_NAMES[owner]}睡眠截图`}
+              >
+                <img
+                  src={screenshot}
+                  alt="睡眠截图缩略图"
+                  onError={() => setImageFailed(true)}
+                />
+              </button>
+            )}
+            <label className="journal-upload">
+              {screenshot ? '换截图' : '＋ 截图'}
+              <input
+                type="file"
+                accept="image/*"
+                disabled={disabled}
+                aria-label={`${OWNER_NAMES[owner]}上传睡眠截图`}
+                onChange={chooseImage}
+              />
+            </label>
+          </div>
+        </div>
+        {sleepEditing && (
+          <div className="journal-sleep-edit">
+            <label>
+              入睡时间
+              <input
+                id={`sleep-${owner}`}
+                type="time"
+                value={entry.sleepTime}
+                disabled={disabled}
+                onChange={(event) =>
+                  change({
+                    sleepTime: event.target.value,
+                    sleepPreviousDay:
+                      Number(event.target.value.slice(0, 2)) >= 12,
+                  })
+                }
+              />
+            </label>
             <select
               aria-label={`${OWNER_NAMES[owner]}入睡所属日期`}
               value={entry.sleepPreviousDay ? 'previous' : 'same'}
@@ -378,38 +472,8 @@ function JournalPage({
               </option>
               <option value="same">{date.slice(5)} 当天</option>
             </select>
-          </div>
-          <div className="journal-screenshot">
-            {screenshot && !imageFailed ? (
-              <button
-                className="journal-screenshot-preview"
-                onClick={() => setViewImage(true)}
-                aria-label={`查看${OWNER_NAMES[owner]}睡眠截图`}
-              >
-                <img
-                  src={screenshot}
-                  alt="睡眠截图缩略图"
-                  onError={() => setImageFailed(true)}
-                />
-              </button>
-            ) : (
-              <span className="journal-screenshot-empty">
-                {imageFailed ? '截图未加载' : '睡眠截图'}
-              </span>
-            )}
-            <label className="journal-upload">
-              {screenshot ? '换一张' : '＋ 上传'}
-              <input
-                type="file"
-                accept="image/*"
-                aria-label={`${OWNER_NAMES[owner]}上传睡眠截图`}
-                disabled={disabled}
-                onChange={chooseImage}
-              />
-            </label>
             {screenshot && (
               <button
-                className="journal-text-button"
                 disabled={disabled}
                 onClick={() =>
                   change({
@@ -419,15 +483,18 @@ function JournalPage({
                   })
                 }
               >
-                移除
+                移除截图
               </button>
             )}
+            <button disabled={disabled} onClick={() => setSleepEditing(false)}>
+              完成
+            </button>
           </div>
-        </div>
+        )}
       </section>
       <section className="journal-study">
         <div className="journal-study-heading">
-          <h4>今天做了什么</h4>
+          <h4>今日手记</h4>
           <label>
             自习时长{' '}
             <span>
@@ -440,7 +507,9 @@ function JournalPage({
                 aria-label={`${OWNER_NAMES[owner]}自习时长（小时）`}
                 placeholder="—"
                 value={
-                  entry.studyMinutes === null ? '' : Number((entry.studyMinutes / 60).toFixed(2))
+                  entry.studyMinutes === null
+                    ? ''
+                    : Number((entry.studyMinutes / 60).toFixed(2))
                 }
                 disabled={disabled}
                 onChange={(event) =>
@@ -456,14 +525,13 @@ function JournalPage({
             </span>
           </label>
         </div>
-        <textarea
-          aria-label={`${OWNER_NAMES[owner]}今天做了什么`}
-          rows={6}
-          maxLength={10000}
-          value={entry.activities}
+        <JournalNotes
+          owner={owner}
+          notes={entryNotes(entry)}
           disabled={disabled}
-          placeholder={'做过的事，学到的东西。\n记几条就好。'}
-          onChange={(event) => change({ activities: event.target.value })}
+          onChange={(notes) => change({ notes })}
+          onImages={chooseNoteImages}
+          onRefresh={onRefresh}
         />
       </section>
       {conflict && (
@@ -475,7 +543,14 @@ function JournalPage({
               ? '未填'
               : `${conflict.studyMinutes} 分钟`}
           </p>
-          <p>{conflict.activities || '未填写文字'}</p>
+          <p>
+            {entryNotes(conflict)
+              .map(
+                (note) =>
+                  `${note.text}${note.images.length ? `（${note.images.length} 张附图）` : ''}`,
+              )
+              .join('\n') || '未填写手记'}
+          </p>
           <p>本机草稿仍在上方。对照后选择：</p>
           <button
             disabled={busy}
@@ -707,6 +782,7 @@ export default function GrowthJournal() {
               onGoalSaved={mergeGoal}
               connected={connected}
               active={owner === id}
+              onRefresh={() => setRetry((value) => value + 1)}
             />
           ))}
         </div>

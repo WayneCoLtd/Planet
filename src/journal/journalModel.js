@@ -48,6 +48,81 @@ export function emptyEntry(owner, date) {
     version: 0,
   }
 }
+// Legacy text becomes one note without changing whitespace, checkin or sleep data.
+export function entryNotes(entry) {
+  if (Array.isArray(entry.notes)) return entry.notes
+  return entry.activities
+    ? [{ id: 'legacy-activities', text: entry.activities, images: [] }]
+    : []
+}
+// Refresh expiring signed URLs without replacing a user's unsaved text or order.
+export function mergeEntryMedia(local, remote) {
+  const images = new Map(
+    entryNotes(remote)
+      .flatMap((note) => note.images)
+      .filter((image) => image.path)
+      .map((image) => [image.path, image]),
+  )
+  return {
+    ...local,
+    screenshotUrl:
+      !local.pendingImage &&
+      local.screenshotPath &&
+      local.screenshotPath === remote.screenshotPath
+        ? remote.screenshotUrl
+        : local.screenshotUrl,
+    notes: entryNotes(local).map((note) => ({
+      ...note,
+      images: note.images.map((image) => {
+        const fresh = images.get(image.path)
+        return !image.pendingImage && fresh
+          ? { ...image, url: fresh.url, thumbUrl: fresh.thumbUrl }
+          : image
+      }),
+    })),
+  }
+}
+export function normalizeNotes(notes) {
+  if (!Array.isArray(notes) || notes.length > 100)
+    throw new Error('手记格式不正确或条目过多')
+  const ids = new Set()
+  let images = 0
+  return notes.map((note) => {
+    if (
+      !note ||
+      typeof note.id !== 'string' ||
+      !/^[\w-]{1,80}$/.test(note.id) ||
+      ids.has(note.id)
+    )
+      throw new Error('手记编号格式不正确')
+    ids.add(note.id)
+    if (
+      typeof note.text !== 'string' ||
+      note.text.length > 10000 ||
+      !Array.isArray(note.images)
+    )
+      throw new Error('手记格式不正确，每条文字请控制在一万字以内')
+    images += note.images.length
+    if (images > 100) throw new Error('单页附图过多，请分到其他日期记录')
+    return {
+      id: note.id,
+      text: note.text,
+      images: note.images.map((image) => {
+        if (
+          !image ||
+          typeof image.id !== 'string' ||
+          !/^[\w-]{1,80}$/.test(image.id)
+        )
+          throw new Error('附图编号格式不正确')
+        return {
+          id: image.id,
+          path: String(image.path || ''),
+          thumbPath: String(image.thumbPath || ''),
+        }
+      }),
+    }
+  })
+}
 export function normalizeEntry(value) {
   if (!OWNERS.includes(value.owner) || !validDate(value.date))
     throw new Error('记录日期或署名不正确')
@@ -71,6 +146,7 @@ export function normalizeEntry(value) {
     sleepTime: value.sleepTime || '',
     sleepPreviousDay: value.sleepPreviousDay !== false,
     activities: value.activities,
+    notes: normalizeNotes(entryNotes(value)),
     studyMinutes: minutes,
     screenshotPath: String(value.screenshotPath || ''),
     checkedIn: Boolean(value.checkedIn),
