@@ -62,6 +62,27 @@ export function hasNoteContent(note) {
 export function visibleNotes(notes, editingId = null) {
   return notes.filter((note) => note.id === editingId || hasNoteContent(note))
 }
+export function journalText(notes) {
+  return notes
+    .map((note) => note.text)
+    .filter((text) => text.length > 0)
+    .join('\n\n')
+}
+export function singleJournalNote(
+  notes,
+  text,
+  images = notes.flatMap((note) => note.images),
+) {
+  return [{ id: notes[0]?.id || 'journal-body', text, images }]
+}
+export function bulletAtLine(text, position) {
+  const start = position === 0 ? 0 : text.lastIndexOf('\n', position - 1) + 1
+  if (text.slice(start).startsWith('· ')) return { text, caret: position }
+  return {
+    text: `${text.slice(0, start)}· ${text.slice(start)}`,
+    caret: position + 2,
+  }
+}
 // Refresh expiring signed URLs without replacing a user's unsaved text or order.
 export function mergeEntryMedia(local, remote) {
   const images = new Map(

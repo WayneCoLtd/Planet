@@ -91,7 +91,6 @@ function JournalPage({
   const [conflict, setConflict] = useState(null)
   const [viewImage, setViewImage] = useState(false)
   const [sleepEditing, setSleepEditing] = useState(false)
-  const [composeRequest, setComposeRequest] = useState(0)
   const growthInput = useRef(null)
   const [imageFailed, setImageFailed] = useState(false)
   const [draftFailure, setDraftFailure] = useState(false)
@@ -515,16 +514,6 @@ function JournalPage({
         <div className="journal-study-heading">
           <div className="journal-study-title">
             <h4>今日手记</h4>
-            <button
-              type="button"
-              className="journal-continue"
-              aria-label={`${OWNER_NAMES[owner]}续写手记`}
-              title="另起一段"
-              disabled={disabled}
-              onClick={() => setComposeRequest((value) => value + 1)}
-            >
-              ＋ 续写
-            </button>
           </div>
           <label>
             自习{' '}
@@ -563,7 +552,7 @@ function JournalPage({
           onChange={(notes) => change({ notes })}
           onImages={chooseNoteImages}
           onRefresh={onRefresh}
-          composeRequest={composeRequest}
+          active={active}
         />
       </section>
       <section className="journal-growth">

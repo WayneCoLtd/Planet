@@ -445,3 +445,40 @@ test('growth note can be saved and cleared explicitly, but not erased by old cli
   assert.equal(cleared.code, 200)
   assert.equal(cleared.data.entry.growthNote, '')
 })
+
+test('single editor combines legacy text in order without mutating or losing photos', () => {
+  const notes = [
+    {
+      id: 'a',
+      text: '第一段\n原来的换行',
+      images: [{ id: 'p1', path: 'first' }],
+    },
+    { id: 'blank', text: '', images: [] },
+    { id: 'b', text: '第二段', images: [{ id: 'p2', path: 'second' }] },
+  ]
+  const original = JSON.stringify(notes)
+  assert.equal(model.journalText(notes), '第一段\n原来的换行\n\n第二段')
+  const edited = model.singleJournalNote(notes, '· 修改后的文字')
+  assert.equal(edited.length, 1)
+  assert.deepEqual(
+    edited[0].images.map((image) => image.id),
+    ['p1', 'p2'],
+  )
+  assert.equal(model.singleJournalNote(notes, '')[0].images.length, 2)
+  assert.equal(JSON.stringify(notes), original)
+})
+
+test('bullet formatting modifies the current line and does not create new records', () => {
+  assert.deepEqual(model.bulletAtLine('第一点\n第二点', 6), {
+    text: '第一点\n· 第二点',
+    caret: 8,
+  })
+  assert.deepEqual(model.bulletAtLine('· 第一点', 4), {
+    text: '· 第一点',
+    caret: 4,
+  })
+  assert.deepEqual(model.bulletAtLine('\n第二行', 0), {
+    text: '· \n第二行',
+    caret: 2,
+  })
+})
