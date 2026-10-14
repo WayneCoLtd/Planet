@@ -14,6 +14,7 @@ import { ENERGY_TARGET, createEnergyDraw, normalizeEnergyLedger, readEnergyProgr
 import AlbumTheater from './album/AlbumTheater'
 import LiteraryQuote from './LiteraryQuote'
 import { literaryQuotes } from './data/literaryQuotes'
+import { countJourneySignedDays, JOURNEY_TOTAL_DAYS } from './checkinProgress'
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -1140,7 +1141,7 @@ function Nav({ current, setCurrent }) {
 
 function Hero({ setCurrent }) {
   const computeSignedCount = () => {
-    try { return filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', [])).length } catch { return 0 }
+    try { return countJourneySignedDays(getRoleJson('wwcxrl-signed-days', [])) } catch { return 0 }
   }
   const [signedCount, setSignedCount] = useState(computeSignedCount)
   const refreshCloudInFlightRef = React.useRef(false)
@@ -1157,7 +1158,7 @@ function Hero({ setCurrent }) {
         loadCloudCheckins().then(remote => {
           if (!alive || !remote) return
           const merged = mergeCheckinDayLists(getRoleJson('wwcxrl-signed-days', []), remote.signed || [])
-          setSignedCount(merged.length)
+          setSignedCount(countJourneySignedDays(merged))
         }).catch(() => {}).finally(() => { refreshCloudInFlightRef.current = false })
       }
     }
@@ -1179,7 +1180,7 @@ function Hero({ setCurrent }) {
     }
   }, [])
 
-  const progressPercent = Math.max(0, Math.min(100, (signedCount / 65) * 100))
+  const progressPercent = (signedCount / JOURNEY_TOTAL_DAYS) * 100
   const { dayCount, daysToYearOne, yearOneReached } = getAnniversaryCounts()
   const orbitAngle = Math.max(0, Math.min(360, (dayCount / 365) * 360 - 90))
 
@@ -1311,10 +1312,9 @@ function CheckIn() {
   }))
   const visibleDailyItems = [...items, ...futureDaySlots]
   const futureDayTotal = futureDaySlots.length
-  // 进度条与“X/65”的口径一致：只统计 300→365 星图范围内的已签天数，避免“已布置的
-  // 任务全签完但总数不足 65”时进度条提前拉满。
-  const signedGoalCount = signed.filter(day => Number(day) >= STAR_MAP_FIRST_DAY && Number(day) <= STAR_MAP_LAST_DAY).length
-  const percent = Math.max(0, Math.min(100, Math.round((signedGoalCount / 65) * 100)))
+  // 与首页共用口径：保留 Day 300 起点，进度统计其后的 65 天。
+  const signedGoalCount = countJourneySignedDays(signed)
+  const percent = Math.round((signedGoalCount / JOURNEY_TOTAL_DAYS) * 100)
   const refreshCheckinsInFlightRef = React.useRef(false)
   const refreshTasksInFlightRef = React.useRef(false)
   const initialPickDoneRef = React.useRef(false)
