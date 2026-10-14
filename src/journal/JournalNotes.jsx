@@ -103,6 +103,7 @@ export default function JournalNotes({
   onImages,
   onRefresh,
   disabled,
+  composeRequest = 0,
 }) {
   const [editing, setEditing] = useState(null)
   const [removed, setRemoved] = useState([])
@@ -111,12 +112,19 @@ export default function JournalNotes({
   const editor = useRef(null)
   const shown = visibleNotes(notes, editing)
   useEffect(() => {
+    if (composeRequest) add()
+  }, [composeRequest])
+  useEffect(() => {
     if (fresh.current) {
       editor.current?.focus()
       fresh.current = false
     }
   }, [editing])
   function edit(id) {
+    if (editing === id) {
+      editor.current?.focus()
+      return
+    }
     fresh.current = true
     setEditing(id)
   }
@@ -319,15 +327,6 @@ export default function JournalNotes({
           )}
         </article>
       ))}
-      {!editing && (
-        <button
-          className={`journal-note-add ${!shown.length ? 'is-empty' : ''}`}
-          disabled={disabled}
-          onClick={add}
-        >
-          ＋ 记一件事
-        </button>
-      )}
       {!!removed.length && (
         <button
           className="journal-note-undo"

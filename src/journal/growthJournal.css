@@ -1225,3 +1225,92 @@
     grid-template-columns: minmax(0, 1fr) 82px;
   }
 }
+
+/* Continuous notes: paragraph spacing replaces the add-card and separators. */
+.journal-study-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.journal-study-heading .journal-continue {
+  border: 0;
+  padding: 3px 2px;
+  min-height: 28px;
+  font-size: 11px;
+  color: #9a8263;
+}
+.journal-notes .journal-note {
+  border: 0;
+  padding: 7px 0;
+}
+.journal-notes .journal-note + .journal-note {
+  margin-top: 10px;
+}
+.journal-note.has-text-and-images:not(.is-editing) {
+  column-gap: 6px;
+  grid-template-columns: minmax(0, 1fr) minmax(88px, 40%);
+}
+.journal-note.has-text-and-images:not(.is-editing) .journal-note-copy {
+  display: block;
+  line-height: 1.9;
+}
+.journal-note-copy p {
+  padding-right: 0;
+}
+.journal-note.has-text-and-images:not(.is-editing) .journal-note-copy p {
+  display: inline;
+}
+.journal-note.has-text-and-images:not(.is-editing) .journal-note-edit {
+  display: inline-flex;
+  position: relative;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  min-height: 28px;
+  margin: 0 0 0 3px;
+  padding: 3px;
+  vertical-align: middle;
+}
+.journal-note.has-text-and-images:not(.is-editing) .journal-note-image img {
+  margin: 0;
+}
+.journal-page .journal-growth {
+  margin-top: 14px;
+  border-top: 0;
+  padding-top: 0;
+}
+.journal-growth label {
+  font-size: 13px;
+  margin-bottom: 4px;
+}
+.journal-growth textarea {
+  display: block;
+  min-height: 28px;
+  max-height: 56px;
+  height: 28px;
+  padding: 2px 0;
+  line-height: 24px;
+  resize: none;
+  overflow-y: auto;
+  background: none;
+  border-bottom: 1px solid #ded1bc66;
+}
+.journal-page .journal-page-footer {
+  margin-top: 14px;
+  padding-top: 12px;
+}
+@media (max-width: 760px) {
+  .journal-study-title {
+    gap: 5px;
+  }
+  .journal-study-heading {
+    gap: 6px;
+  }
+  .journal-note.has-text-and-images:not(.is-editing) {
+    column-gap: 6px;
+    grid-template-columns: minmax(0, 1fr) minmax(88px, 40%);
+  }
+  .journal-growth textarea {
+    font-size: 16px;
+  }
+}

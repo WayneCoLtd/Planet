@@ -91,6 +91,8 @@ function JournalPage({
   const [conflict, setConflict] = useState(null)
   const [viewImage, setViewImage] = useState(false)
   const [sleepEditing, setSleepEditing] = useState(false)
+  const [composeRequest, setComposeRequest] = useState(0)
+  const growthInput = useRef(null)
   const [imageFailed, setImageFailed] = useState(false)
   const [draftFailure, setDraftFailure] = useState(false)
   const draftWrites = useRef(Promise.resolve())
@@ -111,6 +113,18 @@ function JournalPage({
     before: currentGoal?.before_time || goal.before,
   })
   const goalDetails = useRef(null)
+
+  function fitGrowthInput() {
+    const input = growthInput.current
+    if (!input) return
+    input.style.height = 'auto'
+    input.style.height = `${Math.min(56, Math.max(28, input.scrollHeight + 1))}px`
+  }
+  React.useLayoutEffect(fitGrowthInput, [entry.growthNote, active])
+  useEffect(() => {
+    window.addEventListener('resize', fitGrowthInput)
+    return () => window.removeEventListener('resize', fitGrowthInput)
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -499,7 +513,19 @@ function JournalPage({
       </section>
       <section className="journal-study">
         <div className="journal-study-heading">
-          <h4>今日手记</h4>
+          <div className="journal-study-title">
+            <h4>今日手记</h4>
+            <button
+              type="button"
+              className="journal-continue"
+              aria-label={`${OWNER_NAMES[owner]}续写手记`}
+              title="另起一段"
+              disabled={disabled}
+              onClick={() => setComposeRequest((value) => value + 1)}
+            >
+              ＋ 续写
+            </button>
+          </div>
           <label>
             自习{' '}
             <span>
@@ -537,14 +563,16 @@ function JournalPage({
           onChange={(notes) => change({ notes })}
           onImages={chooseNoteImages}
           onRefresh={onRefresh}
+          composeRequest={composeRequest}
         />
       </section>
       <section className="journal-growth">
         <label htmlFor={`growth-${owner}`}>今天的一点进步</label>
         <textarea
+          ref={growthInput}
           id={`growth-${owner}`}
           aria-label={`${OWNER_NAMES[owner]}今天的一点进步`}
-          rows={2}
+          rows={1}
           maxLength={500}
           value={entry.growthNote || ''}
           disabled={disabled}
