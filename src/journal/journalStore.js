@@ -99,7 +99,7 @@ export async function journalRequest(body, date) {
 }
 export async function loadWeek(date) {
   const start = weekStart(date),
-    end = shiftDate(start, 6)
+    end = shiftDate(start, 7)
   if (cloudEnabled) return journalRequest(null, date)
   return {
     entries: (await journalStore('entries', 'getAll')).filter(

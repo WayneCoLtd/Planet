@@ -79,7 +79,8 @@ export default async function handler(req, res) {
           .from(ENTRIES)
           .select('*')
           .gte('date', start)
-          .lte('date', shiftDate(start, 6)),
+          // Next Monday can contain a backfilled Sunday bedtime.
+          .lte('date', shiftDate(start, 7)),
         ...OWNERS.map((owner) =>
           db
             .from(GOALS)

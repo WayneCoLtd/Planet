@@ -201,17 +201,25 @@ export function sleepReached(entry, goal = DEFAULT_GOAL) {
   if (!validTime(entry.sleepTime)) return null
   const minutes = (value) =>
     Number(value.slice(0, 2)) * 60 + Number(value.slice(3))
-  const sleep = minutes(entry.sleepTime) - (entry.sleepPreviousDay ? 1440 : 0)
+  // Compare within one night; the selected calendar date must not move
+  // an after-midnight bedtime ahead of the deadline by an entire day.
+  const sleep = minutes(entry.sleepTime) - (Number(entry.sleepTime.slice(0, 2)) >= 12 ? 1440 : 0)
   const deadline =
     minutes(goal.before) - (Number(goal.before.slice(0, 2)) >= 12 ? 1440 : 0)
   return sleep < deadline
 }
 export function weekSummary(entries, owner, start, goal = DEFAULT_GOAL) {
+  const sleepDates = new Map()
+  // A later journal page takes precedence if the same bedtime date was
+  // recorded twice. Empty entries never hide an existing sleep record.
+  for (const entry of [...entries].sort((a, b) => a.date.localeCompare(b.date))) {
+    if (entry.owner !== owner || !validTime(entry.sleepTime)) continue
+    const date = entry.sleepPreviousDay !== false ? shiftDate(entry.date, -1) : entry.date
+    sleepDates.set(date, entry)
+  }
   const days = Array.from({ length: 7 }, (_, index) => {
     const date = shiftDate(start, index)
-    const entry = entries.find(
-      (item) => item.owner === owner && item.date === date,
-    )
+    const entry = sleepDates.get(date)
     return { date, reached: entry ? sleepReached(entry, goal) : null }
   })
   return { days, reached: days.filter((day) => day.reached === true).length }
