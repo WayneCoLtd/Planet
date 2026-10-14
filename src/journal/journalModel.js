@@ -55,6 +55,12 @@ export function entryNotes(entry) {
     ? [{ id: 'legacy-activities', text: entry.activities, images: [] }]
     : []
 }
+export function hasNoteContent(note) {
+  return Boolean(note.text?.trim() || note.images?.length)
+}
+export function visibleNotes(notes, editingId = null) {
+  return notes.filter((note) => note.id === editingId || hasNoteContent(note))
+}
 // Refresh expiring signed URLs without replacing a user's unsaved text or order.
 export function mergeEntryMedia(local, remote) {
   const images = new Map(

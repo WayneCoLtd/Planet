@@ -977,6 +977,117 @@
 }
 
 @media (min-width: 761px) {
-  .journal-page { display: flex; flex-direction: column; }
-  .journal-page .journal-study { flex: 1; }
+  .journal-page {
+    display: flex;
+    flex-direction: column;
+  }
+  .journal-page .journal-study {
+    flex: 1;
+  }
+}
+
+/* Quiet reading layout: one writing entrance, no empty-note cards or forced gap. */
+.journal-page .journal-study,
+.journal-notes {
+  min-height: 0;
+}
+.journal-page .journal-study {
+  margin-top: 20px;
+}
+.journal-study-heading {
+  margin-bottom: 14px;
+}
+.journal-study-heading label {
+  white-space: nowrap;
+  gap: 5px;
+}
+.journal-note {
+  padding: 12px 0;
+}
+.journal-note-copy {
+  position: relative;
+  min-height: 32px;
+  gap: 4px;
+}
+.journal-note-copy p {
+  padding-right: 4px;
+}
+.journal-notes .journal-note-edit {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  min-height: 32px;
+  margin-top: -2px;
+  flex-shrink: 0;
+  opacity: 0.65;
+}
+.journal-note-copy:has(> button:only-child) {
+  min-height: 16px;
+  height: 16px;
+}
+.journal-note-copy:has(> button:only-child) .journal-note-edit {
+  position: absolute;
+  right: 0;
+  top: -5px;
+}
+.journal-notes .journal-note-add,
+.journal-notes .journal-note-add.is-empty {
+  min-height: 44px;
+  margin-top: 12px;
+  padding: 10px 0;
+  display: flex;
+  align-items: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 13px;
+  color: #8b7356;
+}
+.journal-notes .journal-note-add.is-empty {
+  min-height: 68px;
+  margin-top: 0;
+  border-bottom: 1px solid #ddcfb94d;
+}
+.journal-page-footer {
+  margin-top: 22px;
+  border-top: 1px solid #e0d4bd;
+  padding-top: 14px;
+}
+@media (hover: hover) and (pointer: fine) {
+  .journal-notes .journal-note-edit {
+    opacity: 0;
+  }
+  .journal-note:hover .journal-note-edit,
+  .journal-note:focus-within .journal-note-edit {
+    opacity: 0.8;
+  }
+}
+@media (min-width: 761px) {
+  .journal-page {
+    min-height: 520px;
+  }
+}
+@media (max-width: 760px) {
+  .journal-page .journal-study {
+    min-height: 0;
+  }
+  .journal-notes {
+    min-height: 0;
+  }
+  .journal-page .journal-page-footer {
+    margin-top: 18px;
+  }
+  .journal-folio {
+    margin-top: 12px;
+  }
+  .journal-notes .journal-note-edit {
+    width: 36px;
+    min-height: 36px;
+  }
+  .journal-note-tools {
+    gap: 6px;
+  }
+  .journal-study-heading label {
+    font-size: 11px;
+  }
 }

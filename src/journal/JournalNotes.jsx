@@ -1,7 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { resolveCloudAssetUrl } from '../cloud'
-import { OWNER_NAMES } from './journalModel'
+import { OWNER_NAMES, hasNoteContent, visibleNotes } from './journalModel'
 
 export const notePhotoUrl = (image, thumb = false) =>
   image.pendingImage
@@ -109,6 +109,7 @@ export default function JournalNotes({
   const [viewer, setViewer] = useState(null)
   const fresh = useRef(false)
   const editor = useRef(null)
+  const shown = visibleNotes(notes, editing)
   useEffect(() => {
     if (fresh.current) {
       editor.current?.focus()
@@ -125,16 +126,22 @@ export default function JournalNotes({
     )
   }
   function add() {
+    const empty = notes.find((note) => !hasNoteContent(note))
+    if (empty) {
+      if (notes.at(-1)?.id !== empty.id)
+        onChange([...notes.filter(note => note.id !== empty.id), empty])
+      edit(empty.id)
+      return
+    }
     const id = crypto.randomUUID()
     onChange([...notes, { id, text: '', images: [] }])
     edit(id)
   }
   function move(index, direction) {
     const next = [...notes]
-    ;[next[index], next[index + direction]] = [
-      next[index + direction],
-      next[index],
-    ]
+    const from = next.findIndex((note) => note.id === shown[index].id)
+    const to = next.findIndex((note) => note.id === shown[index + direction].id)
+    ;[next[from], next[to]] = [next[to], next[from]]
     onChange(next)
   }
   function undo() {
@@ -162,7 +169,7 @@ export default function JournalNotes({
   }
   return (
     <div className="journal-notes">
-      {notes.map((note, index) => (
+      {shown.map((note, index) => (
         <article
           className={`journal-note ${editing === note.id ? 'is-editing' : ''}`}
           key={note.id}
@@ -182,14 +189,25 @@ export default function JournalNotes({
             />
           ) : (
             <div className="journal-note-copy">
-              <p>{note.text || (note.images.length ? '' : '还没写内容')}</p>
+              {note.text.trim() && <p>{note.text}</p>}
               <button
                 className="journal-note-edit"
                 aria-label={`编辑${OWNER_NAMES[owner]}第 ${index + 1} 条手记`}
                 disabled={disabled}
                 onClick={() => edit(note.id)}
+                title="编辑这条手记"
               >
-                编辑
+                <svg
+                  viewBox="0 0 24 24"
+                  width="15"
+                  height="15"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  aria-hidden="true"
+                >
+                  <path d="m15 5 4 4M4 20l4-1L20 7a2.8 2.8 0 0 0-4-4L4 15z" />
+                </svg>
               </button>
             </div>
           )}
@@ -267,7 +285,7 @@ export default function JournalNotes({
                 </button>
                 <button
                   aria-label="手记下移"
-                  disabled={disabled || index === notes.length - 1}
+                  disabled={disabled || index === shown.length - 1}
                   onClick={() => move(index, 1)}
                 >
                   ↓
@@ -278,7 +296,11 @@ export default function JournalNotes({
                 onClick={() => {
                   setRemoved((stack) => [
                     ...stack,
-                    { type: 'note', note, index },
+                    {
+                      type: 'note',
+                      note,
+                      index: notes.findIndex((item) => item.id === note.id),
+                    },
                   ])
                   onChange(notes.filter((item) => item.id !== note.id))
                   setEditing(null)
@@ -297,13 +319,15 @@ export default function JournalNotes({
           )}
         </article>
       ))}
-      <button
-        className={`journal-note-add ${!notes.length ? 'is-empty' : ''}`}
-        disabled={disabled}
-        onClick={add}
-      >
-        {notes.length ? '＋ 记一件事' : '＋ 记一件今天的事……'}
-      </button>
+      {!editing && (
+        <button
+          className={`journal-note-add ${!shown.length ? 'is-empty' : ''}`}
+          disabled={disabled}
+          onClick={add}
+        >
+          ＋ 记一件事
+        </button>
+      )}
       {!!removed.length && (
         <button
           className="journal-note-undo"

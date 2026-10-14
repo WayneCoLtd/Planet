@@ -403,7 +403,12 @@ function JournalPage({
             {entry.sleepTime ? (
               <>
                 <strong>{entry.sleepTime}</strong>
-                <small>{entry.sleepPreviousDay ? '前夜' : '当天'}入睡</small>
+                <small>
+                  {(entry.sleepPreviousDay ? shiftDate(date, -1) : date)
+                    .slice(5)
+                    .replace('-', '/')}{' '}
+                  入睡
+                </small>
               </>
             ) : (
               <span>未记录</span>
@@ -468,9 +473,9 @@ function JournalPage({
               }
             >
               <option value="previous">
-                {shiftDate(date, -1).slice(5)} 夜间
+                {shiftDate(date, -1).slice(5)} 入睡
               </option>
-              <option value="same">{date.slice(5)} 当天</option>
+              <option value="same">{date.slice(5)} 入睡</option>
             </select>
             {screenshot && (
               <button
@@ -496,7 +501,7 @@ function JournalPage({
         <div className="journal-study-heading">
           <h4>今日手记</h4>
           <label>
-            自习时长{' '}
+            自习{' '}
             <span>
               <input
                 type="number"

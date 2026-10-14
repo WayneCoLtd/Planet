@@ -391,3 +391,22 @@ test('reading a legacy record with a sleep screenshot keeps the original activit
   assert.equal(result.data.entries[0].activities, '旧记录\n\n原文')
   assert.equal(h.records[0].content.notes, undefined)
 })
+
+test('blank saved notes do not produce empty reading rows and remain recoverable', () => {
+  const notes = [
+    { id: 'empty-a', text: '', images: [] },
+    { id: 'empty-b', text: '  \n', images: [] },
+    { id: 'text', text: '今天的记录', images: [] },
+    { id: 'photo', text: '', images: [{ id: 'image' }] },
+  ]
+  const original = JSON.stringify(notes)
+  assert.deepEqual(
+    model.visibleNotes(notes).map((note) => note.id),
+    ['text', 'photo'],
+  )
+  assert.deepEqual(
+    model.visibleNotes(notes, 'empty-a').map((note) => note.id),
+    ['empty-a', 'text', 'photo'],
+  )
+  assert.equal(JSON.stringify(notes), original)
+})
