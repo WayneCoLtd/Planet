@@ -410,3 +410,38 @@ test('blank saved notes do not produce empty reading rows and remain recoverable
   )
   assert.equal(JSON.stringify(notes), original)
 })
+
+test('growth note is optional, preserves line breaks, and is bounded', () => {
+  const old = { ...model.emptyEntry('pomelo', '2026-10-14') }
+  delete old.growthNote
+  assert.equal(model.normalizeEntry(old).growthNote, '')
+  assert.equal(
+    model.normalizeEntry({
+      ...old,
+      growthNote: '把问题写清楚了。\n少着急了一点。',
+    }).growthNote,
+    '把问题写清楚了。\n少着急了一点。',
+  )
+  assert.throws(() =>
+    model.normalizeEntry({ ...old, growthNote: '字'.repeat(501) }),
+  )
+})
+
+test('growth note can be saved and cleared explicitly, but not erased by old clients', async () => {
+  const h = harness()
+  const entry = {
+    ...model.emptyEntry('pomelo', '2026-10-14'),
+    notes: [],
+    action: 'save',
+    growthNote: '今天问出了一个不懂的问题。',
+  }
+  assert.equal((await h.run(entry)).code, 200)
+  const legacy = { ...entry, version: 1 }
+  delete legacy.growthNote
+  const conflict = await h.run(legacy)
+  assert.equal(conflict.code, 409)
+  assert.equal(conflict.data.current.growthNote, entry.growthNote)
+  const cleared = await h.run({ ...entry, version: 1, growthNote: '' })
+  assert.equal(cleared.code, 200)
+  assert.equal(cleared.data.entry.growthNote, '')
+})

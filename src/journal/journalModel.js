@@ -41,6 +41,7 @@ export function emptyEntry(owner, date) {
     sleepTime: '',
     sleepPreviousDay: true,
     activities: '',
+    growthNote: '',
     studyMinutes: null,
     screenshotPath: '',
     screenshotUrl: '',
@@ -134,6 +135,11 @@ export function normalizeEntry(value) {
     throw new Error('记录日期或署名不正确')
   if (value.sleepTime && !validTime(value.sleepTime))
     throw new Error('入睡时间格式不正确')
+  if (
+    value.growthNote != null &&
+    (typeof value.growthNote !== 'string' || value.growthNote.length > 500)
+  )
+    throw new Error('进步记录格式不正确，最多 500 字')
   const minutes =
     value.studyMinutes === '' || value.studyMinutes == null
       ? null
@@ -152,6 +158,7 @@ export function normalizeEntry(value) {
     sleepTime: value.sleepTime || '',
     sleepPreviousDay: value.sleepPreviousDay !== false,
     activities: value.activities,
+    growthNote: value.growthNote || '',
     notes: normalizeNotes(entryNotes(value)),
     studyMinutes: minutes,
     screenshotPath: String(value.screenshotPath || ''),

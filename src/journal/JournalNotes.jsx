@@ -129,7 +129,7 @@ export default function JournalNotes({
     const empty = notes.find((note) => !hasNoteContent(note))
     if (empty) {
       if (notes.at(-1)?.id !== empty.id)
-        onChange([...notes.filter(note => note.id !== empty.id), empty])
+        onChange([...notes.filter((note) => note.id !== empty.id), empty])
       edit(empty.id)
       return
     }
@@ -171,7 +171,7 @@ export default function JournalNotes({
     <div className="journal-notes">
       {shown.map((note, index) => (
         <article
-          className={`journal-note ${editing === note.id ? 'is-editing' : ''}`}
+          className={`journal-note ${editing === note.id ? 'is-editing' : ''} ${note.text.trim() && note.images.length ? 'has-text-and-images' : ''}`}
           key={note.id}
         >
           {editing === note.id ? (

@@ -539,6 +539,19 @@ function JournalPage({
           onRefresh={onRefresh}
         />
       </section>
+      <section className="journal-growth">
+        <label htmlFor={`growth-${owner}`}>今天的一点进步</label>
+        <textarea
+          id={`growth-${owner}`}
+          aria-label={`${OWNER_NAMES[owner]}今天的一点进步`}
+          rows={2}
+          maxLength={500}
+          value={entry.growthNote || ''}
+          disabled={disabled}
+          placeholder="生活、学习、想法，都可以。"
+          onChange={(event) => change({ growthNote: event.target.value })}
+        />
+      </section>
       {conflict && (
         <aside className="journal-conflict" role="alert">
           <strong>另一台设备有新记录</strong>
@@ -556,6 +569,7 @@ function JournalPage({
               )
               .join('\n') || '未填写手记'}
           </p>
+          {conflict.growthNote && <p>进步记录：{conflict.growthNote}</p>}
           <p>本机草稿仍在上方。对照后选择：</p>
           <button
             disabled={busy}

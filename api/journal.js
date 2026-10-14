@@ -190,7 +190,10 @@ export default async function handler(req, res) {
     )
       return res.status(400).json({ error: '图片不属于这张书页' })
     // An older cached client must not silently erase notes it cannot render.
-    if (!Array.isArray(body.notes) && body.version > 0) {
+    if (
+      (!Array.isArray(body.notes) || !Object.hasOwn(body, 'growthNote')) &&
+      body.version > 0
+    ) {
       const existing = await db
         .from(ENTRIES)
         .select('*')
@@ -198,13 +201,24 @@ export default async function handler(req, res) {
         .eq('date', body.date)
         .maybeSingle()
       if (existing.error) throw existing.error
-      if (Array.isArray(existing.data?.content?.notes))
+      if (
+        !Object.hasOwn(body, 'growthNote') &&
+        existing.data?.content?.growthNote
+      )
         return res
           .status(409)
           .json({
-            error: '书页已升级为今日手记，请刷新页面后再保存',
+            error: '书页已更新，请刷新后再保存，避免丢失进步记录',
             current: await withImage(shape(existing.data)),
           })
+      if (
+        !Array.isArray(body.notes) &&
+        Array.isArray(existing.data?.content?.notes)
+      )
+        return res.status(409).json({
+          error: '书页已升级为今日手记，请刷新页面后再保存',
+          current: await withImage(shape(existing.data)),
+        })
     }
     const { owner, date, version, screenshotUrl, ...content } = entry
     const payload = {
