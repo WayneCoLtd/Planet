@@ -975,3 +975,8 @@
   font-size: 10px;
   color: #a08b71;
 }
+
+@media (min-width: 761px) {
+  .journal-page { display: flex; flex-direction: column; }
+  .journal-page .journal-study { flex: 1; }
+}
