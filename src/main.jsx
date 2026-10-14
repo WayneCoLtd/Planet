@@ -1117,7 +1117,7 @@ function Nav({ current, setCurrent }) {
   const observatoryNavOpen = Number(bag.observatory_nav_unlocked || 0) > 0
   const items = [
     ['home', '首页', '🏠'],
-    ['checkin', '随手翻翻', '📮'],
+    ['checkin', '随便翻翻', '📮'],
     ['album', '相册', '📷'],
     ['music', '音乐室', '🎵'],
     ...(observatoryNavOpen ? [['telescope', '星空观测站', '🔭']] : []),
@@ -1219,7 +1219,7 @@ function Hero({ setCurrent }) {
           <small>那 65 天</small>
         </div>
         <div className="hero-actions">
-          <button onClick={() => setCurrent('checkin')}>📮 随手翻翻</button>
+          <button onClick={() => setCurrent('checkin')}>📮 随便翻翻</button>
         </div>
 
       </div>
@@ -1287,18 +1287,15 @@ function NextChapter() {
   const active = entries.find(item => item.day === selected)
   return <section className="content-section next-chapter">
     <div className="chapter-switch" role="group" aria-label="内容篇章">
-      <button aria-pressed={section === 'new'} onClick={() => setSection('new')}>随手翻翻</button>
+      <button aria-pressed={section === 'new'} onClick={() => setSection('new')}>随便翻翻</button>
       <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
     </div>
     {section === 'archive' ? <CheckIn archive /> : <>
-      <header className="section-heading playful-heading"><span>NOTES & FINDS</span><h2>随手翻翻</h2><LiteraryQuote quote={literaryQuotes.nextReading} /></header>
+      <header className="section-heading playful-heading"><span>NOTES & FINDS</span><h2>随便翻翻</h2><LiteraryQuote quote={literaryQuotes.nextReading} /></header>
       {!entries.length && <div className="chapter-empty"><span aria-hidden="true">✧</span><p>还没有新的分享</p><button onClick={() => setSection('archive')}>翻翻那 65 天</button></div>}
       {active ? <article className="chapter-reading sticker-card"><button onClick={() => setSelected(null)}>‹ 返回目录</button><small>{active.date}</small><h3>{active.title}</h3>
-        {active.type === 'nightReading' ? <NightReadingQuest key={active.day} item={active} freeRead />
-          : active.type === 'dailyLight' ? <DailyLightCard key={active.day} item={active} freeRead />
-          : active.type === 'dailyBest' ? <DailyBestCard key={active.day} item={active} freeRead />
-          : active.type === 'game' ? <DailyInteraction key={active.day} item={active} taskCompleted={false} onTaskComplete={() => {}} />
-          : <><p className="user-multiline">{active.prompt}</p>{active.image && <img src={active.image} alt={active.title} loading="lazy" />}<p className="user-multiline">{active.secret}</p></>}
+        {!['nightReading', 'dailyLight'].includes(active.type) && active.prompt && <p className="user-multiline">{active.prompt}</p>}
+        <DailyInteraction key={active.day} item={active} freeRead />
       </article> : <div className="chapter-entries">{entries.map(item => <button className="sticker-card chapter-entry" key={item.day} onClick={() => setSelected(item.day)}><small>{item.date}</small><h3>{item.icon} {item.title}</h3>{item.prompt && <p>{item.prompt}</p>}<span>打开 ↗</span></button>)}</div>}
     </>}
   </section>
@@ -7761,8 +7758,8 @@ function SakuraPuzzleGame({ item, taskCompleted, onTaskComplete }) {
 }
 
 // ---- 一封信：拆开信封再读 ----
-function LetterQuest({ item, taskCompleted, onTaskComplete }) {
-  const [stage, setStage] = useState(taskCompleted ? 'opened' : 'closed')
+function LetterQuest({ item, freeRead = false, taskCompleted, onTaskComplete }) {
+  const [stage, setStage] = useState(freeRead || taskCompleted ? 'opened' : 'closed')
   const opening = stage === 'opening'
   const opened = stage === 'opened'
   const done = taskCompleted || opened
@@ -7795,18 +7792,18 @@ function LetterQuest({ item, taskCompleted, onTaskComplete }) {
         <span className="letter-envelope-seal" aria-hidden="true">{item.icon || '✉️'}</span>
         <div className="letter-envelope-copy">
           <strong>一封写给你的信</strong>
-          <p>{opening ? '封蜡裂开，信纸正在浮起来……' : '点一下，拆开信封'}</p>
+          <p>{freeRead ? '信已展开' : opening ? '封蜡裂开，信纸正在浮起来……' : '点一下，拆开信封'}</p>
         </div>
       </div>
       <article className="letter-paper" aria-hidden={!done}>
         {item.image && <img className="letter-paper-image" src={item.image} alt="信纸配图" />}
-        <div className="letter-paper-greeting">{item.theme || '给我的小琳'}</div>
+        <div className="letter-paper-greeting">{item.theme || (freeRead ? '给你' : '给我的小琳')}</div>
         <p className="letter-paper-body">{item.secret}</p>
         <div className="letter-paper-meta">
           <span>{item.date}</span>
-          <span className="letter-paper-sign">— 爱你的小琛</span>
+          <span className="letter-paper-sign">{freeRead ? '— 小琛' : '— 爱你的小琛'}</span>
         </div>
-        {!taskCompleted && (
+        {!freeRead && !taskCompleted && (
           <button type="button" className="letter-done-button" onClick={() => onTaskComplete(item.day)}>我读完啦，可以签到</button>
         )}
       </article>
@@ -8040,7 +8037,7 @@ function writeFortunePick(day, prize) {
   }
 }
 
-function FortuneQuest({ item, taskCompleted, onTaskComplete }) {
+function FortuneQuest({ item, freeRead = false, taskCompleted, onTaskComplete }) {
   const isVoyageBottle = item.day === 5
   const pool = useMemo(() => {
     if (isVoyageBottle) return []
@@ -8093,7 +8090,7 @@ function FortuneQuest({ item, taskCompleted, onTaskComplete }) {
       setRolling(false)
       setPicked(true)
       onTaskComplete(item.day)
-      if (!isVoyageBottle) markCloudTaskCompleted(item.day, item.date)
+      if (!isVoyageBottle && !freeRead) markCloudTaskCompleted(item.day, item.date)
       logCloudEvent(isVoyageBottle ? 'day5_star_bottle_opened' : 'daily_fortune_picked', { day: item.day, title: item.title, prize }, item.day)
     }, isVoyageBottle ? 1100 : 1500)
   }
@@ -8159,7 +8156,7 @@ function writeLocalWish(day, text) {
   }
 }
 
-function StickerQuest({ item, taskCompleted, onTaskComplete }) {
+function StickerQuest({ item, freeRead = false, taskCompleted, onTaskComplete }) {
   const day = item.day
   const [cloudWish, setCloudWish] = useState(null)
   const [cloudLoaded, setCloudLoaded] = useState(false)
@@ -8246,18 +8243,18 @@ function StickerQuest({ item, taskCompleted, onTaskComplete }) {
             aria-label="写下心愿"
           />
           <button type="button" className="letter-done-button" onClick={saveWish} disabled={saving || !wishText.trim()}>
-            {saving ? '保存中…' : '写好啦，签个到'}
+            {saving ? '保存中…' : freeRead ? '保存心愿' : '写好啦，签个到'}
           </button>
           {saveNote && <p className="wish-save-note">{saveNote}</p>}
         </div>
       )}
       {saveNote && <p className="wish-save-note">{saveNote}</p>}
-      {!peeled && !hasWish && <p>今天的心愿位还空着，写下想说的话，写好后自动签到。</p>}
+      {!peeled && !hasWish && <p>{freeRead ? '想写的时候，留一句在这里。' : '今天的心愿位还空着，写下想说的话，写好后自动签到。'}</p>}
     </div>
   )
 }
 
-function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
+function DailyInteraction({ item, freeRead = false, signed = false, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [answer, setAnswer] = useState('')
   const [answerConfirmed, setAnswerConfirmed] = useState(false)
   const [answerError, setAnswerError] = useState('')
@@ -8315,15 +8312,15 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
   }
 
   if (item.type === 'dailyLight') {
-    return <DailyLightCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
+    return <DailyLightCard item={item} freeRead={freeRead} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
   }
 
   if (item.type === 'dailyBest') {
-    return <DailyBestCard item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
+    return <DailyBestCard item={item} freeRead={freeRead} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
   }
 
   if (item.type === 'nightReading') {
-    return <NightReadingQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
+    return <NightReadingQuest item={item} freeRead={freeRead} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} embedded={embedded} />
   }
 
   if (item.type === 'anniversary') {
@@ -8388,7 +8385,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
           </div>
           <div className="memory-copy minimal-memory-copy">
             <div className="riddle-minimal-hint">
-              <span>{item.date.replace(/-/g, '.')} · 猜谜语签到</span>
+              <span>{item.date.replace(/-/g, '.')} · {freeRead ? '猜个谜' : '猜谜语签到'}</span>
             </div>
             <label className="riddle-answer">
               <input
@@ -8420,9 +8417,10 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
               {answerConfirmed ? '答案已确认' : '你确定是这个答案吗?'}
             </button>
             {answerError && <p className="answer-error-note">{answerError}</p>}
+            {freeRead && <details className="chapter-answer"><summary>看看谜底</summary><p className="user-multiline">{item.answer}</p><p className="user-multiline">{item.secret}</p></details>}
           </div>
         </div>
-        {puzzleOk && answerConfirmed && (
+        {(freeRead || (puzzleOk && answerConfirmed)) && (
           <div
             className={`chat-replay ${chatStarted ? 'is-playing' : 'is-ready'}`}
             aria-label="散步记忆回放"
@@ -8448,7 +8446,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
                   <div className="chat-image-message me" style={{ '--chat-delay': '.45s' }}>
                     <img src={item.image} alt="回忆图" />
                   </div>
-                  {item.chatMessages.map((message, index) => {
+                  {(item.chatMessages || []).map((message, index) => {
                     const delay = `${1.55 + index * 1.85}s`
                     const typingDelay = `${0.72 + index * 1.85}s`
                     return (
@@ -8484,15 +8482,15 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
   }
 
   if (item.type === 'fortune') {
-    return <FortuneQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    return <FortuneQuest item={item} freeRead={freeRead} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
   }
 
   if (item.type === 'sticker') {
-    return <StickerQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    return <StickerQuest item={item} freeRead={freeRead} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
   }
 
   if (item.type === 'letter') {
-    return <LetterQuest item={item} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
+    return <LetterQuest item={item} freeRead={freeRead} taskCompleted={taskCompleted} onTaskComplete={onTaskComplete} />
   }
 
   if (item.type === 'album') {
@@ -8507,7 +8505,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
   return (
     <div className="daily-letter">
       <p className="user-multiline">{item.secret}</p>
-      {!taskCompleted && (
+      {!freeRead && !taskCompleted && (
         <button type="button" className="letter-done-button" onClick={() => onTaskComplete(item.day)}>我读完啦，可以签到</button>
       )}
     </div>

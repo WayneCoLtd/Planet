@@ -114,3 +114,19 @@ test('one broken image releases its queue slot without blocking the next', () =>
     assert.equal(created[1].url, 'next')
   } finally { queue.dispose(); globalThis.Image = original }
 })
+
+
+test('mobile history and life galleries fit two compact complete portraits within a tall phone viewport', () => {
+  const sizes = new Map(memories.map((item, index) => [item.photo.src, {width: 600, height: index % 2 ? 2400 : 1000}]))
+  const mobile = layoutMemories(memories, 390, sizes, 844)
+  assert.ok(mobile.rows[0].height + mobile.rows[1].height < 844)
+  for (const row of mobile.rows) {
+    const imageHeight = row.mediaHeights[0] - 20
+    const imageWidth = row.mediaWidths[0] - 20
+    const natural = sizes.get(row.items[0].photo.src)
+    assert.ok(imageHeight <= 220)
+    assert.ok(Math.abs(imageWidth / imageHeight - natural.width / natural.height) < 1e-8)
+  }
+  const desktop = layoutMemories(memories, 1280, sizes, 900)
+  assert.ok(desktop.rows[0].mediaHeights[0] > 240)
+})

@@ -152,6 +152,11 @@
   width: 100%;
 }
 @media (max-width: 640px) {
+  .life-photo { padding: 10px; }
+  .life-photo img { max-height: min(32vh, 220px); max-height: min(32svh, 220px); }
+  .life-photo figcaption { padding-top: 10px; }
+  .life-photo figcaption p { margin: 8px 0; }
+
   .life-grid {
     grid-template-columns: 1fr;
     gap: 22px;

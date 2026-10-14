@@ -17,7 +17,9 @@ export function layoutMemories(items, width, dimensions = new Map(), viewportHei
     const mediaSizes = rowItems.map(item => {
       const size = dimensions.get(item.photo.src)
       const ratio = size?.width > 0 && size?.height > 0 ? size.width / size.height : .8
-      const maxImageHeight = Math.max(140, viewportHeight - (mobile ? 104 : 112) - edges)
+      const maxImageHeight = mobile
+        ? Math.min(220, Math.max(100, viewportHeight * .32))
+        : Math.max(140, viewportHeight - 112 - edges)
       const imageWidth = Math.min(columnWidth - edges, maxImageHeight * ratio)
       return { width: imageWidth + edges, height: imageWidth / ratio + edges }
     })
