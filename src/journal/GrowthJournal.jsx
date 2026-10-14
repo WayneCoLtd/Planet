@@ -397,12 +397,34 @@ function JournalPage({
                   {summary.days.map((day, index) => (
                     <span
                       key={day.date}
-                      className={day.reached === true ? 'is-reached' : ''}
+                      className={
+                        day.reached === true
+                          ? 'is-reached'
+                          : day.reached === false
+                            ? 'is-missed'
+                            : ''
+                      }
+                      role="img"
+                      aria-label={`${day.date}：${day.reached === null ? '未记录' : day.reached ? '已达标' : '未达标'}`}
                       title={`${day.date}：${day.reached === null ? '未记录' : day.reached ? '已达标' : '未达标'}`}
                     >
                       {'一二三四五六日'[index]}
                     </span>
                   ))}
+                </div>
+                <div className="journal-sleep-legend" aria-hidden="true">
+                  <span>
+                    <i className="reached" />
+                    达标
+                  </span>
+                  <span>
+                    <i className="missed" />
+                    未达标
+                  </span>
+                  <span>
+                    <i />
+                    未记录
+                  </span>
                 </div>
                 <button disabled={busy || !connected} onClick={updateGoal}>
                   保存目标

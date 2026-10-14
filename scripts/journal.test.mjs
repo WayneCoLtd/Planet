@@ -482,3 +482,46 @@ test('bullet formatting modifies the current line and does not create new record
     caret: 2,
   })
 })
+
+test('sleep week distinguishes reached, missed and unrecorded across midnight', () => {
+  const rows = [
+    {
+      ...model.emptyEntry('pomelo', '2026-10-14'),
+      sleepTime: '23:40',
+      sleepPreviousDay: true,
+    },
+    {
+      ...model.emptyEntry('pomelo', '2026-10-15'),
+      sleepTime: '00:30',
+      sleepPreviousDay: false,
+    },
+    { ...model.emptyEntry('pomelo', '2026-10-16'), checkedIn: true },
+    {
+      ...model.emptyEntry('pomelo', '2026-10-17'),
+      sleepTime: '00:10',
+      sleepPreviousDay: false,
+    },
+  ]
+  const summary = model.weekSummary(rows, 'pomelo', '2026-10-12', {
+    nights: 5,
+    before: '00:20',
+  })
+  assert.deepEqual(
+    summary.days.map((day) => day.reached),
+    [null, null, true, false, null, true, null],
+  )
+  assert.equal(summary.reached, 2)
+  assert.equal(
+    model.sleepReached(
+      { sleepTime: '00:20', sleepPreviousDay: false },
+      { nights: 5, before: '00:20' },
+    ),
+    false,
+  )
+  assert.deepEqual(
+    model
+      .weekSummary(rows, 'orange', '2026-10-12')
+      .days.map((day) => day.reached),
+    Array(7).fill(null),
+  )
+})
