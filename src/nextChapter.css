@@ -1,0 +1,90 @@
+.chapter-switch {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  margin: 12px auto 28px;
+  flex-wrap: wrap;
+}
+.chapter-switch button {
+  padding: 12px 24px;
+  border: 1px solid #dacdbf;
+  border-radius: 99px;
+  background: #fffaf1;
+  color: #726455;
+  cursor: pointer;
+}
+.chapter-switch button[aria-pressed='true'] {
+  background: #ead9c4;
+  color: #483b32;
+  border-color: #c6a98d;
+}
+.chapter-switch button:focus-visible,
+.next-chapter button:focus-visible {
+  outline: 3px solid #aa7354;
+  outline-offset: 4px;
+}
+.chapter-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #85705f;
+}
+.chapter-empty > span {
+  font-size: 42px;
+}
+.chapter-empty button,
+.chapter-reading > button {
+  background: transparent;
+  border: 0;
+  text-decoration: underline;
+  color: inherit;
+  padding: 12px;
+  cursor: pointer;
+}
+.chapter-entries {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 22px;
+}
+.chapter-entry {
+  text-align: left;
+  padding: 28px;
+  cursor: pointer;
+  color: inherit;
+  min-width: 0;
+}
+.chapter-entry p {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  white-space: pre-wrap;
+}
+.chapter-entry small,
+.chapter-reading > small {
+  display: block;
+  color: #88796b;
+}
+.chapter-reading {
+  padding: clamp(20px, 4vw, 56px);
+  max-width: 920px;
+  margin: auto;
+}
+.chapter-reading > img {
+  max-width: 100%;
+  height: auto;
+}
+.chapter-reading h3 {
+  overflow-wrap: anywhere;
+}
+.next-chapter > .checkin-section {
+  padding: 0;
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .chapter-entries {
+    grid-template-columns: 1fr;
+  }
+  .chapter-switch button {
+    padding: 10px 18px;
+  }
+}

@@ -23,7 +23,7 @@ function MemoryImage({ src, alt, queue, onResult }) {
 
 function signedBy(item) { return item.owner.id === 'orange' ? '小琛' : item.owner.id === 'pomelo' ? '小琳' : item.owner.label }
 
-export default function AlbumTheater({ items, onClose, remembered, onRemember, loading = false }) {
+export default function AlbumTheater({ items, onClose, remembered, onRemember, loading = false, lifeMode = false }) {
   const memories = useMemo(() => orderedMemories(items), [items])
   const dialogRef = useRef(null)
   const scrollRef = useRef(null)
@@ -206,7 +206,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
         <section className="mt-intro">
           <span className="mt-eyebrow">THE DAYS WE KEPT</span>
           <h2 id="mt-title" className="mt-dialog-title">我们的每一天 · 回忆画廊</h2>
-          <LiteraryQuote quote={literaryQuotes.albumOpening} className="mt-opening-quote" />
+          <LiteraryQuote quote={lifeMode ? literaryQuotes.nextHome : literaryQuotes.albumOpening} className="mt-opening-quote" />
           <div className="mt-intro-meta"><span>{memories.length ? memories[0].day.date?.replaceAll('-', '.') : '尚待收藏'}</span><i /><span>{memories.length} 帧记忆</span></div>
           <span className="mt-scroll-hint">向下翻阅 <span aria-hidden="true">↓</span></span>
         </section>
@@ -216,23 +216,23 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
             {row.items.map((item, slotIndex) => <figure className="mt-memory" key={`${item.key}:${item.photo.src}`} style={{ '--mt-media-height': `${row.mediaHeights[slotIndex]}px`, '--mt-card-width': `${row.mediaWidths[slotIndex]}px`, gridColumn: row.mobile ? 1 : item.owner.id === 'pomelo' ? 2 : 1 }}>
               <div className="mt-photo-surface">
                 <span className="mt-image-slot"><MemoryImage src={item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} onResult={onImageResult} /></span>
-                <button type="button" className="mt-photo-open" aria-label={`放大查看 ${signedBy(item)} Day ${item.day.day} 的照片`}
+                <button type="button" className="mt-photo-open" aria-label={`放大查看 ${signedBy(item)} ${lifeMode ? item.day.date : `Day ${item.day.day}`} 的照片`}
                   onClick={event => { lastFocusedPhoto.current = event.currentTarget; setSelected(item.key) }}>
                   <span className="mt-enlarge" aria-hidden="true">↗</span>
                 </button>
               </div>
-              <figcaption><span className="mt-photo-date">{item.day.date?.replaceAll('-', '.')}<small>DAY {item.day.day}</small></span><span className="mt-photo-owner"><i className={item.owner.id === 'orange' ? 'is-orange' : 'is-pomelo'} />{signedBy(item)}</span></figcaption>
+              <figcaption><span className="mt-photo-date">{item.day.date?.replaceAll('-', '.')}{!lifeMode && <small>DAY {item.day.day}</small>}</span><span className="mt-photo-owner"><i className={item.owner.id === 'orange' ? 'is-orange' : 'is-pomelo'} />{signedBy(item)}</span></figcaption>
             </figure>)}
           </div>)}
         </div>
-        {memories.length > 0 && <footer className="mt-ending"><span>✧</span><LiteraryQuote quote={literaryQuotes.albumEnding} className="mt-ending-quote" /><button type="button" onClick={() => { setPlaying(false); scrollRef.current.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }) }}>从头再看 <span aria-hidden="true">↑</span></button></footer>}
+        {memories.length > 0 && <footer className="mt-ending"><span>✧</span><LiteraryQuote quote={lifeMode ? literaryQuotes.nextReading : literaryQuotes.albumEnding} className="mt-ending-quote" /><button type="button" onClick={() => { setPlaying(false); scrollRef.current.scrollTo({ top: 0, behavior: reduced ? 'auto' : 'smooth' }) }}>从头再看 <span aria-hidden="true">↑</span></button></footer>}
       </div>
       <footer className="mt-controls">
         <label className="mt-month-control"><span>翻到</span><select aria-label="跳到月份" onFocus={() => setPlaying(false)} value={String(current?.day.date || '').slice(0, 7)} disabled={!months.length}
           onChange={event => jumpTo(memories.findIndex(item => String(item.day.date || '').startsWith(event.target.value)))}>
           {!months.length && <option value="">这些日子</option>}{months.map(month => <option key={month} value={month}>{monthLabel(month)}</option>)}
         </select></label>
-        <span className="mt-position">{current ? `DAY ${current.day.day}` : 'MEMORY ALBUM'}</span>
+        <span className="mt-position">{current ? (lifeMode ? current.day.date : `DAY ${current.day.day}`) : 'MEMORY ALBUM'}</span>
         <div className="mt-playback">
         <select className="mt-speed" aria-label="巡游速度" value={speed} onChange={event => setSpeed(Number(event.target.value))} disabled={reduced}>
           <option value={60}>舒缓</option><option value={90}>适中</option><option value={140}>轻快</option>

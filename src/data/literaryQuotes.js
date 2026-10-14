@@ -1,6 +1,14 @@
 // Display copy only. Never used to rewrite messages, captions or daily tasks.
 // User-supplied text without a verified source deliberately has no attribution.
 export const literaryQuotes = {
+  nextHome: {
+    text: '海上生明月，天涯共此时。', author: '张九龄', work: '望月怀远',
+    source: 'https://zh.wikisource.org/wiki/望月懷遠', provenance: 'public-domain'
+  },
+  nextReading: {
+    text: '行到水穷处，坐看云起时。', author: '王维', work: '终南别业',
+    source: 'https://zh.wikisource.org/wiki/終南別業', provenance: 'public-domain'
+  },
   albumOpening: {
     text: '你尚未出现时，我的生命平静如湖水，\n你一来，便起了涟漪。',
     author: '', work: '', source: '', provenance: 'user-supplied-unattributed'

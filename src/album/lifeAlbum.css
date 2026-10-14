@@ -1,0 +1,171 @@
+.life-album {
+  max-width: 1100px;
+  margin: auto;
+}
+.life-composer {
+  padding: 18px 24px;
+}
+.life-composer summary {
+  cursor: pointer;
+  padding: 8px;
+}
+.life-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  padding-top: 20px;
+}
+.life-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.life-fields input,
+.life-fields select,
+.life-fields textarea {
+  font: inherit;
+  padding: 12px;
+  border: 1px solid #dbcebc;
+  border-radius: 12px;
+  max-width: 100%;
+  box-sizing: border-box;
+  background: #fffdf8;
+  color: #574a40;
+}
+.life-caption {
+  grid-column: 1/-1;
+}
+.life-fields small {
+  align-self: center;
+}
+.life-toolbar {
+  display: flex;
+  gap: 12px;
+  margin: 26px 0 8px;
+  flex-wrap: wrap;
+}
+.life-album button {
+  cursor: pointer;
+  color: #64513f;
+  background: #fff9ec;
+  border: 1px solid #d9c7b2;
+  border-radius: 12px;
+  padding: 10px 18px;
+}
+.life-album button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.life-album :focus-visible {
+  outline: 3px solid #ac7959;
+  outline-offset: 3px;
+}
+.life-status {
+  min-height: 24px;
+  color: #8c7260;
+  overflow-wrap: anywhere;
+}
+.life-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 32px;
+  align-items: start;
+}
+.life-photo {
+  margin: 0;
+  background: #fffaf0;
+  padding: 14px;
+  border-radius: 16px;
+  box-shadow: 0 8px 24px #74553312;
+  min-width: 0;
+}
+.life-photo .life-photo-open {
+  display: block;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  width: 100%;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.life-photo img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  max-height: 68svh;
+  height: auto;
+  margin: auto;
+  object-fit: contain;
+}
+.life-photo figcaption {
+  padding: 16px 4px 4px;
+  font-size: 13px;
+  color: #8b7765;
+}
+.life-photo figcaption p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 15px;
+  line-height: 1.8;
+  color: #64574b;
+}
+.life-photo figcaption button {
+  display: block;
+  margin-top: 12px;
+  font-size: 12px;
+  padding: 6px 10px;
+  background: transparent;
+}
+.life-pending {
+  margin-top: 20px;
+  padding: 18px;
+  border: 1px solid #d9c7b2;
+  border-radius: 16px;
+}
+.life-pending > div {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+}
+.life-pending figure {
+  flex: 0 0 120px;
+  margin: 0 0 16px;
+}
+.life-pending img {
+  width: 120px;
+  height: 100px;
+  object-fit: contain;
+}
+.life-pending figcaption {
+  font-size: 12px;
+}
+.life-pending button {
+  font-size: 13px;
+}
+.life-more {
+  display: block;
+  margin: 30px auto;
+}
+.life-image-error {
+  min-height: 160px;
+  width: 100%;
+}
+@media (max-width: 640px) {
+  .life-grid {
+    grid-template-columns: 1fr;
+    gap: 22px;
+  }
+  .life-fields {
+    grid-template-columns: 1fr;
+  }
+  .life-composer {
+    padding: 14px;
+  }
+  .life-fields input {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+.life-pending textarea { width: 100%; box-sizing: border-box; font: inherit; border: 1px solid #dbcebc; border-radius: 8px; min-height: 70px; background: #fffdf8; padding: 8px; }

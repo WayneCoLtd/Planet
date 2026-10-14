@@ -15,6 +15,8 @@ import AlbumTheater from './album/AlbumTheater'
 import LiteraryQuote from './LiteraryQuote'
 import { literaryQuotes } from './data/literaryQuotes'
 import { countJourneySignedDays, JOURNEY_TOTAL_DAYS } from './checkinProgress'
+import './nextChapter.css'
+const LifeAlbum = React.lazy(() => import('./album/LifeAlbum'))
 
 // 尽早装上存储保护：Safari 阻止 Cookie、旧版无痕模式或存储写满时，
 // localStorage 的读写会抛异常，而站点里大量初始化逻辑都依赖它。
@@ -1115,7 +1117,7 @@ function Nav({ current, setCurrent }) {
   const observatoryNavOpen = Number(bag.observatory_nav_unlocked || 0) > 0
   const items = [
     ['home', '首页', '🏠'],
-    ['checkin', '每日签到', '📮'],
+    ['checkin', '随手翻翻', '📮'],
     ['album', '相册', '📷'],
     ['music', '音乐室', '🎵'],
     ...(observatoryNavOpen ? [['telescope', '星空观测站', '🔭']] : []),
@@ -1180,7 +1182,6 @@ function Hero({ setCurrent }) {
     }
   }, [])
 
-  const progressPercent = (signedCount / JOURNEY_TOTAL_DAYS) * 100
   const { dayCount, daysToYearOne, yearOneReached } = getAnniversaryCounts()
   const orbitAngle = Math.max(0, Math.min(360, (dayCount / 365) * 360 - 90))
 
@@ -1197,30 +1198,30 @@ function Hero({ setCurrent }) {
         <DogSprite type="partner" className="orbit-orange" />
         <span className="hero-orbit-progress" style={{ '--orbit-angle': `${orbitAngle}deg` }}><b>{dayCount}</b></span>
         <span className="floating-note note-one">第 {dayCount} 天</span>
-        <span className="floating-note note-two">{yearOneReached ? '一周年已达成' : `一周年还有 ${daysToYearOne} 天`}</span>
+        <span className="floating-note note-two">{yearOneReached ? '300 → 365 · 已珍藏' : `一周年还有 ${daysToYearOne} 天`}</span>
       </div>
       <div className="hero-copy sticker-card doodle-border">
         <CuteIcon>♡</CuteIcon>
         <div className="tiny-label">{dayCount}Days — Our Small Universe</div>
         <h1>300Days</h1>
-        <h2>我们已经走过的每一个今天</h2>
-        <LiteraryQuote quote={literaryQuotes.home} />
+        <h2>我们的小星球</h2>
+        <LiteraryQuote quote={literaryQuotes.nextHome} />
         <div className="hero-stats">
-          <span>✨ 已一起走过 {dayCount} 天</span>
-          <span>🌙 一周年：{yearOneReached ? '已达成' : `还有 ${daysToYearOne} 天`}</span>
+          <span>✨ 从那一天起，已经 {dayCount} 天</span>
+          <span>🌙 2025.10.13</span>
         </div>
         <div className="hero-progress-card" aria-label={`已经签到 ${signedCount} 天，共 65 天`}>
           <div className="hero-progress-topline">
-            <strong>纪念日星图进度</strong>
+            <strong>300 → 365 · 已珍藏</strong>
             <span>{signedCount}/65</span>
           </div>
-          <div className="hero-progress-track"><i style={{ width: `${progressPercent}%` }} /></div>
-          <small>今天的旅程在 {dayCount} 号星图上，明天也会继续往前走。</small>
+
+          <small>那 65 天</small>
         </div>
         <div className="hero-actions">
-          <button onClick={() => setCurrent('checkin')}>📮 打开签到星图</button>
+          <button onClick={() => setCurrent('checkin')}>📮 随手翻翻</button>
         </div>
-        <div className="newbie-route" role="note"><strong>今日提醒：</strong><span>{dayCount === 300 ? '今天是我们 300 天纪念日；从这里开始，接下来的每一天都值得被认真打开。' : `今天是第 ${dayCount} 天；从这里开始，接下来的每一天都值得被认真打开。`}</span></div>
+
       </div>
     </section>
   )
@@ -1249,7 +1250,7 @@ function StarVoyageDock({ setCurrent }) {
 
 function getInitialCheckinDay() {
   try {
-    const list = getDailyAdventures()
+    const list = getDailyAdventures().filter(item => Number(item.day) <= 365)
     const signedDays = filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', []))
     const completedDays = filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', []))
     if (!list.length) return 300
@@ -1267,7 +1268,43 @@ function getInitialCheckinDay() {
   return fallback[fallback.length - 1]?.day || fallback[0]?.day || 300
 }
 
-function CheckIn() {
+function NextChapter() {
+  const [section, setSection] = useState('new')
+  const [items, setItems] = useState(getDailyAdventures)
+  const [selected, setSelected] = useState(null)
+  React.useEffect(() => {
+    let alive = true
+    const refresh = () => hydrateDailyAdventures().then(() => { if (alive) setItems(getDailyAdventures()) })
+    void refresh()
+    const sync = () => { if (alive) setItems(getDailyAdventures()) }
+    window.addEventListener('wwcxrl-tasks-updated', sync)
+    window.addEventListener('focus', refresh)
+    const onStorage = event => { if (event.key === ADMIN_LOCAL_TASKS_KEY) void refresh() }
+    window.addEventListener('storage', onStorage)
+    return () => { alive = false; window.removeEventListener('wwcxrl-tasks-updated', sync); window.removeEventListener('focus', refresh); window.removeEventListener('storage', onStorage) }
+  }, [])
+  const entries = items.filter(item => Number(item.day) > 365).sort((a, b) => Number(b.day) - Number(a.day))
+  const active = entries.find(item => item.day === selected)
+  return <section className="content-section next-chapter">
+    <div className="chapter-switch" role="group" aria-label="内容篇章">
+      <button aria-pressed={section === 'new'} onClick={() => setSection('new')}>随手翻翻</button>
+      <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
+    </div>
+    {section === 'archive' ? <CheckIn archive /> : <>
+      <header className="section-heading playful-heading"><span>NOTES & FINDS</span><h2>随手翻翻</h2><LiteraryQuote quote={literaryQuotes.nextReading} /></header>
+      {!entries.length && <div className="chapter-empty"><span aria-hidden="true">✧</span><p>还没有新的分享</p><button onClick={() => setSection('archive')}>翻翻那 65 天</button></div>}
+      {active ? <article className="chapter-reading sticker-card"><button onClick={() => setSelected(null)}>‹ 返回目录</button><small>{active.date}</small><h3>{active.title}</h3>
+        {active.type === 'nightReading' ? <NightReadingQuest key={active.day} item={active} freeRead />
+          : active.type === 'dailyLight' ? <DailyLightCard key={active.day} item={active} freeRead />
+          : active.type === 'dailyBest' ? <DailyBestCard key={active.day} item={active} freeRead />
+          : active.type === 'game' ? <DailyInteraction key={active.day} item={active} taskCompleted={false} onTaskComplete={() => {}} />
+          : <><p className="user-multiline">{active.prompt}</p>{active.image && <img src={active.image} alt={active.title} loading="lazy" />}<p className="user-multiline">{active.secret}</p></>}
+      </article> : <div className="chapter-entries">{entries.map(item => <button className="sticker-card chapter-entry" key={item.day} onClick={() => setSelected(item.day)}><small>{item.date}</small><h3>{item.icon} {item.title}</h3>{item.prompt && <p>{item.prompt}</p>}<span>打开 ↗</span></button>)}</div>}
+    </>}
+  </section>
+}
+
+function CheckIn({ archive = false }) {
   applyTemplateFiveDayStateOnce()
   const todayKey = getTodayKey()
   const todayDay = (() => {
@@ -1278,7 +1315,7 @@ function CheckIn() {
   const [selectedDay, setSelectedDay] = useState(() => getInitialCheckinDay())
   const [signed, setSigned] = useState(() => filterGateInvalidSignedDays(getRoleJson('wwcxrl-signed-days', [])))
   const [completedTasks, setCompletedTasks] = useState(() => filterGateInvalidSignedDays(getRoleJson('wwcxrl-completed-days', [])))
-  const [items, setItems] = useState(() => getDailyAdventures())
+  const [items, setItems] = useState(() => getDailyAdventures().filter(item => Number(item.day) <= 365))
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     try { return localStorage.getItem('wwcxrl-checkin-sidebar-collapsed') === '1' } catch { return false }
   })
@@ -1310,7 +1347,7 @@ function CheckIn() {
     memoryTitle: '',
     memoryCaption: ''
   }))
-  const visibleDailyItems = [...items, ...futureDaySlots]
+  const visibleDailyItems = archive ? items : [...items, ...futureDaySlots]
   const futureDayTotal = futureDaySlots.length
   // 与首页共用口径：保留 Day 300 起点，进度统计其后的 65 天。
   const signedGoalCount = countJourneySignedDays(signed)
@@ -1370,7 +1407,7 @@ function CheckIn() {
       refreshTasksInFlightRef.current = true
       hydrateDailyAdventures().then(() => {
         if (!alive) return
-        const next = getDailyAdventures()
+        const next = getDailyAdventures().filter(item => Number(item.day) <= 365)
         setItems(next)
         // 首次任务数据就绪后：如果用户还没手动点过某一天，自动定位到最新开放的一天，
         // 避免“先显示代码兜底的第一天、数据到了又不切换”的问题。
@@ -1391,7 +1428,7 @@ function CheckIn() {
         .finally(() => { refreshTasksInFlightRef.current = false })
     }
     refreshTasks()
-    const handleTasksUpdated = () => { if (alive) setItems(getDailyAdventures()) }
+    const handleTasksUpdated = () => { if (alive) setItems(getDailyAdventures().filter(item => Number(item.day) <= 365)) }
     window.addEventListener('wwcxrl-tasks-updated', handleTasksUpdated)
     // 本地模式：管理页在另一个标签页发布/删除任务后，这里自动重新加载并刷新星图；
     // 切回本标签页（focus / visibilitychange）时也会重读一次，避免看到旧数据。
@@ -1482,9 +1519,8 @@ function CheckIn() {
     <section className="content-section checkin-section">
       <header className="section-heading playful-heading">
         <span>300 → 365</span>
-        <h2>300→365每日签到星图</h2>
-        <p>每天打开一格星图：已经抵达的日子，完成小任务就能点亮签到；还没到来的格子，先保持一点神秘。</p>
-        <p className="daily-refresh-note">每日更新次日签到任务</p>
+        <h2>{archive ? '那 65 天' : '300→365每日签到星图'}</h2>
+        <LiteraryQuote quote={literaryQuotes.album} />
       </header>
       <div className={`checkin-layout ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
         <aside className={`calendar-card sticker-card ${sidebarCollapsed ? 'is-collapsed' : ''}`}>
@@ -6149,7 +6185,7 @@ function FeedDogGame({ item, taskCompleted, onTaskComplete }) {
 
   return (
     <div className="mini-game feed-game">
-      <p className="feed-hint">在 <strong>{seconds}</strong> 秒内接满 <strong>{target}</strong> 份食物就可以签到啦，快移动狗狗接住好吃的！</p>
+      <p className="feed-hint">在 <strong>{seconds}</strong> 秒内接满 <strong>{target}</strong> 份食物{Number(item.day) > 365 ? '。' : '就可以签到啦，快移动狗狗接住好吃的！'}</p>
       <div
         className="feed-area"
         ref={areaRef}
@@ -6304,7 +6340,7 @@ function WhackAMoleGame({ item, taskCompleted, onTaskComplete }) {
 
   return (
     <div className="mini-game whack-game">
-      <p className="whack-hint">小动物会从洞里冒出来，在 <strong>{seconds}</strong> 秒内敲中 <strong>{target}</strong> 只就能签到！</p>
+      <p className="whack-hint">小动物会从洞里冒出来，在 <strong>{seconds}</strong> 秒内敲中 <strong>{target}</strong> 只{Number(item.day) > 365 ? '。' : '就能签到！'}</p>
       <div className="whack-board">
         {Array.from({ length: 9 }, (_, hole) => {
           const mole = active.find(item => item.hole === hole)
@@ -6487,7 +6523,7 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
 
   return (
     <div className="mini-game idiom-game">
-      <p className="idiom-hint">限时补成语：每道 30 秒，答对得分（越快分越高）；答错、跳过或超时都会亮出答案，然后自动进入下一题。答满 {target} 题即可签到，不会因失误重来。</p>
+      <p className="idiom-hint">限时补成语：每道 30 秒，答对得分（越快分越高）；答错、跳过或超时都会亮出答案，然后自动进入下一题。答满 {target} 题{Number(item.day) > 365 ? '结束这一局' : '即可签到'}，不会因失误重来。</p>
       <div className="idiom-meta">
         <span>第 <strong>{Math.min(qIndex + 1, target)}</strong> / {target} 题</span>
         <span>得分 <strong>{score}</strong></span>
@@ -6511,7 +6547,7 @@ function IdiomFillGame({ item, taskCompleted, onTaskComplete }) {
       {done && rating && (
         <div className="game-done-panel">
           <p>评级 <strong>{rating.grade}</strong> · 称号「{rating.title}」</p>
-          <p className="user-multiline">{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
+          <p className="user-multiline">{item.secret || `最终得分 ${score} 分，${rating.title}${Number(item.day) > 365 ? '。' : '，可以签到啦！'}`}</p>
           <button type="button" className="game-restart" onClick={restart}>🔁 再玩一轮</button>
         </div>
       )}
@@ -6852,7 +6888,7 @@ function StarMemoryGame({ item, taskCompleted, onTaskComplete }) {
             <div className="game-done-panel star-memory-done">
               <p className="star-memory-stars">{'⭐'.repeat(rating.stars)}</p>
               <p>评级 <strong>{rating.grade}</strong> · 称号「{rating.title}」</p>
-              <p className="user-multiline">{item.secret || `最终得分 ${score} 分，${rating.title}，可以签到啦！`}</p>
+              <p className="user-multiline">{item.secret || `最终得分 ${score} 分，${rating.title}${Number(item.day) > 365 ? '。' : '，可以签到啦！'}`}</p>
             </div>
           )}
         </>
@@ -6975,10 +7011,10 @@ function TicTacToeGame({ item, taskCompleted, onTaskComplete }) {
           {final ? (
             <>
               <p>{final === 'win' ? `你以 ${bestOf}:${wins.moon} 拿下比赛！` : `月亮先拿到 ${bestOf} 局…`}</p>
-              <p className="user-multiline">{item.secret || `最终得分 ${score} 分，可以签到啦！`}</p>
+              <p className="user-multiline">{item.secret || `最终得分 ${score} 分${Number(item.day) > 365 ? '。' : '，可以签到啦！'}`}</p>
             </>
           ) : (
-            <p>今天的任务已经完成啦，直接去签到吧～</p>
+            <p>{Number(item.day) > 365 ? '这一局已完成。' : '今天的任务已经完成啦，直接去签到吧～'}</p>
           )}
         </div>
       )}
@@ -7084,7 +7120,7 @@ function SudokuMiniGame({ item, taskCompleted, onTaskComplete }) {
       {wrong && <p className="sudoku-wrong">{wrong}</p>}
       {done && (
         <div className="game-done-panel">
-          <p className="user-multiline">{item.secret || `数独填好啦，用时 ${formatTime(elapsed)}，可以签到啦！`}</p>
+          <p className="user-multiline">{item.secret || `数独填好啦，用时 ${formatTime(elapsed)}${Number(item.day) > 365 ? '。' : '，可以签到啦！'}`}</p>
         </div>
       )}
     </div>
@@ -7229,7 +7265,7 @@ function Merge2048Game({ item, taskCompleted, onTaskComplete }) {
           <button type="button" className="game-restart" onClick={restart}>↺ 再来一局</button>
         </div>
       )}
-      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || '小星球数字合并成功，可以签到啦！'}</p></div>}
+      {done && <div className="game-done-panel"><p className="user-multiline">{item.secret || (Number(item.day) > 365 ? '小星球数字合并成功！' : '小星球数字合并成功，可以签到啦！')}</p></div>}
     </div>
   )
 }
@@ -7391,7 +7427,7 @@ function OthelloGame({ item, taskCompleted, onTaskComplete }) {
       {done && over && (
         <div className="game-done-panel">
           <p>{resultText} 最终比分 {playerCount} : {moonCount}</p>
-          <p className="user-multiline">{item.secret || '一整盘下完啦，可以签到！'}</p>
+          <p className="user-multiline">{item.secret || (Number(item.day) > 365 ? '一整盘下完啦！' : '一整盘下完啦，可以签到！')}</p>
         </div>
       )}
     </div>
@@ -7561,7 +7597,7 @@ function EmbeddedGame({ item, taskCompleted, onTaskComplete, source = '', title 
     <div className="mini-game embedded-game">
       <div className="embedded-bar">
         <strong>{title}</strong>
-        <span className={ready ? 'is-ready' : ''}>{ready ? '✓ 已玩够时间，可以签到啦' : `已玩 ${Math.min(elapsed, seconds)} / ${seconds} 秒`}</span>
+        <span hidden={Number(item.day) > 365} className={ready ? 'is-ready' : ''}>{ready ? '✓ 已玩够时间，可以签到啦' : `已玩 ${Math.min(elapsed, seconds)} / ${seconds} 秒`}</span>
         {fullscreenSupported && (
           <button type="button" className="embedded-fullscreen-button" onClick={toggleFullscreen} aria-label={fullscreen ? '退出全屏' : '进入全屏'}>
             {fullscreen ? '↩ 退出全屏' : '⛶ 全屏'}
@@ -7585,7 +7621,7 @@ function EmbeddedGame({ item, taskCompleted, onTaskComplete, source = '', title 
         )}
         {showEscHint && <div className="embedded-esc-hint" role="status">按 Esc 可退出全屏</div>}
       </div>
-      <p className="embedded-note">在下方画面里玩，玩满 {seconds} 秒就会自动点亮签到按钮；点「⛶ 全屏」放大玩，按 Esc 退出全屏。</p>
+      <p className="embedded-note">{Number(item.day) <= 365 && <>在下方画面里玩，玩满 {seconds} 秒就会自动点亮签到按钮；</>}点「⛶ 全屏」放大玩，按 Esc 退出全屏。</p>
     </div>
   )
 }
@@ -7779,7 +7815,7 @@ function LetterQuest({ item, taskCompleted, onTaskComplete }) {
 }
 
 // ---- 今日小卡：一张 10 秒轻量小卡，看完点“收下啦”即可完成 ----
-function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
+function DailyLightCard({ item, freeRead = false, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [collecting, setCollecting] = useState(false)
   const cardKind = String(item.gameConfig?.cardKind || '今日小卡').trim()
   const cardBody = String(item.secret || '').trim() || '今天的小卡还在路上。'
@@ -7797,15 +7833,15 @@ function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}
     <div className={`mini-game daily-light-card ${taskCompleted ? 'is-completed' : ''} ${collecting ? 'is-collecting' : ''}`}>
       <div className="daily-light-card-head">
         <span className="daily-light-card-kind"><b>{item.icon || '💡'}</b>{cardKind}</span>
-        <small>{item.date} · Day {item.day}</small>
+        <small>{item.date}{!freeRead && ` · Day ${item.day}`}</small>
       </div>
-      {!embedded && <h3>{item.title || '今日小卡'}</h3>}
+      {!embedded && !freeRead && <h3>{item.title || '今日小卡'}</h3>}
       {!embedded && item.prompt && <p className="daily-light-card-intro">{item.prompt}</p>}
       <article className="daily-light-card-paper">
         {item.image && <img src={item.image} alt="今日小卡配图" loading="lazy" />}
         <p>{cardBody}</p>
       </article>
-      <div className="daily-light-card-foot">
+      {!freeRead && <div className="daily-light-card-foot">
         {taskCompleted ? (
           <span className="daily-light-card-done">✓ 今天已经收好啦</span>
         ) : (
@@ -7814,13 +7850,13 @@ function DailyLightCard({ item, taskCompleted = false, onTaskComplete = () => {}
           </button>
         )}
         <small>看完就行，不用记，也没有小测验。</small>
-      </div>
+      </div>}
     </div>
   )
 }
 
 // ---- 今日最佳：一份幽默媒体 + 一句正文，看完即可完成 ----
-function DailyBestCard({ item, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
+function DailyBestCard({ item, freeRead = false, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [collecting, setCollecting] = useState(false)
   const [mediaFailed, setMediaFailed] = useState(false)
   const config = item.gameConfig || {}
@@ -7866,23 +7902,24 @@ function DailyBestCard({ item, taskCompleted = false, onTaskComplete = () => {},
         )}
       </div>
       <p className="daily-best-caption">{caption}</p>
-      <button type="button" className="daily-best-collect" onClick={collectBest} disabled={taskCompleted || collecting}>
+      {!freeRead && <button type="button" className="daily-best-collect" onClick={collectBest} disabled={taskCompleted || collecting}>
         {taskCompleted ? '🏆 今日最佳已收下' : collecting ? '正在盖章…' : '🏆 收下今日最佳'}
-      </button>
+      </button>}
       {!taskCompleted && <small className="daily-best-note">{mediaKind === 'video' ? '视频默认静音，点播放器音量按钮即可打开声音。' : '点图片可以查看原图。'}</small>}
     </section>
   )
 }
 
 // ---- 夜读：温暖治愈的文字或漫画，读完即可完成 ----
-function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
+function NightReadingQuest({ item, freeRead = false, taskCompleted = false, onTaskComplete = () => {}, embedded = false }) {
   const [collecting, setCollecting] = useState(false)
   const config = item.gameConfig || {}
   const column = config.readingColumn || (config.readingKind === 'comic' ? 'healingComic' : 'nightReading')
   const columnMeta = {
     nightReading: { label: '温暖夜读', icon: '🌙' },
     lightMoment: { label: '轻松一刻', icon: '😄' },
-    healingComic: { label: '治愈漫画', icon: '🎨' }
+    healingComic: { label: '治愈漫画', icon: '🎨' },
+    researchNotes: { label: '学习手记', icon: '📖' }
   }[column] || { label: '温暖夜读', icon: '🌙' }
   const sourceMode = config.sourceMode || (config.source ? 'repost' : 'hidden')
   const sourceName = String(config.source || '').trim()
@@ -7908,10 +7945,10 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
     <div className={`mini-game night-reading is-${column} ${taskCompleted ? 'is-completed' : ''} ${collecting ? 'is-collecting' : ''}`}>
       {!embedded && <div className="night-reading-top">
         <span className="night-reading-badge">{item.icon || columnMeta.icon} {columnMeta.label}</span>
-        <small>{item.date} · Day {item.day}</small>
+        <small>{item.date}{!freeRead && ` · Day ${item.day}`}</small>
       </div>}
       <header className={`night-reading-header ${embedded ? 'is-embedded' : ''}`}>
-        {!embedded && <h3>{item.title || '夜读'}</h3>}
+        {!embedded && !freeRead && <h3>{item.title || '夜读'}</h3>}
         {(sourceMode !== 'hidden' || sourceUrl) && (
           <p>
             {sourceMode === 'original' && <span>来源：{sourceName || '原创'}</span>}
@@ -7966,7 +8003,7 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
         </div>
       )}
       {!embedded && item.reward && <p className="night-reading-ending">{item.reward}</p>}
-      <div className="night-reading-foot">
+      {!freeRead && <div className="night-reading-foot">
         {taskCompleted ? (
           <span className="night-reading-done">✓ 今晚已经读完啦</span>
         ) : (
@@ -7975,7 +8012,7 @@ function NightReadingQuest({ item, taskCompleted = false, onTaskComplete = () =>
           </button>
         )}
         <small>不设考题，只安静读完这一篇。</small>
-      </div>
+      </div>}
     </div>
   )
 }
@@ -8334,7 +8371,7 @@ function DailyInteraction({ item, signed = false, taskCompleted = false, onTaskC
         item={item}
         icon={registry?.icon || '🎮'}
         label={registry?.label || embeddedGame?.title || '小游戏'}
-        hint={gateHint}
+        hint={Number(item.day) > 365 ? '' : gateHint}
         resumeLabel={hasGameProgress(gameId, item) ? '继续上次的进度' : ''}
       >
         {renderGame()}
@@ -9011,6 +9048,14 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
 }
 
 function PhotoWall() {
+  const [section, setSection] = useState('life')
+  return <section className="content-section"><div className="chapter-switch" role="group" aria-label="相册篇章">
+    <button aria-pressed={section === 'life'} onClick={() => setSection('life')}>最近的生活</button>
+    <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
+  </div><div hidden={section !== 'life'}><React.Suspense fallback={<p role="status">正在打开相册…</p>}><LifeAlbum /></React.Suspense></div>{section === 'archive' && <ArchivePhotoWall />}</section>
+}
+
+function ArchivePhotoWall() {
   const [curtainOpen, setCurtainOpen] = useState(false)
   const theaterPositionRef = React.useRef(null)
   const [albumLoading, setAlbumLoading] = useState(cloudEnabled)
@@ -9018,7 +9063,7 @@ function PhotoWall() {
   const [cloudPhotos, setCloudPhotos] = useState(() => photoWallResource.peek())
   const [status, setStatus] = useState('')
   const [lightbox, setLightbox] = useState(null)
-  const [albumDays, setAlbumDays] = useState(() => getDailyAdventures())
+  const [albumDays, setAlbumDays] = useState(() => getDailyAdventures().filter(item => Number(item.day) <= 365))
   const [pendingCount, setPendingCount] = useState(() => loadPhotoWallPending().length)
   const [uploadingKeys, setUploadingKeys] = useState(() => new Set())
   // 上传列表：时间逆序 + 分页，最新日期永远在第一页最上面。
@@ -9062,12 +9107,12 @@ function PhotoWall() {
 
   React.useEffect(() => {
     let alive = true
-    hydrateDailyAdventures().then(() => { if (alive) setAlbumDays(getDailyAdventures()) })
-    const handleTasksUpdated = () => { if (alive) setAlbumDays(getDailyAdventures()) }
+    hydrateDailyAdventures().then(() => { if (alive) setAlbumDays(getDailyAdventures().filter(item => Number(item.day) <= 365)) })
+    const handleTasksUpdated = () => { if (alive) setAlbumDays(getDailyAdventures().filter(item => Number(item.day) <= 365)) }
     window.addEventListener('wwcxrl-tasks-updated', handleTasksUpdated)
     const handleAlbumLocalTasks = (event) => {
       if (!alive || event.key !== ADMIN_LOCAL_TASKS_KEY) return
-      hydrateDailyAdventures().then(() => { if (alive) setAlbumDays(getDailyAdventures()) })
+      hydrateDailyAdventures().then(() => { if (alive) setAlbumDays(getDailyAdventures().filter(item => Number(item.day) <= 365)) })
     }
     window.addEventListener('storage', handleAlbumLocalTasks)
     return () => {
@@ -10123,7 +10168,7 @@ async function loadLatestEnergyStateWithSignins() {
   const cloudSignedDays = Array.from(new Set([...(orangeCheckins?.signed || []), ...(pomeloCheckins?.signed || [])]))
   const signedDays = Array.from(new Set([...cloudSignedDays, ...getRoleJson('wwcxrl-signed-days', [])].map(Number).filter(Boolean))).sort((a, b) => a - b)
   const claimed = new Set(remoteState.claimedSignedDays)
-  const newSignedDays = signedDays.filter(day => !claimed.has(day))
+  const newSignedDays = signedDays.filter(day => day <= 365 && !claimed.has(day))
   const uploadedPhotoDays = Array.from(new Set([...(cloudPhotoDays || []), ...getLocalUploadedPhotoDays()])).sort()
   // 旧版按“天”记录的已领次数（纯数字）视为当天双方都已领过，避免历史数据重复补发
   const coveredPhotoClaims = new Set()
@@ -12115,7 +12160,7 @@ function PlanetApp() {
       </header>
       {current === 'home' && <Hero setCurrent={setCurrent} />}
       {current === 'guide' && <TemplateGuide setCurrent={setCurrent} />}
-      {current === 'checkin' && <CheckIn />}
+      {current === 'checkin' && <NextChapter />}
       {current === 'music' && <MusicRoom />}
       {(current === 'album' || current === 'gallery') && <PhotoWall />}
       {current === 'telescope' && <TelescopeWorkshop />}
@@ -12125,7 +12170,7 @@ function PlanetApp() {
       {firstGuideOpen && <div className="first-run-guide-backdrop" role="presentation">
         <div className="first-run-guide-modal" role="dialog" aria-modal="true" aria-labelledby="first-run-guide-title">
           <button type="button" className="first-run-guide-close" onClick={dismissFirstGuide} aria-label="关闭首次运行说明书">×</button>
-          <div className="first-run-guide-welcome"><span>✦</span><div><strong id="first-run-guide-title">欢迎来到小星球</strong><p>这里是我们的纪念日小星球：每天打开一格星图，完成今天的小任务并签到，把 300 天慢慢走到 365 天。</p></div></div>
+          <div className="first-run-guide-welcome"><span>✦</span><div><strong id="first-run-guide-title">欢迎来到小星球</strong><p>照片、音乐和随手记下的事，都在这里。那 65 天，也可以随时回看。</p></div></div>
           <TemplateGuide setCurrent={next => { dismissFirstGuide(); setCurrent(next) }} />
         </div>
       </div>}
@@ -13603,6 +13648,7 @@ function AdminTaskPage() {
                     <option value="nightReading">🌙 温暖夜读</option>
                     <option value="lightMoment">😄 轻松一刻</option>
                     <option value="healingComic">🎨 治愈漫画</option>
+                    <option value="researchNotes">📖 学习手记</option>
                   </select>
                 </label>
                 <label>来源显示
