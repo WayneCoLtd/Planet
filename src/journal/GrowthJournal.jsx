@@ -86,6 +86,7 @@ function JournalPage({
   const [dirty, setDirty] = useState(false)
   const dirtyRef = useRef(false)
   const [busy, setBusy] = useState(false)
+  const [pendingAction, setPendingAction] = useState(null)
   const lock = useRef(false)
   const [note, setNote] = useState('')
   const [conflict, setConflict] = useState(null)
@@ -112,6 +113,26 @@ function JournalPage({
     before: currentGoal?.before_time || goal.before,
   })
   const goalDetails = useRef(null)
+
+  useEffect(() => {
+    const dismiss = (event) => {
+      const details = goalDetails.current
+      if (!details?.open) return
+      if (event.type === 'keydown') {
+        if (event.key !== 'Escape') return
+        details.open = false
+        details.querySelector('summary')?.focus()
+      } else if (!details.contains(event.target)) {
+        details.open = false
+      }
+    }
+    document.addEventListener('pointerdown', dismiss)
+    document.addEventListener('keydown', dismiss)
+    return () => {
+      document.removeEventListener('pointerdown', dismiss)
+      document.removeEventListener('keydown', dismiss)
+    }
+  }, [])
 
   function fitGrowthInput() {
     const input = growthInput.current
@@ -264,6 +285,7 @@ function JournalPage({
     if (lock.current || !ready) return
     lock.current = true
     setBusy(true)
+    setPendingAction(checkIn ? 'checkin' : 'save')
     setNote('正在保存…')
     try {
       await draftWrites.current.catch(() => {})
@@ -293,6 +315,7 @@ function JournalPage({
     } finally {
       lock.current = false
       setBusy(false)
+      setPendingAction(null)
     }
   }
   async function updateGoal() {
@@ -332,7 +355,9 @@ function JournalPage({
           <h3>{OWNER_NAMES[owner]}</h3>
         </div>
         <span className="journal-sign-state">
-          {entry.checkedIn ? '已签到' : '未签到'}
+          {entry.checkedIn
+            ? dirty ? '已签到 · 修改待保存' : '已签到'
+            : '未签到'}
         </span>
       </header>
       <section className="journal-sleep compact-sleep">
@@ -456,6 +481,19 @@ function JournalPage({
             </button>
           </div>
           <div className="journal-screenshot">
+            {screenshot && imageFailed && (
+              <button
+                className="journal-screenshot-retry"
+                disabled={disabled || !connected}
+                onClick={() => {
+                  setImageFailed(false)
+                  onRefresh()
+                }}
+              >
+                截图未加载<br />
+                点击重试
+              </button>
+            )}
             {screenshot && !imageFailed && (
               <button
                 className="journal-screenshot-preview"
@@ -639,14 +677,18 @@ function JournalPage({
             disabled={disabled || !connected || !dirty}
             onClick={() => save(false)}
           >
-            保存
+            {pendingAction === 'save'
+              ? '保存中…'
+              : entry.checkedIn && dirty ? '保存修改' : '保存'}
           </button>
           <button
             className="journal-checkin"
             disabled={disabled || !connected || entry.checkedIn}
             onClick={() => save(true)}
           >
-            {entry.checkedIn
+            {pendingAction === 'checkin'
+              ? '保存中…'
+              : entry.checkedIn
               ? '已签到 ✓'
               : date < todayInShanghai()
                 ? '补卡'

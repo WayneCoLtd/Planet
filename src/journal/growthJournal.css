@@ -1431,3 +1431,14 @@
   background: #a45f58;
   border-color: #a45f58;
 }
+
+.journal-screenshot .journal-screenshot-retry {
+  padding: 6px;
+  min-height: 44px;
+  max-width: 90px;
+  border: 1px dashed #b9a88b;
+  border-radius: 6px;
+  color: #8b6e53;
+  font-size: 10px;
+  line-height: 1.5;
+}
