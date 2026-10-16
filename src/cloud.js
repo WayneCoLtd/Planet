@@ -803,7 +803,8 @@ function normalizeMessageRow(row) {
     images,
     imageUrl: images[0] || '',
     parentId: row.parent_id || null,
-    createdAt: row.created_at
+    createdAt: row.created_at,
+    editSnapshot: { content: row.content, imageUrl: row.image_url, imageUrls: row.image_urls }
   }
 }
 
@@ -931,7 +932,7 @@ async function loadCloudMessageById(id) {
   }
 }
 
-export async function updateCloudMessage(id, { content = '', imageUrl = '', imageUrls = null }) {
+export async function updateCloudMessage(id, { content = '', imageUrl = '', imageUrls = null }, expected = null) {
   try {
     const supabase = await getSupabase()
     if (!supabase || !id) return { ok: false, error: '未连接云端' }
@@ -939,12 +940,24 @@ export async function updateCloudMessage(id, { content = '', imageUrl = '', imag
     if (list.length > 1 && messageMultiImageSupported === false) {
       return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
     }
-    const runUpdate = (payload, columns) => supabase
-      .from('wwcxrl_messages')
-      .update(payload)
-      .eq('id', id)
-      .select(columns)
-      .maybeSingle()
+    let snapshot = expected?.editSnapshot
+    if (expected && !snapshot) {
+      const latest = await loadCloudMessageById(id)
+      const originalImages = normalizeOutgoingImageUrls({imageUrls:expected.images,imageUrl:expected.imageUrl})
+      const latestImages = latest && normalizeOutgoingImageUrls({imageUrls:latest.images,imageUrl:latest.imageUrl})
+      if (!latest || latest.content !== expected.content || JSON.stringify(originalImages) !== JSON.stringify(latestImages))
+        return {ok:false,conflict:true,error:'这条留言已更新，你的编辑仍保留，请先核对最新内容。'}
+      snapshot = latest.editSnapshot
+    }
+    const runUpdate = (payload, columns) => {
+      let query = supabase.from('wwcxrl_messages').update(payload).eq('id', id)
+      if (snapshot) {
+        for (const [column, value] of [['content', snapshot.content], ['image_url', snapshot.imageUrl], ...(columns === MESSAGE_COLUMNS ? [['image_urls', snapshot.imageUrls]] : [])]) {
+          query = value == null ? query.is(column, null) : query.eq(column, column === 'image_urls' ? JSON.stringify(value) : value)
+        }
+      }
+      return query.select(columns).maybeSingle()
+    }
     let { data, error } = await runUpdate(messagePayload({ content, imageUrls: list }), MESSAGE_COLUMNS)
     if (error && isMissingMessageImageColumn(error)) {
       messageMultiImageSupported = false
@@ -952,42 +965,9 @@ export async function updateCloudMessage(id, { content = '', imageUrl = '', imag
       ;({ data, error } = await runUpdate(messagePayloadLegacy({ content, imageUrls: list }), MESSAGE_COLUMNS_LEGACY))
     }
     if (!error && data) return { ok: true, message: normalizeMessageRow(data) }
-    // 老库可能缺少 update 策略：改用“删除旧行 + 原样重插”兜底（保留发送人与时间），
-    // 这样即使不改 Supabase 策略，修改也能真正写进云端，而不是刷新后消失。
-    console.warn('[wwcxrl cloud] message update blocked, trying replace fallback', error?.message || 'no row matched')
-    const original = await loadCloudMessageById(id)
-    if (!original) return { ok: false, error: error?.message || '未找到这条留言' }
-    const { error: deleteError } = await supabase.from('wwcxrl_messages').delete().eq('id', id)
-    if (deleteError) return { ok: false, error: deleteError.message }
-    // 重插沿用原 id：这条留言下面的所有回复仍然挂在同一个 parent_id 上，不会掉。
-    const fallbackBase = {
-      id: original.id,
-      user_id: original.userId,
-      role: original.role,
-      display_name: original.displayName,
-      parent_id: original.parentId,
-      created_at: original.createdAt
-    }
-    let { data: inserted, error: insertError } = await supabase
-      .from('wwcxrl_messages')
-      .insert({
-        ...fallbackBase,
-        ...messagePayload({ content, imageUrls: list })
-      })
-      .select(MESSAGE_COLUMNS)
-      .single()
-    if (insertError && isMissingMessageImageColumn(insertError)) {
-      ;({ data: inserted, error: insertError } = await supabase
-        .from('wwcxrl_messages')
-        .insert({
-          ...fallbackBase,
-          ...messagePayloadLegacy({ content, imageUrls: list })
-        })
-        .select(MESSAGE_COLUMNS_LEGACY)
-        .single())
-    }
-    if (insertError) return { ok: false, error: insertError.message }
-    return { ok: true, message: normalizeMessageRow(inserted) }
+    // Never delete and recreate a row when updating fails: replies and
+    // another device's edits must survive permissions errors and conflicts.
+    return { ok: false, conflict: !error, error: error?.message || '这条留言已在另一台设备修改或删除；你的编辑仍保留，请先核对最新内容。' }
   } catch (error) {
     console.warn('[wwcxrl cloud] message update exception', error)
     return { ok: false, error: error.message || '未知错误' }

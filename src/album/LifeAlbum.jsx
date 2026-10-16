@@ -9,6 +9,7 @@ import { todayInShanghai } from '../journal/journalModel'
 
 const names = { orange: '小琛', pomelo: '小琳' }
 const today = todayInShanghai
+let visiblePhotoCache = []
 async function api(method = 'GET', body, query = '') {
   const controller = new AbortController(),
     timer = setTimeout(() => controller.abort(), 45000)
@@ -81,7 +82,7 @@ function Caption({ text }) {
   </div>
 }
 export default function LifeAlbum() {
-  const [photos, setPhotos] = useState([]),
+  const [photos, setPhotos] = useState(() => visiblePhotoCache),
     [drafts, setDrafts] = useState([]),
     [more, setMore] = useState(false),
     [cursor, setCursor] = useState(null)
@@ -94,6 +95,7 @@ export default function LifeAlbum() {
     [loadError, setLoadError] = useState(false),
     [theater, setTheater] = useState(false),
     [position, setPosition] = useState(null)
+  useEffect(() => { visiblePhotoCache = photos }, [photos])
   const lock = useRef(false),
     alive = useRef(true),
     loadingRef = useRef(false)

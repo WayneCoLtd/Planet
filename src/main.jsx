@@ -1,6 +1,7 @@
+import { loadMailboxDraft, saveMailboxDraft, clearMailboxComposer } from './mailboxDrafts'
 import StarField from './StarField'
 import { verifyAdminPassword } from './access'
-import React, { useMemo, useState } from 'react'
+import React, { useMemo, useState, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
@@ -1274,6 +1275,7 @@ function NextChapter() {
   const [items, setItems] = useState(getDailyAdventures)
   const [selected, setSelected] = useState(null)
   React.useEffect(() => {
+    if (section !== 'new') return
     let alive = true
     const refresh = () => hydrateDailyAdventures().then(() => { if (alive) setItems(getDailyAdventures()) })
     void refresh()
@@ -1283,13 +1285,12 @@ function NextChapter() {
     const onStorage = event => { if (event.key === ADMIN_LOCAL_TASKS_KEY) void refresh() }
     window.addEventListener('storage', onStorage)
     return () => { alive = false; window.removeEventListener('wwcxrl-tasks-updated', sync); window.removeEventListener('focus', refresh); window.removeEventListener('storage', onStorage) }
-  }, [])
+  }, [section])
   const entries = items.filter(item => Number(item.day) > 365).sort((a, b) => Number(b.day) - Number(a.day))
   const active = entries.find(item => item.day === selected)
   return <section className={`content-section next-chapter ${section === 'journal' ? 'has-journal' : ''}`}>
     <div className="chapter-switch" role="group" aria-label="内容篇章">
       <button aria-pressed={section === 'journal'} onClick={() => setSection('journal')}>每日签到</button>
-      <button aria-pressed={section === 'new'} onClick={() => setSection('new')}>内容小册</button>
       <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
     </div>
     {section === 'journal' ? <React.Suspense fallback={<p role="status">正在打开签到簿…</p>}><GrowthJournal /></React.Suspense> : section === 'archive' ? <CheckIn archive /> : <>
@@ -10397,7 +10398,7 @@ function BackpackView() {
             </article>
           )
         })}
-        {!entries.length && <article className="sticker-card inventory-card empty-feature"><CuteIcon>✨</CuteIcon><h3>下一件道具正在路上</h3><p>先去每日签到完成今天的小任务，它就会被小琛送进背包。</p></article>}
+        {!entries.length && <article className="sticker-card inventory-card empty-feature"><CuteIcon>✨</CuteIcon><h3>下一件道具正在路上</h3><p>可以在“那 65 天”中回看任务与道具的来历。</p></article>}
         {placeholders.map(id => {
           const item = BACKPACK_ITEMS[id]
           return <article className="sticker-card inventory-card is-locked" key={`placeholder-${id}`}><CuteIcon>{item.icon}</CuteIcon><h3>{item.name}</h3><p>等待被发现</p></article>
@@ -10706,7 +10707,7 @@ function MessageMedia({ images = [], compact = false, onOpen }) {
         onClick={() => onOpen(list, 0)}
         aria-label="查看大图"
       >
-        <img src={list[0]} alt="配图" loading="lazy" />
+        <img src={list[0]} alt="配图" loading="lazy" decoding="async" />
       </button>
     )
   }
@@ -10730,7 +10731,7 @@ function MessageMedia({ images = [], compact = false, onOpen }) {
             onClick={() => onOpen(list, index)}
             aria-label={`查看第 ${index + 1} 张图片`}
           >
-            <img src={url} alt={`第 ${index + 1} 张配图`} loading="lazy" />
+            <img src={url} alt={`第 ${index + 1} 张配图`} loading="lazy" decoding="async" />
           </button>
         ))}
       </div>
@@ -10784,6 +10785,7 @@ function MessageBoard() {
   const [sending, setSending] = useState(false)
   const [status, setStatus] = useState('')
   const [editingId, setEditingId] = useState(null)
+  const messageEditOriginal = useRef(null)
   const [deleteTarget, setDeleteTarget] = useState(null)
   const [commentDeleteTarget, setCommentDeleteTarget] = useState(null)
   // 回复草稿：按「被回复的那条」存，主留言和评论共用同一套
@@ -10797,9 +10799,40 @@ function MessageBoard() {
   // 折叠/展开会改变页面高度：记下「被折叠区域之后的内容」，改完 DOM 后把它钉回原来的屏幕位置。
   const pendingScrollAnchorRef = React.useRef(null)
   const refreshInFlightRef = React.useRef(false)
-  // 进小信箱时的默认署名固定是小琳（🌟）：不沿用上次切换过的身份。
-  // 这样小琳打开就能直接发言；小琛自己点一下「🌞 小琛」就能切过去。
+  const messageWriteRevision = React.useRef(0)
+  const commitMessages = value => { messageWriteRevision.current++; setMessages(value) }
+  // 没有草稿时默认小琳；恢复草稿时同时恢复其署名，避免发错身份。
   const [senderRole, setSenderRole] = useState('pomelo')
+  const [mailDraftReady, setMailDraftReady] = useState(false)
+  const [mailDraftError, setMailDraftError] = useState(false)
+  React.useEffect(() => {
+    let alive = true
+    loadMailboxDraft().then(draft => {
+      if (!alive) return
+      if (draft) {
+        setContent(draft.content || '')
+        setComposeItems(draft.composeItems || [])
+        setEditingId(draft.editingId || null)
+        messageEditOriginal.current = draft.original || null
+        setReplyState(draft.replyState || {})
+        setInlineEdit(draft.inlineEdit || null)
+        if (draft.senderRole) setSenderRole(draft.senderRole)
+      }
+      setMailDraftReady(true)
+    }).catch(() => { if (alive) { setMailDraftReady(true); setMailDraftError(true); setStatus('本机草稿暂不可用，离开前请先寄出或保存') } })
+    return () => { alive = false }
+  }, [])
+  React.useEffect(() => {
+    if (!mailDraftReady) return
+    const replies = Object.fromEntries(Object.entries(replyState).filter(([,r]) => r.text || r.items?.length).map(([id,r]) => [id,{...r,sending:false,status:''}]))
+    saveMailboxDraft({content,composeItems,editingId,original:messageEditOriginal.current,senderRole,replyState:replies,inlineEdit:inlineEdit?{...inlineEdit,saving:false,status:''}:null})
+      .then(() => setMailDraftError(false)).catch(() => { setMailDraftError(true); setStatus('本机草稿未能保存，离开前请先寄出或保存') })
+  }, [mailDraftReady,content,composeItems,editingId,senderRole,replyState,inlineEdit])
+  React.useEffect(() => {
+    const warn = event => { if (sending || mailDraftError) { event.preventDefault(); event.returnValue = '' } }
+    window.addEventListener('beforeunload', warn)
+    return () => window.removeEventListener('beforeunload', warn)
+  }, [sending, mailDraftError])
   const senderName = senderRole === 'orange' ? '小琛' : '小琳'
   const senderUserId = `wwcxrl-${senderRole}-main`
   const thread = React.useMemo(() => buildMessageThread(messages), [messages])
@@ -10829,9 +10862,10 @@ function MessageBoard() {
   const refresh = React.useCallback(() => {
     if (refreshInFlightRef.current) return
     refreshInFlightRef.current = true
+    const revision = messageWriteRevision.current
     if (cloudEnabled) {
       loadCloudMessages().then(list => {
-        if (list) {
+        if (list && revision === messageWriteRevision.current) {
           setMessages(list)
           saveMessagesLocal(list)
         }
@@ -10847,11 +10881,12 @@ function MessageBoard() {
     const onFocus = () => { if (!document.hidden) refresh() }
     window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onFocus)
-    const timer = window.setInterval(refresh, 12000)
+    const timer = window.setInterval(() => { if (!document.hidden) refresh() }, 12000)
     return () => {
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onFocus)
       window.clearInterval(timer)
+      messageWriteRevision.current++
     }
   }, [refresh])
 
@@ -10915,6 +10950,7 @@ function MessageBoard() {
   function startEdit(message) {
     setInlineEdit(null)
     setEditingId(message.id)
+    messageEditOriginal.current = message
     setContent(message.content || '')
     setComposeItems(messageImageList(message).map((url, index) => ({
       key: `keep-${index}-${String(url).slice(-16)}`,
@@ -11052,7 +11088,7 @@ function MessageBoard() {
           patchReply(targetId, { status: `回复失败：${saved?.error || '请稍后再试。'}` })
           return
         }
-        setMessages(previous => [saved.message, ...previous.filter(item => item.id !== saved.message.id)])
+        commitMessages(previous => [saved.message, ...previous.filter(item => item.id !== saved.message.id)])
       } else {
         const localComment = {
           id: `local-comment-${Date.now()}`,
@@ -11067,7 +11103,7 @@ function MessageBoard() {
         }
         const next = [localComment, ...loadMessagesLocal()]
         saveMessagesLocal(next)
-        setMessages(next)
+        commitMessages(next)
       }
       patchReply(targetId, { text: '', items: [], sender: role, status: '评论好啦 💬' })
       // 新回复排在最后一条：把这一层展开，免得自己刚发出去的话正好落在折叠区里看不见
@@ -11086,6 +11122,7 @@ function MessageBoard() {
     setReplyOpenId(null)
     setInlineEdit({
       id: comment.id,
+      original: comment,
       text: comment.content || '',
       items: messageImageList(comment).map((url, index) => ({
         key: `keep-${index}-${String(url).slice(-16)}`,
@@ -11106,7 +11143,7 @@ function MessageBoard() {
     if (!inlineEdit) return
     const comment = messages.find(item => item.id === inlineEdit.id)
     if (!comment) {
-      setInlineEdit(null)
+      setInlineEdit(previous => previous && {...previous, status:'原评论已删除，编辑内容仍保留，可复制后重新回复。'})
       return
     }
     const text = String(inlineEdit.text || '').trim()
@@ -11124,12 +11161,12 @@ function MessageBoard() {
       }
       const urls = resolved.urls
       if (cloudEnabled) {
-        const res = await updateCloudMessage(comment.id, { content: text, imageUrls: urls })
+        const res = await updateCloudMessage(comment.id, { content: text, imageUrls: urls }, inlineEdit.original)
         if (!res?.ok) {
           setInlineEdit(previous => previous && { ...previous, saving: false, status: `保存失败：${res?.error || '请稍后再试。'}` })
           return
         }
-        setMessages(previous => {
+        commitMessages(previous => {
           const updated = res.message
             ? previous.map(item => (item.id === comment.id ? res.message : item))
             : previous.map(item => (item.id === comment.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
@@ -11139,7 +11176,7 @@ function MessageBoard() {
       } else {
         const updated = loadMessagesLocal().map(item => (item.id === comment.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
         saveMessagesLocal(updated)
-        setMessages(updated)
+        commitMessages(updated)
       }
       setInlineEdit(null)
     } catch (error) {
@@ -11156,7 +11193,7 @@ function MessageBoard() {
     if (cloudEnabled) {
       const ok = await deleteCloudMessage(comment.id)
       if (ok) {
-        setMessages(previous => {
+        commitMessages(previous => {
           const updated = previous.filter(item => !doomed.has(item.id))
           saveMessagesLocal(updated)
           return updated
@@ -11165,11 +11202,13 @@ function MessageBoard() {
     } else {
       const next = loadMessagesLocal().filter(item => !doomed.has(item.id))
       saveMessagesLocal(next)
-      setMessages(next)
+      commitMessages(next)
     }
   }
 
   async function sendMessage() {
+    if (sending || !mailDraftReady) return
+    if (editingId && !messages.some(item => item.id === editingId)) { setStatus('原留言已删除，编辑内容仍保留；请取消编辑后决定是否重新寄出。'); return }
     const text = content.trim()
     const editing = editingId ? messages.find(item => item.id === editingId) : null
     if (!text && !composeItems.length) {
@@ -11187,12 +11226,12 @@ function MessageBoard() {
       const urls = resolved.urls
       if (editing) {
         if (cloudEnabled) {
-          const res = await awaitWithSlowHint(updateCloudMessage(editing.id, { content: text, imageUrls: urls }), '保存有点慢，如果已经改好会自动刷新…')
+          const res = await awaitWithSlowHint(updateCloudMessage(editing.id, { content: text, imageUrls: urls }, messageEditOriginal.current), '保存有点慢，如果已经改好会自动刷新…')
           if (!res?.ok) {
             setStatus(`保存失败：${res?.error || '请稍后再试。'}`)
             return
           }
-          setMessages(previous => {
+          commitMessages(previous => {
             const updated = res.message
               ? [res.message, ...previous.filter(item => item.id !== editing.id)]
               : previous.map(item => (item.id === editing.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
@@ -11202,7 +11241,7 @@ function MessageBoard() {
         } else {
           const updated = loadMessagesLocal().map(item => (item.id === editing.id ? { ...item, content: text, images: urls, imageUrl: urls[0] || '' } : item))
           saveMessagesLocal(updated)
-          setMessages(updated)
+          commitMessages(updated)
         }
         setStatus('修改已保存 💌')
       } else if (cloudEnabled) {
@@ -11211,7 +11250,7 @@ function MessageBoard() {
           setStatus(`寄出失败：${saved?.error || '请稍后再试。'}（若提示表不存在，请先在 Supabase 执行留言板建表 SQL）`)
           return
         }
-        setMessages(prev => [saved.message, ...prev.filter(item => item.id !== saved.message.id)])
+        commitMessages(prev => [saved.message, ...prev.filter(item => item.id !== saved.message.id)])
         setStatus('已寄出，两台设备都能看到 💌')
       } else {
         const localMessage = {
@@ -11227,9 +11266,10 @@ function MessageBoard() {
         }
         const next = [localMessage, ...loadMessagesLocal()]
         saveMessagesLocal(next)
-        setMessages(next)
+        commitMessages(next)
         setStatus('已放进小信箱啦 💌')
       }
+      await clearMailboxComposer({content,composeItems,editingId}).catch(() => setMailDraftError(true))
       setEditingId(null)
       setContent('')
       setComposeItems([])
@@ -11249,7 +11289,7 @@ function MessageBoard() {
     if (cloudEnabled) {
       const ok = await deleteCloudMessage(message.id)
       if (ok) {
-        setMessages(previous => {
+        commitMessages(previous => {
           const updated = previous.filter(item => !doomed.has(item.id))
           saveMessagesLocal(updated)
           return updated
@@ -11258,7 +11298,7 @@ function MessageBoard() {
     } else {
       const next = loadMessagesLocal().filter(item => !doomed.has(item.id))
       saveMessagesLocal(next)
-      setMessages(next)
+      commitMessages(next)
     }
   }
 
@@ -11887,7 +11927,7 @@ function EnergyCapsule() {
           <div className="capsule-energy-meter" aria-label={`累计能量 ${energy} / 目标 ${ENERGY_TARGET}`}>
             <div><strong>累计能量 · 目标 {ENERGY_TARGET}</strong><span>{energy}/{ENERGY_TARGET}</span></div>
             <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} />{ENERGY_MILESTONES.map(milestone => <em key={milestone.at} style={{ left: `${milestone.at / ENERGY_TARGET * 100}%` }} />)}</b>
-            <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '完成每日签到或上传当天相册照片后，会先获得抽能量次数。'}</small>
+            <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '抽能量次数来自“那 65 天”的签到与相册记录。'}</small>
           </div>
           <div className="capsule-milestones" aria-label={`能量印章 ${reachedCount} / ${ENERGY_MILESTONES.length}`}>
             {ENERGY_MILESTONES.map(milestone => {
@@ -14226,9 +14266,13 @@ const MUSIC_MODES = [
 ]
 
 async function musicRequest(path, options = {}) {
+  const readOnly = !options.method || options.method === 'GET'
+  const controller = readOnly ? new AbortController() : null
+  const timeout = controller ? setTimeout(() => controller.abort(), 20000) : null
   try {
     const response = await fetch(path, {
       credentials: 'same-origin',
+      ...(controller ? {signal: controller.signal} : {}),
       ...options,
       headers: { 'Content-Type': 'application/json', ...(options.headers || {}) }
     })
@@ -14236,7 +14280,9 @@ async function musicRequest(path, options = {}) {
     if (!response.ok) return { ok: false, error: (data && data.error) || `请求失败（${response.status}）` }
     return data
   } catch {
-    return { ok: false, error: '连不上服务器，检查一下网络' }
+    return { ok: false, error: controller?.signal.aborted ? '读取超时，请刷新重试' : '连不上服务器，检查一下网络' }
+  } finally {
+    if (timeout) clearTimeout(timeout)
   }
 }
 
@@ -14645,7 +14691,10 @@ function MusicDock() {
 function MusicRoom() {
   const music = useMusicState()
   const [requests, setRequests] = useState([])
-  const [draft, setDraft] = useState('')
+  const [draft, setDraft] = useState(() => safeGetItem('wwcxrl-music-request-draft-v1') || '')
+  const [refreshing, setRefreshing] = useState(false)
+  const requestRevision = useRef(0)
+  const requestLoading = useRef(false)
   const [sending, setSending] = useState(false)
   const [note, setNote] = useState('')
   const [senderRole, setSenderRole] = useState(() => {
@@ -14657,16 +14706,30 @@ function MusicRoom() {
     if (!music.loaded) musicLoadTracks()
   }, [music.loaded])
 
-  React.useEffect(() => {
-    let alive = true
-    musicRequest(MUSIC_REQUESTS_API).then(data => {
-      if (alive && data.ok) setRequests(data.requests || [])
-    })
-    return () => { alive = false }
+  const refreshRequests = React.useCallback(async () => {
+    if (requestLoading.current) return
+    requestLoading.current = true
+    setRefreshing(true)
+    const revision = requestRevision.current
+    const data = await musicRequest(MUSIC_REQUESTS_API)
+    if (revision === requestRevision.current) {
+      if (data.ok) setRequests(data.requests || [])
+      else setNote(data.error || '点歌留言暂未读取，请重试')
+    }
+    requestLoading.current = false
+    setRefreshing(false)
   }, [])
+  React.useEffect(() => {
+    void refreshRequests()
+    const refresh = () => { if (!document.hidden) void refreshRequests() }
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    return () => { requestRevision.current++; window.removeEventListener('focus', refresh); document.removeEventListener('visibilitychange', refresh) }
+  }, [refreshRequests])
 
   async function submitRequest(event) {
     event.preventDefault()
+    const submitted = draft
     const content = draft.trim()
     if (!content || sending) return
     setSending(true)
@@ -14680,13 +14743,16 @@ function MusicRoom() {
       setNote(data.error || '没写进去，再试一次')
       return
     }
-    setRequests(previous => [data.request, ...previous])
+    requestRevision.current++
+    setRequests(previous => [data.request, ...previous.filter(item => item.id !== data.request.id)])
+    if (safeGetItem('wwcxrl-music-request-draft-v1') === submitted) safeSetItem('wwcxrl-music-request-draft-v1', '')
     setDraft('')
   }
 
   async function removeRequest(id) {
     const data = await musicRequest(`${MUSIC_REQUESTS_API}?id=${encodeURIComponent(id)}`, { method: 'DELETE' })
-    if (data.ok) setRequests(previous => previous.filter(item => item.id !== id))
+    if (data.ok) { requestRevision.current++; setRequests(previous => previous.filter(item => item.id !== id)) }
+    else setNote(data.error || '删除未成功，请重试')
   }
 
   const current = music.tracks.find(track => track.id === music.currentId) || null
@@ -14746,15 +14812,17 @@ function MusicRoom() {
 
         <aside className="music-request-card sticker-card">
           <h3>📮 点歌台</h3>
+          <button type="button" disabled={refreshing || sending} onClick={refreshRequests}>{refreshing ? '读取中…' : '刷新留言'}</button>
           <p className="music-request-hint">想听什么写在这里，另一边刷新就能看到。</p>
           <form onSubmit={submitRequest}>
             <div className="music-request-roles">
-              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => setSenderRole('orange')}>🌞 小琛</button>
-              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => setSenderRole('pomelo')}>🌟 小琳</button>
+              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => { setSenderRole('orange'); safeSetItem('wwcxrl-message-sender-role', 'orange') }}>🌞 小琛</button>
+              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => { setSenderRole('pomelo'); safeSetItem('wwcxrl-message-sender-role', 'pomelo') }}>🌟 小琳</button>
             </div>
             <textarea
               value={draft}
-              onChange={event => { setDraft(event.target.value); setNote('') }}
+              disabled={sending}
+              onChange={event => { setDraft(event.target.value); safeSetItem('wwcxrl-music-request-draft-v1', event.target.value); setNote('') }}
               rows={3}
               maxLength={200}
               placeholder="例如：想听《后来的我们》"
