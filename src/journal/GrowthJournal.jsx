@@ -156,7 +156,8 @@ function JournalPage({
           dirtyRef.current = true
           setEntry(currentRef.current)
           setDirty(true)
-          setNote('已恢复本机草稿')
+          setNote('已恢复本机草稿，保存后对方才能看到')
+          if (remoteRef.current.version > draft.entry.version) setConflict(remoteRef.current)
         }
         setReady(true)
       })
@@ -173,6 +174,7 @@ function JournalPage({
   }, [key])
   useEffect(() => {
     if (!lock.current) {
+      if (dirtyRef.current && remote.version > currentRef.current.version) setConflict(remote)
       currentRef.current = dirtyRef.current
         ? mergeEntryMedia(currentRef.current, remote)
         : remote
@@ -213,7 +215,7 @@ function JournalPage({
     draftWrites.current
       .then(() => {
         setDraftFailure(false)
-        setNote('草稿已存本机')
+        setNote('草稿仅在本机，保存后同步')
       })
       .catch(() => {
         setDraftFailure(true)
@@ -308,7 +310,7 @@ function JournalPage({
       } catch {
         setDraftFailure(true)
       }
-      setNote(cloudEnabled ? '已同步' : '已保存到此浏览器')
+      setNote(cloudEnabled ? '已同步，对方刷新后可见' : '已保存到此浏览器')
     } catch (error) {
       setNote(error.message || '未同步，请稍后重试')
       if (error.status === 409 && error.current) setConflict(error.current)
@@ -355,9 +357,8 @@ function JournalPage({
           <h3>{OWNER_NAMES[owner]}</h3>
         </div>
         <span className="journal-sign-state">
-          {entry.checkedIn
-            ? dirty ? '已签到 · 修改待保存' : '已签到'
-            : '未签到'}
+          {dirty ? '有修改待保存' : entry.version > 0
+            ? (cloudEnabled ? '已同步' : '已保存') : '未保存'}
         </span>
       </header>
       <section className="journal-sleep compact-sleep">
@@ -413,7 +414,7 @@ function JournalPage({
                   />
                 </label>
                 <small>
-                  {currentWeek} — {shiftDate(currentWeek, 6)}
+                  {currentWeek} — {shiftDate(currentWeek, 6)} · 按夜间归属
                 </small>
                 <div
                   className="journal-week-dots"
@@ -464,10 +465,7 @@ function JournalPage({
               <>
                 <strong>{entry.sleepTime}</strong>
                 <small>
-                  {(entry.sleepPreviousDay ? shiftDate(date, -1) : date)
-                    .slice(5)
-                    .replace('-', '/')}{' '}
-                  入睡
+                  {shiftDate(date, -1).slice(5).replace('-', '/')} 夜间
                 </small>
               </>
             ) : (
@@ -531,25 +529,11 @@ function JournalPage({
                 onChange={(event) =>
                   change({
                     sleepTime: event.target.value,
-                    sleepPreviousDay:
-                      Number(event.target.value.slice(0, 2)) >= 12,
+                    sleepPreviousDay: true,
                   })
                 }
               />
             </label>
-            <select
-              aria-label={`${OWNER_NAMES[owner]}入睡所属日期`}
-              value={entry.sleepPreviousDay ? 'previous' : 'same'}
-              disabled={disabled}
-              onChange={(event) =>
-                change({ sleepPreviousDay: event.target.value === 'previous' })
-              }
-            >
-              <option value="previous">
-                {shiftDate(date, -1).slice(5)} 入睡
-              </option>
-              <option value="same">{date.slice(5)} 入睡</option>
-            </select>
             {screenshot && (
               <button
                 disabled={disabled}
@@ -674,25 +658,11 @@ function JournalPage({
         <span role="status">{note || '内容均可选填'}</span>
         <div>
           <button
-            disabled={disabled || !connected || !dirty}
-            onClick={() => save(false)}
-          >
-            {pendingAction === 'save'
-              ? '保存中…'
-              : entry.checkedIn && dirty ? '保存修改' : '保存'}
-          </button>
-          <button
             className="journal-checkin"
-            disabled={disabled || !connected || entry.checkedIn}
+            disabled={disabled || !connected || (!dirty && entry.version > 0)}
             onClick={() => save(true)}
           >
-            {pendingAction === 'checkin'
-              ? '保存中…'
-              : entry.checkedIn
-              ? '已签到 ✓'
-              : date < todayInShanghai()
-                ? '补卡'
-                : '签到'}
+            {pendingAction ? '正在同步…' : '保存记录'}
           </button>
         </div>
       </footer>
@@ -742,7 +712,7 @@ export default function GrowthJournal() {
     return () => {
       alive = false
     }
-  }, [weekStart(date), retry])
+  }, [date, retry])
   useEffect(() => {
     const refresh = () => setRetry((value) => value + 1)
     window.addEventListener('focus', refresh)
@@ -855,6 +825,9 @@ export default function GrowthJournal() {
         ))}
       </div>
       <div className="journal-sync-status" role="status">
+        <button disabled={loading || Boolean(turn)} onClick={() => setRetry((n) => n + 1)}>
+          {loading ? '读取中…' : '刷新记录'}
+        </button>
         {loading ? (
           '正在读取记录…'
         ) : error ? (

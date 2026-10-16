@@ -22,6 +22,11 @@ function harness({ level = 1, existing = null } = {}) {
         eq() {
           return q
         },
+        is(column, value) { calls.push(['is', column, value]); return q },
+        not(column, op, value) { calls.push(['not', column, op, value]); return q },
+        order() { return q },
+        limit() { return q },
+        then(resolve) { return Promise.resolve({data: []}).then(resolve) },
         maybeSingle: async () => ({ data: existing }),
         insert(row) {
           calls.push(['insert', row])
@@ -66,7 +71,7 @@ function harness({ level = 1, existing = null } = {}) {
   vm.runInContext(source + ';globalThis.run=handler', context)
   return {
     calls,
-    async run(method, body) {
+    async run(method, body, url = '/api/life-album') {
       const res = {
         setHeader() {},
         status(code) {
@@ -78,7 +83,7 @@ function harness({ level = 1, existing = null } = {}) {
           return this
         },
       }
-      await context.run({ method, body, url: '/api/life-album' }, res)
+      await context.run({ method, body, url }, res)
       return res
     },
   }
@@ -149,4 +154,15 @@ test('pagination deduplicates records; hiding and restoring does not lose other 
   assert.equal(mergeLifePhotos([a], [a, b]).length, 2)
   assert.deepEqual(mergeLifePhotos([a, b], [{ ...a, deleted_at: 'now' }]), [b])
   assert.equal(mergeLifePhotos([b], [a]).length, 2)
+})
+
+ test('hidden album is explicitly queried and never mixed into the public list', async () => {
+  const visible = harness()
+  assert.equal((await visible.run('GET')).code, 200)
+  assert.ok(visible.calls.some(c => c[0] === 'is' && c[1] === 'deleted_at'))
+  const hidden = harness()
+  assert.equal((await hidden.run('GET', null, '/api/life-album?hidden=1')).code, 200)
+  assert.ok(hidden.calls.some(c => c[0] === 'not' && c[1] === 'deleted_at'))
+  const locked = harness({level:0})
+  assert.equal((await locked.run('GET', null, '/api/life-album?hidden=1')).code, 401)
 })

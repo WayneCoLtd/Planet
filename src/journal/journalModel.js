@@ -210,11 +210,11 @@ export function sleepReached(entry, goal = DEFAULT_GOAL) {
 }
 export function weekSummary(entries, owner, start, goal = DEFAULT_GOAL) {
   const sleepDates = new Map()
-  // A later journal page takes precedence if the same bedtime date was
-  // recorded twice. Empty entries never hide an existing sleep record.
+  // Every journal page records the previous night, including after midnight.
+  // Ignore the legacy date selector without rewriting stored records.
   for (const entry of [...entries].sort((a, b) => a.date.localeCompare(b.date))) {
     if (entry.owner !== owner || !validTime(entry.sleepTime)) continue
-    const date = entry.sleepPreviousDay !== false ? shiftDate(entry.date, -1) : entry.date
+    const date = shiftDate(entry.date, -1)
     sleepDates.set(date, entry)
   }
   const days = Array.from({ length: 7 }, (_, index) => {

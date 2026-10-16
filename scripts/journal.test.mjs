@@ -508,7 +508,7 @@ test('sleep week distinguishes reached, missed and unrecorded across midnight', 
   })
   assert.deepEqual(
     summary.days.map((day) => day.reached),
-    [null, true, null, false, null, true, null],
+    [null, true, false, null, true, null, null],
   )
   assert.equal(summary.reached, 2)
   assert.equal(
@@ -535,14 +535,15 @@ test('October 13 at 01:53 recorded on October 14 marks Tuesday missed, not Wedne
   assert.equal(JSON.stringify(row), original)
 })
 
-test('Sunday bedtime recorded next Monday is included once, regardless of input order', () => {
+test('night belongs to previous day even for legacy same-day flags, including Sunday backfill', () => {
   const rows = [
     { ...model.emptyEntry('orange', '2026-10-18'), sleepTime: '23:30', sleepPreviousDay: false },
     { ...model.emptyEntry('orange', '2026-10-19'), sleepTime: '01:53', sleepPreviousDay: true },
   ]
   const summary = model.weekSummary(rows, 'orange', '2026-10-12', { nights: 5, before: '00:20' })
+  assert.equal(summary.days[5].reached, true)
   assert.equal(summary.days[6].reached, false)
-  assert.equal(summary.reached, 0)
+  assert.equal(summary.reached, 1)
   assert.deepEqual(model.weekSummary([...rows].reverse(), 'orange', '2026-10-12', { nights: 5, before: '00:20' }), summary)
   assert.equal(model.weekSummary(rows, 'orange', '2026-10-19').reached, 0)
 })

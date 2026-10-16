@@ -41,10 +41,12 @@ export default async function handler(req, res) {
       let query = db
         .from(TABLE)
         .select('*')
-        .is('deleted_at', null)
         .order('taken_on', { ascending: false })
         .order('id', { ascending: false })
         .limit(31)
+      query = url.searchParams.get('hidden') === '1'
+        ? query.not('deleted_at', 'is', null)
+        : query.is('deleted_at', null)
       const before = url.searchParams.get('before'),
         id = url.searchParams.get('id')
       if (before || id) {

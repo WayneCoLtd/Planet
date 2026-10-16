@@ -174,3 +174,14 @@
 }
 
 .life-pending textarea { width: 100%; box-sizing: border-box; font: inherit; border: 1px solid #dbcebc; border-radius: 8px; min-height: 70px; background: #fffdf8; padding: 8px; }
+
+.life-hide-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid #d9c7b2;
+}
+.life-photo .life-hide-confirm p { flex-basis: 100%; margin: 0; font-size: 13px; }
+.life-photo .life-hide-confirm button { margin-top: 0; min-height: 44px; }
