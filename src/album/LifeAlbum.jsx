@@ -223,8 +223,6 @@ export default function LifeAlbum() {
   return (
     <div className="life-album">
       <header className="section-heading playful-heading">
-        <span>LIFE ALBUM</span>
-        <h2>最近的生活</h2>
         <LiteraryQuote quote={literaryQuotes.nextHome} />
       </header>
       <div className="life-actions">

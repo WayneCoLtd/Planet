@@ -9049,7 +9049,7 @@ function PhotoWallFinaleQuest({ item, taskCompleted = false, onTaskComplete = ()
 
 function PhotoWall() {
   const [section, setSection] = useState('life')
-  return <section className="content-section"><div className="chapter-switch" role="group" aria-label="相册篇章">
+  return <section className="content-section life-album-page"><div className="chapter-switch" role="group" aria-label="相册篇章">
     <button aria-pressed={section === 'life'} onClick={() => setSection('life')}>最近的生活</button>
     <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
   </div><div hidden={section !== 'life'}><React.Suspense fallback={<p role="status">正在打开相册…</p>}><LifeAlbum /></React.Suspense></div>{section === 'archive' && <ArchivePhotoWall />}</section>

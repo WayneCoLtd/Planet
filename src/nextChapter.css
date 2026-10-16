@@ -88,3 +88,10 @@
     padding: 10px 18px;
   }
 }
+
+.life-album-page > .chapter-switch { margin: 8px 0 12px; gap: 8px; }
+@media (max-width: 640px) {
+  .content-section.life-album-page { margin-top: 8px; padding-top: 8px; }
+  .life-album-page > .chapter-switch { margin: 0 0 10px; }
+  .life-album-page > .chapter-switch button { min-height: 44px; padding: 6px 14px; font-size: 13px; box-shadow: none; transform: none; }
+}

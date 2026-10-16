@@ -547,3 +547,16 @@ test('night belongs to previous day even for legacy same-day flags, including Su
   assert.deepEqual(model.weekSummary([...rows].reverse(), 'orange', '2026-10-12', { nights: 5, before: '00:20' }), summary)
   assert.equal(model.weekSummary(rows, 'orange', '2026-10-19').reached, 0)
 })
+
+test('draft recovery skips initial blanks and identical records without discarding real edits', () => {
+  const blank = model.emptyEntry('pomelo', '2026-10-14')
+  const remote = {...blank, version:4, notes:[{id:'a', text:'已同步内容', images:[]}]}
+  assert.equal(model.redundantDraft({entry:blank}, remote), true)
+  assert.equal(model.redundantDraft({entry:{...remote, version:1}}, remote), true)
+  assert.equal(model.redundantDraft({entry:{...blank, version:1}}, remote), false, 'intentional deletion of a saved entry is retained')
+  assert.equal(model.redundantDraft({entry:{...blank, growthNote:'新想法'}}, remote), false)
+  assert.equal(model.redundantDraft({entry:{...blank, pendingImage:{id:'new',data:'bytes'}}}, remote), false)
+  const previous = {...blank, version:1, sleepTime:'23:40'}
+  assert.equal(model.redundantDraft({entry:previous,base:model.entryFingerprint(previous)}, remote), true)
+  assert.equal(model.redundantDraft({entry:{...previous,sleepTime:'00:30'},base:model.entryFingerprint(previous)}, remote), false)
+})

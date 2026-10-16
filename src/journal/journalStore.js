@@ -4,8 +4,8 @@ import { entryNotes, shiftDate, weekStart } from './journalModel'
 // Keep the newest draft readable during a quick in-app page turn while IndexedDB
 // is still committing. Persistent-write failures are still reported to the UI.
 const draftMemory = new Map()
-export function rememberDraft(key, entry) {
-  draftMemory.set(key, { key, entry })
+export function rememberDraft(key, entry, base) {
+  draftMemory.set(key, { key, entry, base })
 }
 
 function openStore() {

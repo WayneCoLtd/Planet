@@ -8,6 +8,8 @@ import {
   OWNER_NAMES,
   OWNERS,
   emptyEntry,
+  entryFingerprint,
+  redundantDraft,
   entryNotes,
   mergeEntryMedia,
   normalizeEntry,
@@ -82,6 +84,7 @@ function JournalPage({
   remoteRef.current = remote
   const [entry, setEntry] = useState(remote)
   const currentRef = useRef(remote)
+  const baseRef = useRef(entryFingerprint(remote))
   const [ready, setReady] = useState(false)
   const [dirty, setDirty] = useState(false)
   const dirtyRef = useRef(false)
@@ -147,17 +150,27 @@ function JournalPage({
   }, [])
 
   useEffect(() => {
+    if (!connected || ready) return
     let alive = true
     journalStore('drafts', 'get', key)
       .then((draft) => {
         if (!alive) return
-        if (draft) {
+        if (draft && !redundantDraft(draft, remoteRef.current)) {
+          baseRef.current = draft.base ?? null
           currentRef.current = mergeEntryMedia(draft.entry, remoteRef.current)
           dirtyRef.current = true
           setEntry(currentRef.current)
           setDirty(true)
           setNote('已恢复本机草稿，保存后对方才能看到')
           if (remoteRef.current.version > draft.entry.version) setConflict(remoteRef.current)
+        } else {
+          currentRef.current = remoteRef.current
+          baseRef.current = entryFingerprint(remoteRef.current)
+          setEntry(remoteRef.current)
+          if (draft) {
+            draftWrites.current = draftWrites.current.catch(() => {}).then(() => journalStore('drafts', 'delete', key))
+            draftWrites.current.catch(() => setDraftFailure(true))
+          }
         }
         setReady(true)
       })
@@ -171,9 +184,10 @@ function JournalPage({
     return () => {
       alive = false
     }
-  }, [key])
+  }, [key, connected])
   useEffect(() => {
     if (!lock.current) {
+      if (!dirtyRef.current) baseRef.current = entryFingerprint(remote)
       if (dirtyRef.current && remote.version > currentRef.current.version) setConflict(remote)
       currentRef.current = dirtyRef.current
         ? mergeEntryMedia(currentRef.current, remote)
@@ -207,11 +221,11 @@ function JournalPage({
     dirtyRef.current = true
     setEntry(next)
     setDirty(true)
-    rememberDraft(key, next)
+    rememberDraft(key, next, baseRef.current)
     setNote('正在保存草稿…')
     draftWrites.current = draftWrites.current
       .catch(() => {})
-      .then(() => journalStore('drafts', 'put', { key, entry: next }))
+      .then(() => journalStore('drafts', 'put', { key, entry: next, base: baseRef.current }))
     draftWrites.current
       .then(() => {
         setDraftFailure(false)
@@ -300,6 +314,7 @@ function JournalPage({
         checkedIn: checkIn || normalized.checkedIn,
       })
       currentRef.current = result
+      baseRef.current = entryFingerprint(result)
       dirtyRef.current = false
       setEntry(result)
       setDirty(false)
@@ -634,10 +649,27 @@ function JournalPage({
           <p>本机草稿仍在上方。对照后选择：</p>
           <button
             disabled={busy}
-            onClick={() => {
-              change({ ...conflict, pendingImage: undefined })
-              setConflict(null)
-              onSaved(conflict)
+            onClick={async () => {
+              if (lock.current) return
+              lock.current = true
+              setBusy(true)
+              try {
+                await draftWrites.current.catch(() => {})
+                await journalStore('drafts', 'delete', key)
+                currentRef.current = conflict
+                baseRef.current = entryFingerprint(conflict)
+                dirtyRef.current = false
+                setEntry(conflict)
+                setDirty(false)
+                onSaved(conflict)
+                setConflict(null)
+                setNote('已载入最新记录，无需再次保存')
+              } catch {
+                setNote('本机草稿未能清理，请重试；两份内容均保留')
+              } finally {
+                lock.current = false
+                setBusy(false)
+              }
             }}
           >
             载入云端版本

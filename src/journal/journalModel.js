@@ -49,6 +49,26 @@ export function emptyEntry(owner, date) {
     version: 0,
   }
 }
+// Compare authored content, not versions or expiring image URLs.
+export function entryFingerprint(entry) {
+  return JSON.stringify({
+    sleepTime: entry.sleepTime || '',
+    studyMinutes: entry.studyMinutes ?? null,
+    growthNote: entry.growthNote || '',
+    screenshotPath: entry.screenshotPath || '',
+    pendingImage: entry.pendingImage || null,
+    notes: entryNotes(entry).filter(note => note.text || note.images.length).map(note => ({
+      text: note.text,
+      images: note.images.map(image => ({ id: image.id, path: image.path || '', thumbPath: image.thumbPath || '', pendingImage: image.pendingImage || null })),
+    })),
+  })
+}
+export function redundantDraft(draft, remote) {
+  const value = entryFingerprint(draft.entry)
+  return value === entryFingerprint(remote)
+    || (draft.base != null && value === draft.base)
+    || (draft.entry.version === 0 && value === entryFingerprint(emptyEntry(draft.entry.owner, draft.entry.date)))
+}
 // Legacy text becomes one note without changing whitespace, checkin or sleep data.
 export function entryNotes(entry) {
   if (Array.isArray(entry.notes)) return entry.notes
