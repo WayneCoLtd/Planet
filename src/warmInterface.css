@@ -249,3 +249,80 @@ body.warm-site .journal-image-dialog button {
   transform: none !important;
   filter: none !important;
 }
+
+/* Romantic warmth: static washes plus four small compositor-only ornaments. */
+body.warm-site {
+  background: radial-gradient(ellipse at 8% 6%, #fff0ca 0, transparent 48%),
+    radial-gradient(ellipse at 96% 28%, #f9dfe5 0, transparent 52%),
+    radial-gradient(ellipse at 12% 90%, #e4efe8 0, transparent 44%), #fbf7ef !important;
+}
+.warm-ui { isolation: isolate; --ui-soft: #f4e8df; --ui-line: #e4d6ca; }
+.romantic-atmosphere {
+  position: fixed; inset: 0; z-index: -1; overflow: hidden;
+  pointer-events: none; contain: strict;
+}
+.romantic-atmosphere i {
+  position: absolute; width: min(70vw, 360px); height: min(70vw, 360px);
+  border-radius: 50%; opacity: .6;
+  background: radial-gradient(circle, #f6bfc64a, #f6bfc600 70%);
+  top: 12%; right: -12%;
+  animation: romantic-drift 24s ease-in-out infinite alternate;
+}
+.romantic-atmosphere i:nth-child(2) {
+  top: auto; right: auto; bottom: 5%; left: -14%;
+  background: radial-gradient(circle, #f6d48760, #f6d48700 70%);
+  animation-duration: 29s; animation-delay: -11s;
+}
+.romantic-atmosphere span {
+  position: absolute; color: #bb7c8655; font-size: 16px;
+  right: 6%; top: 32%; animation: romantic-glimmer 12s ease-in-out infinite alternate;
+}
+.romantic-atmosphere span:last-child {
+  left: 5%; right: auto; top: 76%; font-size: 22px; animation-delay: -5s;
+}
+@keyframes romantic-drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-18px, -24px, 0); } }
+@keyframes romantic-glimmer { from { opacity: .25; transform: translateY(0) rotate(-8deg); } to { opacity: .7; transform: translateY(-9px) rotate(5deg); } }
+.warm-ui .top-bar {
+  background: linear-gradient(120deg, #fffdf6f5, #fff6f8f5) !important;
+  border-color: #fff9f4 !important;
+  box-shadow: 0 5px 22px #a4735b12 !important;
+}
+.warm-ui .sticker-card:not(.legacy-experience *) {
+  background: linear-gradient(135deg, #fffdf7, #fff9f6) !important;
+  border-color: #eadbd0 !important;
+  box-shadow: 0 5px 20px #956d4810 !important;
+}
+.warm-ui .planet-nav button[aria-current='page'],
+.warm-ui .chapter-switch button[aria-pressed='true'] {
+  background: linear-gradient(130deg, #fff0d4, #f5dfe5) !important;
+  box-shadow: 0 2px 7px #aa796813 !important;
+}
+.warm-ui.warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .lottery-button, .life-pending > button, .message-send, .feedback-send) {
+  color: #654331 !important;
+  background: linear-gradient(125deg, #ffedc8, #f5d4dc) !important;
+  border-color: #dfc1ad !important;
+  box-shadow: 0 2px 0 #d8b19c35, 0 5px 14px #a973601a !important;
+}
+.warm-ui .music-turntable { background: linear-gradient(135deg, #fff3d8, #f8e6eb) !important; }
+.warm-ui .music-track-cover { background: linear-gradient(135deg, #ffe8be, #f1d2dd) !important; transform: rotate(-1.5deg); }
+.warm-ui .life-composer summary { box-shadow: 0 3px 10px #a9736012; background: linear-gradient(135deg, #fffaf0, #fff0f2); }
+.warm-ui .sticker-card:is(.changelog-modal, .feedback-modal) { box-shadow: 0 18px 60px #6145352b !important; }
+@media (hover: hover) and (pointer: fine) {
+  .warm-ui.warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .life-pending > button, .message-send, .feedback-send):hover:not(:disabled) {
+    background: linear-gradient(125deg, #ffe6b7, #f1c9d5) !important;
+    box-shadow: 0 5px 16px #a9736024 !important;
+    transform: translateY(-1px) rotate(-.35deg) !important;
+  }
+  .warm-ui.warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .life-pending > button, .message-send, .feedback-send):active:not(:disabled) { transform: scale(.98) !important; }
+}
+.warm-ui.interstellar-voyage-theme .top-bar,
+.warm-ui.interstellar-voyage-theme .sticker-card:not(.legacy-experience *) { background: var(--ui-surface) !important; border-color: var(--ui-line) !important; }
+.warm-ui.interstellar-voyage-theme { --ui-soft: #343d48; --ui-line: #4b515a; }
+.warm-ui.interstellar-voyage-theme .planet-nav button[aria-current='page'],
+.warm-ui.interstellar-voyage-theme .chapter-switch button[aria-pressed='true'] { background: #48404a !important; }
+.warm-ui.interstellar-voyage-theme .music-turntable { background: #34303a !important; }
+@media (prefers-reduced-motion: reduce) {
+  .romantic-atmosphere * { animation: none !important; }
+  .warm-ui.warm-ui button:hover:not(:disabled):not(.legacy-experience button),
+  .warm-ui.warm-ui button:active:not(:disabled):not(.legacy-experience button) { transform: none !important; }
+}
