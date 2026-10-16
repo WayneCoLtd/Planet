@@ -1,0 +1,251 @@
+/* User-facing visual system. Legacy games and the admin editor retain their
+   own controls. No content, dimensions of photos, or data rules change here. */
+body.warm-site {
+  background: #f7f5f0;
+  color: #302c28;
+}
+body.warm-site::before, body.warm-site::after { display: none; }
+.warm-ui {
+  --ui-bg: #f7f5f0;
+  --ui-surface: #fffefa;
+  --ui-soft: #eeebe4;
+  --ui-ink: #302c28;
+  --ui-muted: #72695f;
+  --ui-line: #dcd6cd;
+  --ui-accent: #795b49;
+  --ui-accent-hover: #614736;
+  --ink: var(--ui-ink);
+  --soft-ink: var(--ui-muted);
+  color: var(--ui-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+.warm-ui.interstellar-voyage-theme {
+  --ui-bg: #171c23;
+  --ui-surface: #252c35;
+  --ui-soft: #343d48;
+  --ui-ink: #f3eee5;
+  --ui-muted: #c1b9ae;
+  --ui-line: #4b515a;
+  --ui-accent: #bda181;
+  --ui-accent-hover: #cdb798;
+  background: var(--ui-bg);
+}
+.warm-ui button:not(.legacy-experience button) {
+  font-family: inherit !important;
+  font-weight: 500 !important;
+  letter-spacing: 0 !important;
+  color: var(--ui-ink);
+  background: var(--ui-surface);
+  border: 1px solid var(--ui-line);
+  border-radius: 12px;
+  box-shadow: none !important;
+  text-shadow: none !important;
+  filter: none !important;
+  transform: none;
+  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 120ms ease !important;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+.warm-ui button:not(.legacy-experience button)::before,
+.warm-ui button:not(.legacy-experience button)::after { box-shadow: none !important; }
+.warm-ui button:hover:not(:disabled):not(.legacy-experience button) {
+  transform: none !important;
+  filter: none !important;
+  box-shadow: none !important;
+}
+@media (hover: hover) and (pointer: fine) {
+  .warm-ui button:hover:not(:disabled):not(.legacy-experience button) { background-color: var(--ui-soft); }
+}
+.warm-ui button:active:not(:disabled):not(.legacy-experience button) { transform: scale(.98) !important; }
+.warm-ui button:disabled:not(.legacy-experience button) { opacity: .5; cursor: default; }
+.warm-ui :is(button, input, textarea, select, summary):focus-visible:not(.legacy-experience *) {
+  outline: 2px solid var(--ui-accent) !important;
+  outline-offset: 3px;
+}
+.warm-ui :is(input, textarea, select):not(.legacy-experience *) {
+  font-family: inherit;
+  color: var(--ui-ink);
+  accent-color: var(--ui-accent);
+}
+.warm-ui .top-bar {
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-line) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 4px 20px #302c2808 !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 10px 14px !important;
+}
+.warm-ui .brand {
+  background: transparent !important;
+  border: 0 !important;
+  padding: 6px 4px !important;
+  min-height: 36px !important;
+  font-size: 17px !important;
+  font-weight: 600 !important;
+  color: var(--ui-ink) !important;
+}
+.warm-ui .planet-nav { gap: 4px; scroll-padding-inline: 12px; }
+.warm-ui .planet-nav button {
+  min-height: 44px;
+  border: 0 !important;
+  background: transparent !important;
+  padding: 10px 14px;
+  border-radius: 9px;
+  font-size: 14px;
+  color: var(--ui-muted) !important;
+}
+.warm-ui .planet-nav button > span { display: none; }
+.warm-ui .planet-nav button[aria-current='page'] { background: var(--ui-soft) !important; color: var(--ui-ink) !important; }
+.warm-ui .music-dock-trigger { background: var(--ui-soft) !important; border: 0 !important; border-radius: 50%; }
+.warm-ui .chapter-switch { gap: 4px; margin-bottom: 16px; }
+.warm-ui .chapter-switch button {
+  min-height: 44px;
+  padding: 8px 17px;
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--ui-muted);
+  font-size: 14px;
+  border-radius: 10px;
+}
+.warm-ui .chapter-switch button[aria-pressed='true'] { background: var(--ui-soft) !important; color: var(--ui-ink); }
+.warm-ui .sticker-card:not(.legacy-experience *) {
+  border: 1px solid var(--ui-line) !important;
+  border-radius: 18px !important;
+  background: var(--ui-surface) !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+.warm-ui .sticker-card:not(.legacy-experience *)::before,
+.warm-ui .sticker-card:not(.legacy-experience *)::after { display: none !important; }
+.warm-ui .section-heading:not(.legacy-experience *) { margin-bottom: 24px; }
+.warm-ui .section-heading h2:not(.legacy-experience *) {
+  color: var(--ui-ink) !important;
+  font-family: 'Songti SC', 'STSong', SimSun, serif;
+  font-size: clamp(26px, 3.4vw, 40px) !important;
+  font-weight: 500;
+  letter-spacing: .02em;
+  text-shadow: none !important;
+  -webkit-text-stroke: 0 !important;
+  transform: none !important;
+}
+.warm-ui .section-heading > span:not(.legacy-experience *) { color: var(--ui-muted) !important; font: 500 11px/1.5 system-ui; letter-spacing: .12em; }
+.warm-ui .literary-quote:not(.legacy-experience *) { color: var(--ui-muted); }
+.warm-ui .hero-copy { padding: clamp(24px, 4vw, 48px) !important; }
+.warm-ui .hero-copy h1 { color: var(--ui-ink) !important; font: 600 clamp(42px, 7vw, 76px)/1.05 system-ui !important; letter-spacing: -.04em !important; text-shadow: none !important; transform: none !important; }
+.warm-ui .hero-copy h2 { color: var(--ui-ink) !important; font: 400 clamp(23px, 3vw, 34px)/1.5 'Songti SC', serif !important; text-shadow: none !important; }
+.warm-ui .hero-copy > .cute-icon, .warm-ui .hero-copy > .tiny-label { display: none; }
+.warm-ui .hero-stats { color: var(--ui-muted); gap: 8px; }
+.warm-ui .hero-progress-card { border: 0 !important; border-top: 1px solid var(--ui-line) !important; border-radius: 0 !important; background: none !important; box-shadow: none !important; padding: 18px 0 0 !important; }
+.warm-ui .planet-wrap, .warm-ui .planet-wrap * { animation-play-state: paused !important; }
+.warm-ui .floating-note { background: var(--ui-surface) !important; color: var(--ui-muted) !important; border: 1px solid var(--ui-line) !important; box-shadow: none !important; }
+.warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .lottery-button, .life-pending > button) {
+  min-height: 44px;
+  background: var(--ui-accent) !important;
+  color: #fff !important;
+  border: 1px solid var(--ui-accent) !important;
+  border-radius: 12px;
+}
+.warm-ui.interstellar-voyage-theme :is(.hero-actions button, .journal-checkin, .music-request-submit, .lottery-button, .life-pending > button) { color: #171c23 !important; }
+.warm-ui .site-footer { border-top: 1px solid var(--ui-line); margin-top: 48px; padding: 20px 12px 32px; gap: 8px; }
+.warm-ui .site-footer button { background: transparent !important; border: 0 !important; color: var(--ui-muted) !important; font-size: 12px; padding: 8px 12px; min-height: 40px; }
+.warm-ui :is(.changelog-modal, .feedback-modal, .music-dock-panel, .first-run-guide-modal) {
+  background: var(--ui-surface) !important;
+  border: 1px solid var(--ui-line) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 20px 70px #302c2826 !important;
+  color: var(--ui-ink);
+}
+.warm-ui :is(.changelog-backdrop, .feedback-backdrop, .first-run-guide-backdrop) { background: #24211d55 !important; backdrop-filter: none !important; }
+.warm-ui :is(.message-card, .message-compose, .feedback-card, .music-shelf, .music-request-card) { background: var(--ui-surface) !important; border: 1px solid var(--ui-line) !important; border-radius: 16px !important; box-shadow: none !important; }
+.warm-ui :is(.message-card, .message-compose, .music-shelf, .music-request-card)::before,
+.warm-ui :is(.message-card, .message-compose, .music-shelf, .music-request-card)::after { display: none !important; }
+.warm-ui .music-track-list li button { background: transparent !important; border: 1px solid transparent !important; border-radius: 12px; }
+.warm-ui .music-track-list li.is-current button { background: var(--ui-soft) !important; border-color: var(--ui-line) !important; }
+.warm-ui .music-play-button { background: var(--ui-accent) !important; color: white !important; border-radius: 50%; }
+.warm-ui .journal-shell { font-family: inherit; }
+.warm-ui .journal-heading h2 { font-family: 'Songti SC', 'STSong', serif; font-size: 27px; font-weight: 400; color: var(--ui-ink); }
+.warm-ui .journal-book { background: #b9a78e; box-shadow: 0 2px 0 #a49176, 0 5px 0 #d8cbb6, 0 18px 35px -22px #4b3a2866; }
+.warm-ui .journal-page { color: #403a32; }
+.warm-ui .journal-page-heading h3 { font-family: 'Songti SC', serif; font-weight: 500; }
+.warm-ui .journal-page :is(textarea, input, select) { color: #403a32; }
+.warm-ui .journal-owner-switch button { border-radius: 0; border: 0; border-bottom: 2px solid transparent; background: none; }
+.warm-ui .journal-owner-switch button[aria-pressed='true'] { border-bottom-color: var(--ui-accent); background: none; }
+.warm-ui .journal-week-dots .is-reached { background: #70836a; color: white; }
+.warm-ui .journal-week-dots .is-missed { background: #a45f58; color: white; }
+.warm-ui .life-photo-open { background: transparent !important; border: 0 !important; }
+.warm-ui .life-play { background: transparent !important; border: 0 !important; }
+.warm-ui .life-composer summary { background: var(--ui-surface); border-color: var(--ui-line); font-family: inherit; }
+@media (max-width: 640px) {
+  .warm-ui .top-bar { top: 6px; row-gap: 4px !important; margin-top: 6px !important; margin-bottom: 12px !important; border-radius: 14px !important; padding: 6px 10px !important; }
+  .warm-ui .brand { min-height: 32px !important; font-size: 16px !important; }
+  .warm-ui .planet-nav { gap: 2px; }
+  .warm-ui .planet-nav button { padding: 8px 12px; font-size: 13px; }
+  .warm-ui .section-heading h2:not(.legacy-experience *) { font-size: 28px !important; }
+  .warm-ui .hero-copy { padding: 24px 20px !important; }
+  .warm-ui .hero-copy h1 { font-size: 44px !important; }
+  .warm-ui .floating-note { display: none; }
+  .warm-ui .site-footer { margin-top: 32px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .warm-ui button:not(.legacy-experience button) { transition: none !important; }
+  .warm-ui button:active:not(:disabled):not(.legacy-experience button) { transform: none !important; }
+}
+/* Text actions stay quiet; the base button treatment is only a fallback. */
+.warm-ui .content-section { font-family: inherit; }
+.warm-ui :where(p, span, small, strong, label, li, time, h3, h4, input, textarea, select):not(.legacy-experience *):not(.literary-quote *):not(.journal-initial) { font-family: inherit !important; }
+.warm-ui .planet-nav button::before, .warm-ui .planet-nav button::after { display: none !important; }
+.warm-ui .planet-nav button { border-radius: 9px !important; }
+.warm-ui .hero-stats span { background: none !important; border: 0 !important; padding: 0 !important; box-shadow: none !important; font-size: 14px; }
+.warm-ui .hero-progress-card span { background: none !important; padding: 0 !important; border: 0 !important; color: var(--ui-ink); }
+.warm-ui .hero-progress-topline strong { font-weight: 500; }
+.warm-ui :is(.journal-sleep-value, .journal-editor-hint, .journal-single-media, .journal-sync-status) button,
+.warm-ui .life-caption-text button {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 4px !important;
+  color: var(--ui-muted);
+}
+.warm-ui .journal-owner-switch button { border: 0 !important; border-bottom: 2px solid transparent !important; border-radius: 0 !important; background: none !important; }
+.warm-ui .journal-owner-switch button[aria-pressed='true'] { border-bottom-color: var(--ui-accent) !important; }
+.warm-ui .journal-heading > span { font-size: 10px; color: var(--ui-muted); }
+.warm-ui .journal-page-heading h3 { font-family: 'Songti SC', serif !important; }
+.warm-ui .journal-page button::before, .warm-ui .journal-page button::after { box-shadow: none !important; }
+.warm-ui button:not(.legacy-experience button) { animation: none !important; }
+.warm-ui button.is-active:not(.legacy-experience button) { background: var(--ui-soft) !important; border-color: var(--ui-accent) !important; color: var(--ui-ink) !important; }
+.warm-ui :is(.message-send, .feedback-send) { min-height: 44px; color: #fff !important; background: var(--ui-accent) !important; border-color: var(--ui-accent) !important; }
+.warm-ui .music-play-button { border-radius: 50% !important; }
+.warm-ui .music-turntable { background: var(--ui-soft) !important; border-radius: 14px; }
+.warm-ui .music-track-cover { background: var(--ui-soft) !important; border-radius: 9px; }
+.warm-ui .music-request-roles { gap: 8px; }
+@media (hover: hover) and (pointer: fine) {
+  .warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .lottery-button, .life-pending > button, .message-send, .feedback-send):hover:not(:disabled) { background: var(--ui-accent-hover) !important; }
+}
+.warm-ui > :is(.content-section, .hero-section):not(.legacy-experience) { animation: warm-section-enter 180ms ease-out both; }
+@keyframes warm-section-enter { from { opacity: .65; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+@media (prefers-reduced-motion: reduce) {
+  .warm-ui > :is(.content-section, .hero-section) { animation: none !important; }
+}
+body.warm-site:has(.warm-ui.interstellar-voyage-theme) { background: #171c23; }
+.warm-ui .sticker-card:is(.changelog-modal, .feedback-modal) { box-shadow: 0 20px 70px #302c2826 !important; }
+/* Existing night skin uses the same quiet surfaces and readable contrast. */
+body.warm-site { background: #f7f5f0 !important; }
+body.warm-site:has(.warm-ui.interstellar-voyage-theme) { background: #171c23 !important; }
+.warm-ui.interstellar-voyage-theme { background: var(--ui-bg) !important; }
+.warm-ui::before, .warm-ui::after, .warm-ui .top-bar::before, .warm-ui .top-bar::after { display: none !important; }
+.warm-ui .hero-progress-card :is(strong, small, span) { color: var(--ui-muted) !important; }
+.warm-ui .hero-progress-card span { color: var(--ui-ink) !important; }
+
+.warm-ui :is(.music-controls button, .changelog-close) { min-width: 44px; min-height: 44px; }
+.warm-ui :is(.journal-sleep-value, .journal-editor-hint) button { min-height: 36px; }
+body.warm-site .journal-image-dialog { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', sans-serif; }
+body.warm-site .journal-image-dialog button {
+  font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1.4;
+  min-height: 44px;
+  border-radius: 10px;
+  box-shadow: none !important;
+  transform: none !important;
+  filter: none !important;
+}

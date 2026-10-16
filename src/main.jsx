@@ -17,6 +17,7 @@ import LiteraryQuote from './LiteraryQuote'
 import { literaryQuotes } from './data/literaryQuotes'
 import { countJourneySignedDays, JOURNEY_TOTAL_DAYS } from './checkinProgress'
 import './nextChapter.css'
+import './warmInterface.css'
 const LifeAlbum = React.lazy(() => import('./album/LifeAlbum'))
 const GrowthJournal = React.lazy(() => import('./journal/GrowthJournal'))
 
@@ -1516,7 +1517,7 @@ function CheckIn({ archive = false }) {
   }
 
   return (
-    <section className="content-section checkin-section">
+    <section className="content-section checkin-section legacy-experience">
       <header className="section-heading playful-heading">
         <span>300 → 365</span>
         <h2>{archive ? '那 65 天' : '300→365每日签到星图'}</h2>
@@ -11324,8 +11325,8 @@ function MessageBoard() {
         <div className="message-sender-row message-comment-sender">
           <span className="message-sender-label">我是</span>
           <div className="message-sender-toggle" role="group" aria-label="回复身份">
-            <button type="button" className={role === 'orange' ? 'is-active' : ''} onClick={() => patchReply(targetId, { sender: 'orange' })}>🌞 小琛</button>
-            <button type="button" className={role === 'pomelo' ? 'is-active' : ''} onClick={() => patchReply(targetId, { sender: 'pomelo' })}>🌟 小琳</button>
+            <button type="button" className={role === 'orange' ? 'is-active' : ''} aria-pressed={role === 'orange'} onClick={() => patchReply(targetId, { sender: 'orange' })}>🌞 小琛</button>
+            <button type="button" className={role === 'pomelo' ? 'is-active' : ''} aria-pressed={role === 'pomelo'} onClick={() => patchReply(targetId, { sender: 'pomelo' })}>🌟 小琳</button>
           </div>
         </div>
         <textarea
@@ -11529,8 +11530,8 @@ function MessageBoard() {
           <div className="message-sender-row">
             <span className="message-sender-label">我是</span>
             <div className="message-sender-toggle" role="group" aria-label="发送身份">
-              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🌞 小琛</button>
-              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🌟 小琳</button>
+              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} aria-pressed={senderRole === 'orange'} onClick={() => changeSenderRole('orange')}>🌞 小琛</button>
+              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} aria-pressed={senderRole === 'pomelo'} onClick={() => changeSenderRole('pomelo')}>🌟 小琳</button>
             </div>
           </div>
         )}
@@ -11540,6 +11541,7 @@ function MessageBoard() {
           rows={3}
           maxLength={500}
           placeholder="写下此刻想对 TA 说的话…（想念的话、路上的云、今天的饭，都可以）"
+          disabled={sending || !mailDraftReady}
           aria-label="留言内容"
         />
         <MessageImagePicker
@@ -11722,8 +11724,8 @@ function FeedbackBoard() {
         <div className="message-sender-row">
           <span className="message-sender-label">我是</span>
           <div className="message-sender-toggle" role="group" aria-label="发送身份">
-            <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => changeSenderRole('orange')}>🌞 小琛</button>
-            <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => changeSenderRole('pomelo')}>🌟 小琳</button>
+            <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} aria-pressed={senderRole === 'orange'} onClick={() => changeSenderRole('orange')}>🌞 小琛</button>
+            <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} aria-pressed={senderRole === 'pomelo'} onClick={() => changeSenderRole('pomelo')}>🌟 小琳</button>
           </div>
         </div>
         <textarea
@@ -11732,6 +11734,7 @@ function FeedbackBoard() {
           rows={3}
           maxLength={500}
           placeholder="比如：这个页面加载有点慢 / 想要一个可爱的功能 / 哪里的字看不清…"
+          disabled={sending}
           aria-label="网站建议内容"
         />
         <div className="feedback-compose-bar">
@@ -12085,6 +12088,10 @@ function TemplateGuide({ setCurrent }) {
 }
 
 function PlanetApp() {
+  React.useEffect(() => {
+    document.body.classList.add('warm-site')
+    return () => document.body.classList.remove('warm-site')
+  }, [])
   const [current, setCurrent] = useState('home')
   const [toast, setToast] = useState('')
   const firstPageRenderRef = React.useRef(true)
@@ -12191,8 +12198,7 @@ function PlanetApp() {
     setFirstGuideOpen(false)
   }
   return (
-    <main className={voyageTheme ? 'interstellar-voyage-theme' : ''}>
-      <StarField />
+    <main className={`warm-ui ${voyageTheme ? 'interstellar-voyage-theme' : ''}`}>
       <header className="top-bar">
         <button className="brand" onClick={() => setCurrent('home')}><span>琛❤️琳</span></button>
         <Nav current={current} setCurrent={setCurrent} />
@@ -12203,7 +12209,7 @@ function PlanetApp() {
       {current === 'checkin' && <NextChapter />}
       {current === 'music' && <MusicRoom />}
       {(current === 'album' || current === 'gallery') && <PhotoWall />}
-      {current === 'telescope' && <TelescopeWorkshop />}
+      {current === 'telescope' && <div className="legacy-experience"><TelescopeWorkshop /></div>}
       {current === 'backpack' && <BackpackView />}
       {current === 'messages' && <MessageBoard />}
       {(current === 'capsule' || current === 'secret') && <EnergyCapsule />}
@@ -14816,8 +14822,8 @@ function MusicRoom() {
           <p className="music-request-hint">想听什么写在这里，另一边刷新就能看到。</p>
           <form onSubmit={submitRequest}>
             <div className="music-request-roles">
-              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} onClick={() => { setSenderRole('orange'); safeSetItem('wwcxrl-message-sender-role', 'orange') }}>🌞 小琛</button>
-              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} onClick={() => { setSenderRole('pomelo'); safeSetItem('wwcxrl-message-sender-role', 'pomelo') }}>🌟 小琳</button>
+              <button type="button" className={senderRole === 'orange' ? 'is-active' : ''} aria-pressed={senderRole === 'orange'} onClick={() => { setSenderRole('orange'); safeSetItem('wwcxrl-message-sender-role', 'orange') }}>🌞 小琛</button>
+              <button type="button" className={senderRole === 'pomelo' ? 'is-active' : ''} aria-pressed={senderRole === 'pomelo'} onClick={() => { setSenderRole('pomelo'); safeSetItem('wwcxrl-message-sender-role', 'pomelo') }}>🌟 小琳</button>
             </div>
             <textarea
               value={draft}
