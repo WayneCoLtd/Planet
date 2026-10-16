@@ -175,13 +175,34 @@
 
 .life-pending textarea { width: 100%; box-sizing: border-box; font: inherit; border: 1px solid #dbcebc; border-radius: 8px; min-height: 70px; background: #fffdf8; padding: 8px; }
 
-.life-hide-confirm {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid #d9c7b2;
+
+/* Quiet photo flow: explicitly neutralize the site's raised button treatment. */
+.life-album { padding: 0 16px; box-sizing: border-box; }
+.life-album .life-actions { display: flex; align-items: flex-start; gap: 12px; margin: 24px 0 12px; }
+.life-album .life-composer { flex: 1; min-width: 0; padding: 0; border: 0; border-radius: 0; background: none; box-shadow: none; transform: none; }
+.life-album .life-composer::before, .life-album .life-composer::after { display: none; }
+.life-album .life-composer summary { display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; border: 1px solid #a5896b55; border-radius: 24px; background: #fffaf080; color: #6f5948; list-style: none; }
+.life-composer summary::-webkit-details-marker { display: none; }
+.life-album .life-play { min-height: 44px; border: 0; background: transparent; box-shadow: none; transform: none; white-space: nowrap; padding: 0 8px; font-size: 14px; }
+.life-album .life-play::before, .life-album .life-play::after { display: none; }
+.life-actions:has(details[open]) { flex-wrap: wrap; }
+.life-actions details[open] { flex-basis: 100%; }
+.life-status:empty { display: none; }
+.life-album .life-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 26px 20px; }
+.life-album .life-photo { padding: 0; margin: 0; border: 0; border-radius: 0; background: none; box-shadow: none; transform: none; }
+.life-album .life-photo::before, .life-album .life-photo::after { display: none; }
+.life-album .life-photo .life-photo-open { width: 100%; max-height: 280px; padding: 0; border: 0; border-radius: 8px; background: transparent; box-shadow: none; transform: none; }
+.life-album .life-photo-open::before, .life-album .life-photo-open::after { display: none; }
+.life-album .life-photo img { width: 100%; height: 100%; max-height: 280px; object-fit: contain; border-radius: 8px; }
+.life-album .life-photo figcaption { padding: 10px 0 0; font-size: 11px; line-height: 1.5; color: #8b7765; }
+.life-album .life-photo figcaption p { margin: 5px 0 0; font-size: 14px; line-height: 1.6; }
+.life-caption-text .is-clamped { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.life-album .life-caption-text button { display: inline-block; margin: 0; min-height: 36px; padding: 4px 0; border: 0; box-shadow: none; transform: none; color: #8b7765; }
+.life-caption-text button::before, .life-caption-text button::after { display: none; }
+@media (max-width: 1000px) { .life-album .life-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 640px) {
+  .life-album { padding: 0 14px; }
+  .life-album .life-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px 12px; }
+  .life-album .life-photo .life-photo-open, .life-album .life-photo img { max-height: min(32svh, 220px); }
+  .life-album .life-photo figcaption p { font-size: 13px; }
 }
-.life-photo .life-hide-confirm p { flex-basis: 100%; margin: 0; font-size: 13px; }
-.life-photo .life-hide-confirm button { margin-top: 0; min-height: 44px; }

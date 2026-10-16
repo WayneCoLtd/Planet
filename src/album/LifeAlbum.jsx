@@ -42,6 +42,7 @@ function Photo({ photo, onOpen }) {
   ) : (
     <button
       className="life-photo-open"
+      style={{ aspectRatio: `${photo.width} / ${photo.height}` }}
       onClick={onOpen}
       aria-label={`查看 ${names[photo.owner]} ${photo.taken_on} 的照片`}
     >
@@ -58,9 +59,28 @@ function Photo({ photo, onOpen }) {
     </button>
   )
 }
+function Caption({ text }) {
+  const [expanded, setExpanded] = useState(false)
+  const [overflowing, setOverflowing] = useState(false)
+  const ref = useRef(null)
+  useEffect(() => {
+    if (expanded) return
+    const measure = () => setOverflowing(ref.current.scrollHeight > ref.current.clientHeight + 1)
+    measure()
+    if (typeof ResizeObserver === 'undefined') {
+      window.addEventListener('resize', measure)
+      return () => window.removeEventListener('resize', measure)
+    }
+    const observer = new ResizeObserver(measure)
+    observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [text, expanded])
+  return <div className="life-caption-text">
+    <p ref={ref} className={expanded ? '' : 'is-clamped'}>{text}</p>
+    {(overflowing || expanded) && <button aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>{expanded ? '收起配文' : '展开配文'}</button>}
+  </div>
+}
 export default function LifeAlbum() {
-  const [showHidden, setShowHidden] = useState(false)
-  const [confirmHide, setConfirmHide] = useState(null)
   const [photos, setPhotos] = useState([]),
     [drafts, setDrafts] = useState([]),
     [more, setMore] = useState(false),
@@ -73,27 +93,26 @@ export default function LifeAlbum() {
     [loading, setLoading] = useState(false),
     [loadError, setLoadError] = useState(false),
     [theater, setTheater] = useState(false),
-    [position, setPosition] = useState(null),
-    [removed, setRemoved] = useState(null)
+    [position, setPosition] = useState(null)
   const lock = useRef(false),
     alive = useRef(true),
     loadingRef = useRef(false)
-  const load = async (append = false, hidden = showHidden) => {
+  const load = async (append = false) => {
     if (loadingRef.current || lock.current) return
     loadingRef.current = true
     setLoading(true)
     setLoadError(false)
     try {
       if (!cloudEnabled) {
-        setPhotos((await albumStore('photos', 'getAll')).filter(p => Boolean(p.deleted_at) === hidden).sort((a,b) => b.taken_on.localeCompare(a.taken_on) || b.id.localeCompare(a.id)))
+        setPhotos(mergeLifePhotos([], await albumStore('photos', 'getAll')))
         return
       }
       const query =
-        `?hidden=${hidden ? '1' : '0'}${append && cursor ? `&before=${cursor.taken_on}&id=${cursor.id}` : ''}`
+        append && cursor ? `?before=${cursor.taken_on}&id=${cursor.id}` : ''
       const data = await api('GET', null, query)
       if (!alive.current) return
       setPhotos((previous) =>
-        append ? [...new Map([...previous, ...data.photos].map(p => [p.id, p])).values()] : data.photos,
+        append ? mergeLifePhotos(previous, data.photos) : data.photos,
       )
       setMore(data.more)
       setCursor(data.photos.at(-1) || null)
@@ -192,31 +211,6 @@ export default function LifeAlbum() {
       setBusy(false)
     }
   }
-  async function hide(photo, hidden) {
-    if (lock.current || loadingRef.current) return
-    lock.current = true
-    setBusy(true)
-    try {
-      const updated = cloudEnabled
-        ? (await api('PATCH', { id: photo.id, hidden })).photo
-        : { ...photo, deleted_at: hidden ? new Date().toISOString() : null }
-      if (!cloudEnabled) await albumStore('photos', 'put', updated)
-      setPhotos((rows) => {
-        const rest = rows.filter(row => row.id !== photo.id)
-        return Boolean(updated.deleted_at) === showHidden
-          ? [...rest, updated].sort((a,b) => b.taken_on.localeCompare(a.taken_on) || b.id.localeCompare(a.id))
-          : rest
-      })
-      setConfirmHide(null)
-      setRemoved(hidden ? photo : null)
-      setStatus(hidden ? '照片已隐藏，原图仍保留，可在“已隐藏照片”中恢复。' : '照片已恢复。')
-    } catch (error) {
-      setStatus(error.message)
-    } finally {
-      lock.current = false
-      setBusy(false)
-    }
-  }
   const memories = photos.map((photo) => ({
     key: photo.id,
     day: {
@@ -233,8 +227,9 @@ export default function LifeAlbum() {
         <h2>最近的生活</h2>
         <LiteraryQuote quote={literaryQuotes.nextHome} />
       </header>
-      {!showHidden && <details className="life-composer sticker-card">
-        <summary>＋ 放几张照片</summary>
+      <div className="life-actions">
+      <details className="life-composer">
+        <summary>＋ 添加照片</summary>
         <div className="life-fields">
           <label>
             署名
@@ -279,8 +274,13 @@ export default function LifeAlbum() {
           </label>
           <small>可以一次选多张；相册保存高清压缩版。</small>
         </div>
-      </details>}
-      {!showHidden && !!drafts.length && (
+      </details>
+      {!!photos.length && <button className="life-play" onClick={() => {
+        setPosition(null)
+        setTheater(true)
+      }}>慢慢看 ↗</button>}
+      </div>
+      {!!drafts.length && (
         <div className="life-pending">
           <p>{drafts.length} 张照片待发布</p>
           <div>
@@ -318,42 +318,14 @@ export default function LifeAlbum() {
           </button>
         </div>
       )}
-      <div className="life-toolbar">
-        <button disabled={loading || busy} aria-pressed={showHidden} onClick={() => {
-          const next = !showHidden
-          setShowHidden(next)
-          setConfirmHide(null)
-          setPhotos([])
-          setCursor(null)
-          setMore(false)
-          void load(false, next)
-        }}>{showHidden ? '返回生活相册' : '已隐藏照片'}</button>
-        <button onClick={() => load()} disabled={loading || busy}>
-          刷新
-        </button>
-        {!showHidden && !!photos.length && (
-          <button
-            onClick={() => {
-              setPosition(null)
-              setTheater(true)
-            }}
-          >
-            慢慢看
-          </button>
-        )}
-        {removed && !showHidden && (
-          <button disabled={busy || loading} onClick={() => hide(removed, false)}>
-            撤销隐藏
-          </button>
-        )}
-      </div>
       <p role="status" className="life-status">
         {status || (loading ? '正在读取相册…' : '')}
+        {loadError && <button disabled={loading || busy} onClick={() => load()}>重新加载</button>}
       </p>
       {!photos.length && !loading && !loadError && (
         <div className="chapter-empty">
           <span aria-hidden="true">✧</span>
-          <p>{showHidden ? '没有已隐藏的照片' : '还没有新的照片'}</p>
+          <p>还没有新的照片</p>
         </div>
       )}
       <div className="life-grid">
@@ -370,18 +342,7 @@ export default function LifeAlbum() {
               <span>
                 {photo.taken_on} · {names[photo.owner]}
               </span>
-              {photo.caption && <p>{photo.caption}</p>}
-              {showHidden ? (
-                <button disabled={busy || loading} onClick={() => hide(photo, false)}>恢复照片</button>
-              ) : confirmHide === photo.id ? (
-                <div className="life-hide-confirm" role="group" aria-label="确认隐藏照片">
-                  <p>隐藏后双方相册中都不再显示，原图仍保留，可在“已隐藏照片”中恢复。</p>
-                  <button disabled={busy || loading} onClick={() => setConfirmHide(null)}>取消</button>
-                  <button disabled={busy || loading} onClick={() => hide(photo, true)}>确认隐藏</button>
-                </div>
-              ) : (
-                <button disabled={busy || loading} onClick={() => setConfirmHide(photo.id)}>隐藏照片</button>
-              )}
+              {photo.caption && <Caption text={photo.caption} />}
             </figcaption>
           </figure>
         ))}
