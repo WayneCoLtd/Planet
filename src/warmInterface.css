@@ -1,10 +1,8 @@
 /* User-facing visual system. Legacy games and the admin editor retain their
    own controls. No content, dimensions of photos, or data rules change here. */
 body.warm-site {
-  background: #f7f5f0;
   color: #302c28;
 }
-body.warm-site::before, body.warm-site::after { display: none; }
 .warm-ui {
   --ui-bg: #f7f5f0;
   --ui-surface: #fffefa;
@@ -29,7 +27,6 @@ body.warm-site::before, body.warm-site::after { display: none; }
   --ui-line: #4b515a;
   --ui-accent: #bda181;
   --ui-accent-hover: #cdb798;
-  background: var(--ui-bg);
 }
 .warm-ui button:not(.legacy-experience button) {
   font-family: inherit !important;
@@ -41,23 +38,17 @@ body.warm-site::before, body.warm-site::after { display: none; }
   border-radius: 12px;
   box-shadow: none !important;
   text-shadow: none !important;
-  filter: none !important;
-  transform: none;
-  transition: background-color 160ms ease, color 160ms ease, border-color 160ms ease, transform 120ms ease !important;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
 .warm-ui button:not(.legacy-experience button)::before,
 .warm-ui button:not(.legacy-experience button)::after { box-shadow: none !important; }
 .warm-ui button:hover:not(:disabled):not(.legacy-experience button) {
-  transform: none !important;
-  filter: none !important;
   box-shadow: none !important;
 }
 @media (hover: hover) and (pointer: fine) {
   .warm-ui button:hover:not(:disabled):not(.legacy-experience button) { background-color: var(--ui-soft); }
 }
-.warm-ui button:active:not(:disabled):not(.legacy-experience button) { transform: scale(.98) !important; }
 .warm-ui button:disabled:not(.legacy-experience button) { opacity: .5; cursor: default; }
 .warm-ui :is(button, input, textarea, select, summary):focus-visible:not(.legacy-experience *) {
   outline: 2px solid var(--ui-accent) !important;
@@ -129,17 +120,15 @@ body.warm-site::before, body.warm-site::after { display: none; }
   letter-spacing: .02em;
   text-shadow: none !important;
   -webkit-text-stroke: 0 !important;
-  transform: none !important;
 }
 .warm-ui .section-heading > span:not(.legacy-experience *) { color: var(--ui-muted) !important; font: 500 11px/1.5 system-ui; letter-spacing: .12em; }
 .warm-ui .literary-quote:not(.legacy-experience *) { color: var(--ui-muted); }
 .warm-ui .hero-copy { padding: clamp(24px, 4vw, 48px) !important; }
-.warm-ui .hero-copy h1 { color: var(--ui-ink) !important; font: 600 clamp(42px, 7vw, 76px)/1.05 system-ui !important; letter-spacing: -.04em !important; text-shadow: none !important; transform: none !important; }
+.warm-ui .hero-copy h1 { color: var(--ui-ink) !important; font: 600 clamp(42px, 7vw, 76px)/1.05 system-ui !important; letter-spacing: -.04em !important; text-shadow: none !important; }
 .warm-ui .hero-copy h2 { color: var(--ui-ink) !important; font: 400 clamp(23px, 3vw, 34px)/1.5 'Songti SC', serif !important; text-shadow: none !important; }
 .warm-ui .hero-copy > .cute-icon, .warm-ui .hero-copy > .tiny-label { display: none; }
 .warm-ui .hero-stats { color: var(--ui-muted); gap: 8px; }
 .warm-ui .hero-progress-card { border: 0 !important; border-top: 1px solid var(--ui-line) !important; border-radius: 0 !important; background: none !important; box-shadow: none !important; padding: 18px 0 0 !important; }
-.warm-ui .planet-wrap, .warm-ui .planet-wrap * { animation-play-state: paused !important; }
 .warm-ui .floating-note { background: var(--ui-surface) !important; color: var(--ui-muted) !important; border: 1px solid var(--ui-line) !important; box-shadow: none !important; }
 .warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .lottery-button, .life-pending > button) {
   min-height: 44px;
@@ -213,7 +202,6 @@ body.warm-site::before, body.warm-site::after { display: none; }
 .warm-ui .journal-heading > span { font-size: 10px; color: var(--ui-muted); }
 .warm-ui .journal-page-heading h3 { font-family: 'Songti SC', serif !important; }
 .warm-ui .journal-page button::before, .warm-ui .journal-page button::after { box-shadow: none !important; }
-.warm-ui button:not(.legacy-experience button) { animation: none !important; }
 .warm-ui button.is-active:not(.legacy-experience button) { background: var(--ui-soft) !important; border-color: var(--ui-accent) !important; color: var(--ui-ink) !important; }
 .warm-ui :is(.message-send, .feedback-send) { min-height: 44px; color: #fff !important; background: var(--ui-accent) !important; border-color: var(--ui-accent) !important; }
 .warm-ui .music-play-button { border-radius: 50% !important; }
@@ -223,18 +211,12 @@ body.warm-site::before, body.warm-site::after { display: none; }
 @media (hover: hover) and (pointer: fine) {
   .warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .lottery-button, .life-pending > button, .message-send, .feedback-send):hover:not(:disabled) { background: var(--ui-accent-hover) !important; }
 }
-.warm-ui > :is(.content-section, .hero-section):not(.legacy-experience) { animation: warm-section-enter 180ms ease-out both; }
-@keyframes warm-section-enter { from { opacity: .65; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
 @media (prefers-reduced-motion: reduce) {
   .warm-ui > :is(.content-section, .hero-section) { animation: none !important; }
 }
-body.warm-site:has(.warm-ui.interstellar-voyage-theme) { background: #171c23; }
 .warm-ui .sticker-card:is(.changelog-modal, .feedback-modal) { box-shadow: 0 20px 70px #302c2826 !important; }
 /* Existing night skin uses the same quiet surfaces and readable contrast. */
-body.warm-site { background: #f7f5f0 !important; }
-body.warm-site:has(.warm-ui.interstellar-voyage-theme) { background: #171c23 !important; }
-.warm-ui.interstellar-voyage-theme { background: var(--ui-bg) !important; }
-.warm-ui::before, .warm-ui::after, .warm-ui .top-bar::before, .warm-ui .top-bar::after { display: none !important; }
+.warm-ui .top-bar::before, .warm-ui .top-bar::after { display: none !important; }
 .warm-ui .hero-progress-card :is(strong, small, span) { color: var(--ui-muted) !important; }
 .warm-ui .hero-progress-card span { color: var(--ui-ink) !important; }
 
@@ -246,42 +228,10 @@ body.warm-site .journal-image-dialog button {
   min-height: 44px;
   border-radius: 10px;
   box-shadow: none !important;
-  transform: none !important;
-  filter: none !important;
 }
 
-/* Romantic warmth: static washes plus four small compositor-only ornaments. */
-body.warm-site {
-  background: radial-gradient(ellipse at 8% 6%, #fff0ca 0, transparent 48%),
-    radial-gradient(ellipse at 96% 28%, #f9dfe5 0, transparent 52%),
-    radial-gradient(ellipse at 12% 90%, #e4efe8 0, transparent 44%), #fbf7ef !important;
-}
-.warm-ui { isolation: isolate; --ui-soft: #f4e8df; --ui-line: #e4d6ca; }
-.romantic-atmosphere {
-  position: fixed; inset: 0; z-index: -1; overflow: hidden;
-  pointer-events: none; contain: strict;
-}
-.romantic-atmosphere i {
-  position: absolute; width: min(70vw, 360px); height: min(70vw, 360px);
-  border-radius: 50%; opacity: .6;
-  background: radial-gradient(circle, #f6bfc64a, #f6bfc600 70%);
-  top: 12%; right: -12%;
-  animation: romantic-drift 24s ease-in-out infinite alternate;
-}
-.romantic-atmosphere i:nth-child(2) {
-  top: auto; right: auto; bottom: 5%; left: -14%;
-  background: radial-gradient(circle, #f6d48760, #f6d48700 70%);
-  animation-duration: 29s; animation-delay: -11s;
-}
-.romantic-atmosphere span {
-  position: absolute; color: #bb7c8655; font-size: 16px;
-  right: 6%; top: 32%; animation: romantic-glimmer 12s ease-in-out infinite alternate;
-}
-.romantic-atmosphere span:last-child {
-  left: 5%; right: auto; top: 76%; font-size: 22px; animation-delay: -5s;
-}
-@keyframes romantic-drift { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-18px, -24px, 0); } }
-@keyframes romantic-glimmer { from { opacity: .25; transform: translateY(0) rotate(-8deg); } to { opacity: .7; transform: translateY(-9px) rotate(5deg); } }
+/* Warm surfaces retained; background and motion come from original styles.css. */
+.warm-ui { --ui-soft: #f4e8df; --ui-line: #e4d6ca; }
 .warm-ui .top-bar {
   background: linear-gradient(120deg, #fffdf6f5, #fff6f8f5) !important;
   border-color: #fff9f4 !important;
@@ -304,16 +254,14 @@ body.warm-site {
   box-shadow: 0 2px 0 #d8b19c35, 0 5px 14px #a973601a !important;
 }
 .warm-ui .music-turntable { background: linear-gradient(135deg, #fff3d8, #f8e6eb) !important; }
-.warm-ui .music-track-cover { background: linear-gradient(135deg, #ffe8be, #f1d2dd) !important; transform: rotate(-1.5deg); }
+.warm-ui .music-track-cover { background: linear-gradient(135deg, #ffe8be, #f1d2dd) !important; }
 .warm-ui .life-composer summary { box-shadow: 0 3px 10px #a9736012; background: linear-gradient(135deg, #fffaf0, #fff0f2); }
 .warm-ui .sticker-card:is(.changelog-modal, .feedback-modal) { box-shadow: 0 18px 60px #6145352b !important; }
 @media (hover: hover) and (pointer: fine) {
   .warm-ui.warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .life-pending > button, .message-send, .feedback-send):hover:not(:disabled) {
     background: linear-gradient(125deg, #ffe6b7, #f1c9d5) !important;
     box-shadow: 0 5px 16px #a9736024 !important;
-    transform: translateY(-1px) rotate(-.35deg) !important;
   }
-  .warm-ui.warm-ui :is(.hero-actions button, .journal-checkin, .music-request-submit, .life-pending > button, .message-send, .feedback-send):active:not(:disabled) { transform: scale(.98) !important; }
 }
 .warm-ui.interstellar-voyage-theme .top-bar,
 .warm-ui.interstellar-voyage-theme .sticker-card:not(.legacy-experience *) { background: var(--ui-surface) !important; border-color: var(--ui-line) !important; }
@@ -322,7 +270,10 @@ body.warm-site {
 .warm-ui.interstellar-voyage-theme .chapter-switch button[aria-pressed='true'] { background: #48404a !important; }
 .warm-ui.interstellar-voyage-theme .music-turntable { background: #34303a !important; }
 @media (prefers-reduced-motion: reduce) {
-  .romantic-atmosphere * { animation: none !important; }
   .warm-ui.warm-ui button:hover:not(:disabled):not(.legacy-experience button),
   .warm-ui.warm-ui button:active:not(:disabled):not(.legacy-experience button) { transform: none !important; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.warm-site .star-field span { animation: none !important; }
 }
