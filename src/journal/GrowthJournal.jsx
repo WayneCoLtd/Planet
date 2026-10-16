@@ -12,6 +12,7 @@ import {
   redundantDraft,
   entryNotes,
   mergeEntryMedia,
+  mergeRemoteEntries,
   normalizeEntry,
   normalizeGoal,
   shiftDate,
@@ -24,12 +25,14 @@ import {
   imageUrl,
   journalStore,
   rememberDraft,
+  parkDraft,
+  clearMatchingDraft,
   loadWeek,
   saveEntry,
   saveGoal,
 } from './journalStore'
 import './growthJournal.css'
-import JournalNotes from './JournalNotes'
+import JournalNotes, { notePhotoUrl } from './JournalNotes'
 
 function ScreenshotViewer({ entry, close }) {
   const ref = useRef(null)
@@ -93,6 +96,7 @@ function JournalPage({
   const lock = useRef(false)
   const [note, setNote] = useState('')
   const [conflict, setConflict] = useState(null)
+  const [recovery, setRecovery] = useState([])
   const [viewImage, setViewImage] = useState(false)
   const [sleepEditing, setSleepEditing] = useState(false)
   const growthInput = useRef(null)
@@ -152,9 +156,23 @@ function JournalPage({
   useEffect(() => {
     if (!connected || ready) return
     let alive = true
-    journalStore('drafts', 'get', key)
-      .then((draft) => {
+    Promise.all([journalStore('drafts', 'get', key), journalStore('recovery', 'getAll')])
+      .then(async ([draft, backups]) => {
         if (!alive) return
+        setRecovery(backups.filter(item => item.sourceKey === key))
+        if (draft && !redundantDraft(draft, remoteRef.current) && remoteRef.current.version > draft.entry.version) {
+          const backup = await parkDraft(key, draft)
+          if (!alive) return
+          setRecovery(items => [...items, backup])
+          currentRef.current = remoteRef.current
+          baseRef.current = entryFingerprint(remoteRef.current)
+          dirtyRef.current = false
+          setEntry(remoteRef.current)
+          setDirty(false)
+          setNote('已显示最新记录；本机旧草稿另行保留')
+          setReady(true)
+          return
+        }
         if (draft && !redundantDraft(draft, remoteRef.current)) {
           baseRef.current = draft.base ?? null
           currentRef.current = mergeEntryMedia(draft.entry, remoteRef.current)
@@ -168,7 +186,7 @@ function JournalPage({
           baseRef.current = entryFingerprint(remoteRef.current)
           setEntry(remoteRef.current)
           if (draft) {
-            draftWrites.current = draftWrites.current.catch(() => {}).then(() => journalStore('drafts', 'delete', key))
+            draftWrites.current = draftWrites.current.catch(() => {}).then(() => clearMatchingDraft(key, draft.entry))
             draftWrites.current.catch(() => setDraftFailure(true))
           }
         }
@@ -217,15 +235,16 @@ function JournalPage({
 
   function change(patch) {
     const next = { ...currentRef.current, ...patch }
+    const base = baseRef.current
     currentRef.current = next
     dirtyRef.current = true
     setEntry(next)
     setDirty(true)
-    rememberDraft(key, next, baseRef.current)
+    rememberDraft(key, next, base)
     setNote('正在保存草稿…')
     draftWrites.current = draftWrites.current
       .catch(() => {})
-      .then(() => journalStore('drafts', 'put', { key, entry: next, base: baseRef.current }))
+      .then(() => journalStore('drafts', 'put', { key, entry: next, base }))
     draftWrites.current
       .then(() => {
         setDraftFailure(false)
@@ -303,6 +322,7 @@ function JournalPage({
     setBusy(true)
     setPendingAction(checkIn ? 'checkin' : 'save')
     setNote('正在保存…')
+    const submitted = currentRef.current
     try {
       await draftWrites.current.catch(() => {})
       const normalized = normalizeEntry(currentRef.current)
@@ -321,7 +341,7 @@ function JournalPage({
       setConflict(null)
       onSaved(result)
       try {
-        await journalStore('drafts', 'delete', key)
+        await clearMatchingDraft(key, submitted)
       } catch {
         setDraftFailure(true)
       }
@@ -655,7 +675,8 @@ function JournalPage({
               setBusy(true)
               try {
                 await draftWrites.current.catch(() => {})
-                await journalStore('drafts', 'delete', key)
+                const backup = await parkDraft(key, { entry: currentRef.current, base: baseRef.current })
+                setRecovery(items => [...items, backup])
                 currentRef.current = conflict
                 baseRef.current = entryFingerprint(conflict)
                 dirtyRef.current = false
@@ -685,6 +706,30 @@ function JournalPage({
             保留本机内容，重新保存
           </button>
         </aside>
+      )}
+      {recovery.length > 0 && (
+        <details className="journal-recovery">
+          <summary>本机保留了 {recovery.length} 份未同步草稿</summary>
+          <p>正文是当前记录。以下草稿只在这台设备保留，不会自动覆盖正文。</p>
+          {recovery.map(backup => (
+            <div key={backup.key} className="journal-recovery-item">
+              <p>睡眠：{backup.entry.sleepTime || '未填'} · 自习：{backup.entry.studyMinutes == null ? '未填' : `${backup.entry.studyMinutes} 分钟`}</p>
+              <p>{entryNotes(backup.entry).map(item => item.text).join('\n\n') || '未填写手记文字'}</p>
+              {backup.entry.growthNote && <p>进步：{backup.entry.growthNote}</p>}
+              <div className="journal-recovery-images">
+                {imageUrl(backup.entry) && <img src={imageUrl(backup.entry)} alt="草稿睡眠截图" />}
+                {entryNotes(backup.entry).flatMap(item => item.images).map(img => (
+                  notePhotoUrl(img, true) ? <img key={img.id} src={notePhotoUrl(img, true)} alt="本机草稿附图" /> : <span key={img.id}>附图已保留，恢复后加载</span>
+                ))}
+              </div>
+              <button disabled={disabled || dirty || !connected} onClick={() => {
+                baseRef.current = entryFingerprint(remoteRef.current)
+                change({ ...mergeEntryMedia(backup.entry, remoteRef.current), version: remoteRef.current.version })
+                setConflict(null)
+              }}>恢复这份草稿继续编辑</button>
+            </div>
+          ))}
+        </details>
       )}
       <footer className="journal-page-footer">
         <span role="status">{note || '内容均可选填'}</span>
@@ -730,7 +775,7 @@ export default function GrowthJournal() {
     loadWeek(date)
       .then((result) => {
         if (alive) {
-          setEntries(result.entries)
+          setEntries(previous => mergeRemoteEntries(previous, result.entries))
           setGoals(result.goals)
           setConnected(true)
         }
@@ -744,16 +789,19 @@ export default function GrowthJournal() {
     return () => {
       alive = false
     }
-  }, [date, retry])
+  }, [date, owner, retry])
   useEffect(() => {
     const refresh = () => setRetry((value) => value + 1)
     window.addEventListener('focus', refresh)
     window.addEventListener('online', refresh)
+    const visible = () => { if (document.visibilityState === 'visible') refresh() }
+    document.addEventListener('visibilitychange', visible)
     return () => {
       clearTimeout(timer.current)
       clearTimeout(commitTimer.current)
       window.removeEventListener('focus', refresh)
       window.removeEventListener('online', refresh)
+      document.removeEventListener('visibilitychange', visible)
     }
   }, [])
   function navigate(next) {

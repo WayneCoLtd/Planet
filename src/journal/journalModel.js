@@ -69,6 +69,14 @@ export function redundantDraft(draft, remote) {
     || (draft.base != null && value === draft.base)
     || (draft.entry.version === 0 && value === entryFingerprint(emptyEntry(draft.entry.owner, draft.entry.date)))
 }
+export function mergeRemoteEntries(previous, incoming) {
+  const records = new Map(previous.map(entry => [`${entry.date}:${entry.owner}`, entry]))
+  for (const entry of incoming) {
+    const key = `${entry.date}:${entry.owner}`
+    if (!records.has(key) || records.get(key).version <= entry.version) records.set(key, entry)
+  }
+  return [...records.values()]
+}
 // Legacy text becomes one note without changing whitespace, checkin or sleep data.
 export function entryNotes(entry) {
   if (Array.isArray(entry.notes)) return entry.notes

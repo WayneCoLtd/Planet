@@ -560,3 +560,30 @@ test('draft recovery skips initial blanks and identical records without discardi
   assert.equal(model.redundantDraft({entry:previous,base:model.entryFingerprint(previous)}, remote), true)
   assert.equal(model.redundantDraft({entry:{...previous,sleepTime:'00:30'},base:model.entryFingerprint(previous)}, remote), false)
 })
+
+test('a late device read cannot replace a newer save; equal-version media URLs refresh', () => {
+  const a = {...model.emptyEntry('pomelo','2026-10-14'), version:4, growthNote:'new', screenshotUrl:'old-url'}
+  const stale = {...a, version:3, growthNote:'old'}
+  assert.equal(model.mergeRemoteEntries([a],[stale])[0].growthNote,'new')
+  assert.equal(model.mergeRemoteEntries([a],[{...a,screenshotUrl:'fresh-url'}])[0].screenshotUrl,'fresh-url')
+  assert.equal(model.mergeRemoteEntries([a],[{...a,owner:'orange'}]).length,2)
+})
+
+test('two devices read saved text and signed photos and cannot overwrite with an old version', async () => {
+  const h = harness()
+  const id = '11111111-1111-4111-8111-111111111111'
+  const entry = {...model.emptyEntry('pomelo','2026-10-14'), action:'save', notes:[{id:'note',text:'第一行\n第二行',images:[{id,path:`pomelo/2026-10-14/${id}.jpg`,thumbPath:`pomelo/2026-10-14/${id}-thumb.jpg`}]}]}
+  const saved = await h.run(entry)
+  assert.equal(saved.code,200)
+  const readOnOtherDevice = await h.run({},'GET')
+  const received = readOnOtherDevice.data.entries.find(e => e.owner === 'pomelo')
+  assert.equal(received.notes[0].text,entry.notes[0].text)
+  assert.ok(received.notes[0].images[0].url)
+  assert.ok(received.notes[0].images[0].thumbUrl)
+  const newer = await h.run({...received, action:'save', growthNote:'另一设备的新修改'})
+  assert.equal(newer.code,200)
+  const rejected = await h.run({...received, action:'save', notes:[{id:'note',text:'旧设备未保存内容',images:[]}]})
+  assert.equal(rejected.code,409)
+  assert.equal(rejected.data.current.growthNote,'另一设备的新修改')
+  assert.equal(rejected.data.current.notes[0].images.length,1)
+})

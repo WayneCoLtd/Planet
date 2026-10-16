@@ -1,5 +1,5 @@
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
-import { entryNotes, shiftDate, weekStart } from './journalModel'
+import { entryNotes, entryFingerprint, shiftDate, weekStart } from './journalModel'
 
 // Keep the newest draft readable during a quick in-app page turn while IndexedDB
 // is still committing. Persistent-write failures are still reported to the UI.
@@ -10,13 +10,56 @@ export function rememberDraft(key, entry, base) {
 
 function openStore() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('wwcxrl-journal-v1', 1)
+    const request = indexedDB.open('wwcxrl-journal-v1', 2)
     request.onupgradeneeded = () => {
-      for (const name of ['drafts', 'entries', 'goals'])
-        request.result.createObjectStore(name, { keyPath: 'key' })
+      for (const name of ['drafts', 'entries', 'goals', 'recovery'])
+        if (!request.result.objectStoreNames.contains(name))
+          request.result.createObjectStore(name, { keyPath: 'key' })
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => reject(request.error)
+  })
+}
+// Archive first and remove only the exact draft we read, in one transaction.
+// A newer draft from another tab must never be deleted by this cleanup.
+export async function parkDraft(key, draft) {
+  const db = await openStore()
+  const backup = { ...draft, key: `${key}:${crypto.randomUUID()}`, sourceKey: key, archivedAt: new Date().toISOString() }
+  const matches = value => value && value.entry.version === draft.entry.version
+    && entryFingerprint(value.entry) === entryFingerprint(draft.entry)
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(['drafts', 'recovery'], 'readwrite')
+    tx.objectStore('recovery').put(backup)
+    const read = tx.objectStore('drafts').get(key)
+    read.onsuccess = () => {
+      if (matches(read.result)) tx.objectStore('drafts').delete(key)
+    }
+    tx.oncomplete = () => {
+      if (matches(draftMemory.get(key))) draftMemory.delete(key)
+      db.close()
+      resolve(backup)
+    }
+    tx.onerror = tx.onabort = () => {
+      db.close()
+      reject(tx.error || new Error('本机草稿保留失败'))
+    }
+  })
+}
+export async function clearMatchingDraft(key, entry) {
+  const db = await openStore()
+  const matches = value => value && value.entry.version === entry.version
+    && entryFingerprint(value.entry) === entryFingerprint(entry)
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('drafts', 'readwrite')
+    const store = tx.objectStore('drafts')
+    const read = store.get(key)
+    read.onsuccess = () => { if (matches(read.result)) store.delete(key) }
+    tx.oncomplete = () => {
+      if (matches(draftMemory.get(key))) draftMemory.delete(key)
+      db.close()
+      resolve()
+    }
+    tx.onerror = tx.onabort = () => { db.close(); reject(tx.error || new Error('草稿清理失败')) }
   })
 }
 export async function journalStore(store, operation, value) {

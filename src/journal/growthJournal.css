@@ -1442,3 +1442,10 @@
   font-size: 10px;
   line-height: 1.5;
 }
+
+.journal-recovery { margin: 12px 0; color: #806f5b; font-size: 12px; }
+.journal-recovery summary { cursor: pointer; min-height: 36px; padding: 8px 0; }
+.journal-recovery-item { border-top: 1px solid #d9cbb7; padding: 8px 0; }
+.journal-recovery p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.journal-recovery-images { display: flex; flex-wrap: wrap; gap: 8px; }
+.journal-recovery-images img { max-width: 100px; max-height: 120px; object-fit: contain; }
