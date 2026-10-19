@@ -95,7 +95,7 @@ export default async function handler(req, res) {
       ]) {
         const { error } = await db.storage
           .from(BUCKET)
-          .upload(path, bytes, { contentType: 'image/jpeg', upsert: true })
+          .upload(path, bytes, { contentType: 'image/jpeg', cacheControl: '604800', upsert: true })
         if (error) throw error
       }
       const { data, error } = await db

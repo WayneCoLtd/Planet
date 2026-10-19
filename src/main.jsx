@@ -1,3 +1,5 @@
+import { mediaPreviewUrl } from './media/previewUrl'
+import { reuseSignedMedia, invalidateSignedMedia } from './media/signedUrlCache'
 import { loadMailboxDraft, saveMailboxDraft, clearMailboxComposer } from './mailboxDrafts'
 import StarField from './StarField'
 import { verifyAdminPassword } from './access'
@@ -8734,6 +8736,7 @@ async function uploadPhotoToCloud(day, owner, dataUrl, fileName, frame, identity
   const path = `${activeIdentity.role}/${activeIdentity.id}/${day.day}-${owner.id}-${Date.now()}-${safeName}.jpg`
   const { error: uploadError } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
     contentType: 'image/jpeg',
+    cacheControl: '604800',
     upsert: true
   })
   if (uploadError) throw uploadError
@@ -9371,7 +9374,7 @@ function ArchivePhotoWall() {
                           <div className="slot-heading"><img className="owner-avatar owner-avatar-lg" src={owner.icon} alt={owner.label} /><strong>{owner.label}</strong></div>
                           {photo?.src ? (
                             <button type="button" className="mini-framed-photo frame-cream" onClick={() => setLightbox({ photo, owner, day })}>
-                              <img src={photo.src} loading="lazy" decoding="async" alt={`${owner.label} Day ${day.day}`} />
+                              <img src={mediaPreviewUrl(photo.src)} onError={event => { if (event.currentTarget.getAttribute('src') !== photo.src) event.currentTarget.src = photo.src }} loading="lazy" decoding="async" alt={`${owner.label} Day ${day.day}`} />
                               <small>{photo.name || photo.caption || owner.hint}</small>
                               {pendingUploadKeys.has(key) && <span className="album-pending-chip">排队中</span>}
                             </button>
@@ -14285,7 +14288,7 @@ async function musicRequest(path, options = {}) {
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) return { ok: false, error: (data && data.error) || `请求失败（${response.status}）` }
-    return data
+    return reuseSignedMedia(data)
   } catch {
     return { ok: false, error: controller?.signal.aborted ? '读取超时，请刷新重试' : '连不上服务器，检查一下网络' }
   } finally {
@@ -14372,6 +14375,8 @@ function musicAudioEl() {
   })
   audio.addEventListener('error', () => {
     if (!audio.src) return
+    invalidateSignedMedia(toCanonicalCloudUrl(audio.src))
+    audio.removeAttribute('src')
     musicState.playing = false
     musicState.loadingId = null
     musicState.error = '这首暂时放不出来，换一首试试'

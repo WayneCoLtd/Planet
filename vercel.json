@@ -50,5 +50,10 @@
       "source": "/sb/auth/v1/:path*",
       "destination": "https://johtzljxyzcbijlniipc.supabase.co/auth/v1/:path*"
     }
-  ]
+  ],
+  "functions": {
+    "api/media-preview.js": {
+      "maxDuration": 30
+    }
+  }
 }

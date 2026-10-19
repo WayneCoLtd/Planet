@@ -6,6 +6,7 @@ import { literaryQuotes } from '../data/literaryQuotes'
 import { albumStore, mergeLifePhotos, prepareLifePhoto } from './lifeAlbumStore'
 import './lifeAlbum.css'
 import { todayInShanghai } from '../journal/journalModel'
+import { mediaPreviewUrl } from '../media/previewUrl'
 
 const names = { orange: '小琛', pomelo: '小琳' }
 const today = todayInShanghai
@@ -28,6 +29,8 @@ async function api(method = 'GET', body, query = '') {
   }
 }
 function Photo({ photo, onOpen }) {
+  const [original, setOriginal] = useState(false)
+  useEffect(() => { setOriginal(false); setFailed(false) }, [photo.thumb])
   const [failed, setFailed] = useState(false),
     [retry, setRetry] = useState(0)
   return failed ? (
@@ -49,13 +52,13 @@ function Photo({ photo, onOpen }) {
     >
       <img
         key={retry}
-        src={resolveCloudAssetUrl(photo.thumb)}
+        src={original ? resolveCloudAssetUrl(photo.thumb) : mediaPreviewUrl(resolveCloudAssetUrl(photo.thumb))}
         width={photo.width}
         height={photo.height}
         loading="lazy"
         decoding="async"
         alt={photo.caption || `${names[photo.owner]}的生活照片`}
-        onError={() => setFailed(true)}
+        onError={() => original ? setFailed(true) : setOriginal(true)}
       />
     </button>
   )
@@ -220,7 +223,7 @@ export default function LifeAlbum() {
       date: photo.taken_on,
     },
     owner: { id: photo.owner, label: names[photo.owner] },
-    photo: { src: resolveCloudAssetUrl(photo.src), caption: photo.caption },
+    photo: { src: resolveCloudAssetUrl(photo.src), previewSrc: mediaPreviewUrl(resolveCloudAssetUrl(photo.thumb)), previewFallbackSrc: resolveCloudAssetUrl(photo.thumb), caption: photo.caption },
   }))
   return (
     <div className="life-album">

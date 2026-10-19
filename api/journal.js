@@ -165,7 +165,7 @@ export default async function handler(req, res) {
       const path = `${body.owner}/${body.date}/${body.id}${body.variant === 'thumb' ? '-thumb' : ''}.jpg`
       const result = await db.storage
         .from(BUCKET)
-        .upload(path, bytes, { contentType: 'image/jpeg', upsert: true })
+        .upload(path, bytes, { contentType: 'image/jpeg', cacheControl: '3600', upsert: true })
       if (result.error) throw result.error
       return res.status(200).json({ screenshotPath: path })
     }

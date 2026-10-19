@@ -1,4 +1,5 @@
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
+import { reuseSignedMedia } from '../media/signedUrlCache'
 import { entryNotes, entryFingerprint, shiftDate, weekStart } from './journalModel'
 
 // Keep the newest draft readable during a quick in-app page turn while IndexedDB
@@ -135,7 +136,7 @@ export async function journalRequest(body, date) {
         status: response.status,
         current: data.current,
       })
-    return data
+    return reuseSignedMedia(data)
   } finally {
     clearTimeout(timer)
   }

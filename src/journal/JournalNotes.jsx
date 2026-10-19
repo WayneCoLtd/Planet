@@ -1,6 +1,7 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { resolveCloudAssetUrl } from '../cloud'
+import { invalidateSignedMedia } from '../media/signedUrlCache'
 import {
   OWNER_NAMES,
   journalText,
@@ -40,7 +41,7 @@ function NotePhoto({ image, open, refresh }) {
         alt="手记附图"
         loading="lazy"
         decoding="async"
-        onError={() => setFailed(true)}
+        onError={() => { invalidateSignedMedia(image.thumbUrl || image.url); setFailed(true) }}
       />
     </button>
   )

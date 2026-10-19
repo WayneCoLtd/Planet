@@ -1,30 +1,40 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { layoutMemories, monthLabel, needsImagesAhead, orderedMemories, rowWindow } from './galleryLayout'
+import { displayPhotoSource, layoutMemories, monthLabel, needsImagesAhead, orderedMemories, rowWindow } from './galleryLayout'
+import { mediaPreviewUrl } from '../media/previewUrl'
 import { createImageQueue, getKnownDimensions } from './imageQueue'
 import LiteraryQuote from '../LiteraryQuote'
 import { literaryQuotes } from '../data/literaryQuotes'
 import './albumTheater.css'
 
-function MemoryImage({ src, alt, queue, onResult }) {
+function MemoryImage({ src, fullSrc, alt, queue, onResult }) {
   const [result, setResult] = useState(null)
   const [attempt, setAttempt] = useState(0)
   useEffect(() => {
     setResult(null)
     onResult(src, { pending: true })
-    return queue.request(src, value => { setResult(value); onResult(src, value) })
-  }, [src, queue, attempt, onResult])
+    const cancel = []
+    const receive = (value, actualSrc) => { setResult({ ...value, src: actualSrc }); onResult(src, value) }
+    cancel.push(queue.request(src, value => {
+      if (value.error && fullSrc && fullSrc !== src) {
+        cancel.push(queue.request(fullSrc, fallback => receive(fallback, fullSrc)))
+      } else receive(value, src)
+    }))
+    return () => cancel.forEach(stop => stop())
+  }, [src, fullSrc, queue, attempt, onResult])
   return <>
     {!result && <span className="mt-image-placeholder" role="status"><span>✧</span>正在展开这一帧…</span>}
     {result?.error ? <span className="mt-image-error">这一帧暂时没能打开<button type="button" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1) }}>重新加载</button></span>
-      : result && <img className="mt-photo-image" src={src} alt={alt} decoding="async" draggable="false" width={result.width} height={result.height} />}
+      : result && <img className="mt-photo-image" src={result.src} alt={alt} decoding="async" draggable="false" width={result.width} height={result.height} />}
   </>
 }
 
 function signedBy(item) { return item.owner.id === 'orange' ? '小琛' : item.owner.id === 'pomelo' ? '小琳' : item.owner.label }
 
 export default function AlbumTheater({ items, onClose, remembered, onRemember, loading = false, lifeMode = false }) {
-  const memories = useMemo(() => orderedMemories(items), [items])
+  const memories = useMemo(() => orderedMemories(items).map(item => ({ ...item,
+    photo: { ...item.photo, previewSrc: item.photo.previewSrc || mediaPreviewUrl(item.photo.src) },
+  })), [items])
   const dialogRef = useRef(null)
   const scrollRef = useRef(null)
   const streamRef = useRef(null)
@@ -215,7 +225,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
           {mountedRows.map(row => <div key={row.key} className="mt-row is-pair" style={{ top: row.offset, height: row.height }}>
             {row.items.map((item, slotIndex) => <figure className="mt-memory" key={`${item.key}:${item.photo.src}`} style={{ '--mt-media-height': `${row.mediaHeights[slotIndex]}px`, '--mt-card-width': `${row.mediaWidths[slotIndex]}px`, gridColumn: row.mobile ? 1 : item.owner.id === 'pomelo' ? 2 : 1 }}>
               <div className="mt-photo-surface">
-                <span className="mt-image-slot"><MemoryImage src={item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} onResult={onImageResult} /></span>
+                <span className="mt-image-slot"><MemoryImage src={displayPhotoSource(item)} fullSrc={item.photo.previewFallbackSrc || item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} onResult={onImageResult} /></span>
                 <button type="button" className="mt-photo-open" aria-label={`放大查看 ${signedBy(item)} ${lifeMode ? item.day.date : `Day ${item.day.day}`} 的照片`}
                   onClick={event => { lastFocusedPhoto.current = event.currentTarget; setSelected(item.key) }}>
                   <span className="mt-enlarge" aria-hidden="true">↗</span>

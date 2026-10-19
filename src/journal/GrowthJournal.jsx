@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cloudEnabled } from '../cloud'
+import { invalidateSignedMedia } from '../media/signedUrlCache'
 import { prepareLifePhoto } from '../album/lifeAlbumStore'
 import {
   DEFAULT_GOAL,
@@ -536,7 +537,7 @@ function JournalPage({
                 <img
                   src={screenshot}
                   alt="睡眠截图缩略图"
-                  onError={() => setImageFailed(true)}
+                  onError={() => { invalidateSignedMedia(entry.screenshotUrl); setImageFailed(true) }}
                 />
               </button>
             )}

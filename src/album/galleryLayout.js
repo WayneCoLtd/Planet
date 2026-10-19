@@ -1,3 +1,4 @@
+export const displayPhotoSource = item => item.photo.previewSrc || item.photo.src
 export function orderedMemories(items) {
   return items.filter(item => item.photo?.src).slice().sort((a, b) => Number(a.day.day) - Number(b.day.day) || String(a.owner.id).localeCompare(String(b.owner.id)))
 }
@@ -15,7 +16,7 @@ export function layoutMemories(items, width, dimensions = new Map(), viewportHei
     const columnWidth = mobile ? pageWidth : (pageWidth - (width <= 900 ? 28 : 56)) / 2
     const edges = mobile ? 20 : 28
     const mediaSizes = rowItems.map(item => {
-      const size = dimensions.get(item.photo.src)
+      const size = dimensions.get(displayPhotoSource(item))
       const ratio = size?.width > 0 && size?.height > 0 ? size.width / size.height : .8
       const maxImageHeight = mobile
         ? Math.min(220, Math.max(100, viewportHeight * .32))
@@ -53,7 +54,7 @@ export function monthLabel(date) {
 export function needsImagesAhead(rows, top, viewport, states) {
   return rowWindow(rows, top, viewport + 120, 0).some(row => row.offset + row.height > top
     && row.items.some(item => {
-      const state = states.get(item.photo.src)
+      const state = states.get(displayPhotoSource(item))
       return !state || state.pending || state.error
     }))
 }
