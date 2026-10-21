@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import LiteraryQuote from '../LiteraryQuote'
+import { literaryQuotes } from '../data/literaryQuotes'
 import { cloudEnabled } from '../cloud'
 import { invalidateSignedMedia } from '../media/signedUrlCache'
 import { prepareLifePhoto } from '../album/lifeAlbumStore'
@@ -17,6 +19,7 @@ import {
   normalizeEntry,
   normalizeGoal,
   shiftDate,
+  sleepWeekStart,
   todayInShanghai,
   weekStart,
   weekSummary,
@@ -79,6 +82,7 @@ function JournalPage({
   connected,
   active,
   onRefresh,
+  onNavigate,
 }) {
   const key = entryKey(owner, date)
   const remote =
@@ -104,7 +108,9 @@ function JournalPage({
   const [imageFailed, setImageFailed] = useState(false)
   const [draftFailure, setDraftFailure] = useState(false)
   const draftWrites = useRef(Promise.resolve())
-  const start = weekStart(date)
+  const night = shiftDate(date, -1)
+  const nightLabel = `${night} 周${'日一二三四五六'[new Date(`${night}T12:00:00Z`).getUTCDay()]}夜间`
+  const start = sleepWeekStart(date)
   const goalRow = goals
     .filter((item) => item.owner === owner && item.week_start <= start)
     .sort((a, b) => b.week_start.localeCompare(a.week_start))[0]
@@ -113,12 +119,17 @@ function JournalPage({
     : DEFAULT_GOAL
   const summary = weekSummary(entries, owner, start, goal)
   const currentWeek = weekStart(todayInShanghai())
+  const weekLabel = start === currentWeek ? '本周' : start === shiftDate(currentWeek, -7) ? '上周' : '该周'
+  const canEditGoal = weekStart(date) === currentWeek
+  const effectiveCurrentGoal = goals
+    .filter((item) => item.owner === owner && item.week_start <= currentWeek)
+    .sort((a, b) => b.week_start.localeCompare(a.week_start))[0]
   const currentGoal = goals.find(
     (item) => item.owner === owner && item.week_start === currentWeek,
   )
   const [goalForm, setGoalForm] = useState({
-    nights: currentGoal?.nights || goal.nights,
-    before: currentGoal?.before_time || goal.before,
+    nights: effectiveCurrentGoal?.nights || DEFAULT_GOAL.nights,
+    before: effectiveCurrentGoal?.before_time || DEFAULT_GOAL.before,
   })
   const goalDetails = useRef(null)
 
@@ -357,7 +368,7 @@ function JournalPage({
     }
   }
   async function updateGoal() {
-    if (lock.current) return
+    if (lock.current || !canEditGoal) return
     lock.current = true
     setBusy(true)
     try {
@@ -371,6 +382,7 @@ function JournalPage({
       onGoalSaved(result)
       setNote('本周目标已更新')
       goalDetails.current.open = false
+      goalDetails.current.querySelector('summary')?.focus()
     } catch (error) {
       setNote(error.message)
     } finally {
@@ -388,121 +400,100 @@ function JournalPage({
       <header className="journal-page-heading">
         <div>
           <span className="journal-initial" aria-hidden="true">
-            {owner === 'orange' ? 'C' : 'L'}
+            {owner === 'orange' ? '🍊' : '🌷'}
           </span>
           <h3>{OWNER_NAMES[owner]}</h3>
         </div>
-        <span className="journal-sign-state">
+        <span className="journal-sign-state" data-state={dirty ? 'dirty' : entry.version > 0 ? 'saved' : 'empty'}>
+          {!dirty && entry.version > 0 && <span className="journal-saved-tick" aria-hidden="true">✓</span>}
           {dirty ? '有修改待保存' : entry.version > 0
             ? (cloudEnabled ? '已同步' : '已保存') : '未保存'}
         </span>
       </header>
       <section className="journal-sleep compact-sleep">
         <div className="journal-sleep-heading">
-          <h4>昨夜睡眠</h4>{' '}
-          {start === weekStart(todayInShanghai()) && (
-            <details
-              ref={goalDetails}
-              className="journal-goal"
-              onToggle={(event) => {
-                if (event.currentTarget.open)
-                  setGoalForm({
-                    nights: currentGoal?.nights || goal.nights,
-                    before: currentGoal?.before_time || goal.before,
-                  })
-              }}
-            >
-              <summary>
-                本周 {summary.reached}/{goal.nights} 晚 · 目标
-              </summary>
-              <div>
-                <strong>本周睡眠目标</strong>
-                <label>
-                  每周
+          <h4>{date === todayInShanghai() ? '昨夜睡眠' : '睡眠记录'}</h4>
+          <details
+            ref={goalDetails}
+            className="journal-goal"
+            onToggle={(event) => {
+              if (event.currentTarget.open)
+                setGoalForm({
+                  nights: effectiveCurrentGoal?.nights || DEFAULT_GOAL.nights,
+                  before: effectiveCurrentGoal?.before_time || DEFAULT_GOAL.before,
+                })
+            }}
+          >
+            <summary>{weekLabel} {summary.reached}/{goal.nights} 晚 · 查看</summary>
+            <div>
+              <strong>{weekLabel}睡眠记录</strong>
+              <small>{start} — {shiftDate(start, 6)}</small>
+              <p className="journal-week-target">目标：每周 {goal.nights} 晚在 {goal.before} 前入睡</p>
+              <div className="journal-week-dots" aria-label={`${weekLabel}已达标 ${summary.reached} 晚，点击日期补录`}>
+                {summary.days.map((day, index) => {
+                  const recordDate = shiftDate(day.date, 1)
+                  const available = recordDate >= JOURNAL_FIRST_DATE && recordDate <= todayInShanghai()
+                  const status = day.reached === null ? '未记录' : day.reached ? '已达标' : '未达标'
+                  const actionLabel = available ? '点击填写或补录' : recordDate < JOURNAL_FIRST_DATE ? '早于记录起点' : '请在次日记录'
+                  return <button
+                    type="button"
+                    key={day.date}
+                    className={day.reached === true ? 'is-reached' : day.reached === false ? 'is-missed' : ''}
+                    disabled={!available || disabled}
+                    aria-current={day.date === night ? 'date' : undefined}
+                    aria-label={`${day.date} 周${'一二三四五六日'[index]}：${status}，${actionLabel}`}
+                    title={`${day.date} 夜间，记录在 ${recordDate} 书页`}
+                    onClick={() => {
+                      goalDetails.current.open = false
+                      if (recordDate === date) setSleepEditing(true)
+                      else onNavigate(recordDate)
+                    }}
+                  >
+                    <span>{'一二三四五六日'[index]}</span>
+                    <small>{day.date.slice(8)}</small>
+                  </button>
+                })}
+              </div>
+              <div className="journal-sleep-legend" aria-hidden="true">
+                <span><i className="reached" />达标</span>
+                <span><i className="missed" />未达标</span>
+                <span><i />未记录</span>
+              </div>
+              <small>点日期可补录，保存后计入统计；未记录不算未达标。</small>
+              {start !== currentWeek && <small>历史周目标仅查看，补录仍按当时目标统计。</small>}
+              {canEditGoal && <>
+                <strong className="journal-goal-editor-title">{start === currentWeek ? '调整本周目标' : '设置新一周目标'}</strong>
+                <small>{currentWeek} — {shiftDate(currentWeek, 6)}{start !== currentWeek ? ' · 不影响上周统计' : ''}</small>
+                <label>每周
                   <select
                     aria-label={`${OWNER_NAMES[owner]}每周目标晚数`}
                     value={goalForm.nights}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setGoalForm({
-                        ...goalForm,
-                        nights: Number(event.target.value),
-                      })
-                    }
+                    disabled={disabled || !connected}
+                    onChange={(event) => setGoalForm({ ...goalForm, nights: Number(event.target.value) })}
                   >
-                    {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                      <option key={n} value={n}>
-                        {n} 晚
-                      </option>
-                    ))}
+                    {[1, 2, 3, 4, 5, 6, 7].map((n) => <option key={n} value={n}>{n} 晚</option>)}
                   </select>
                 </label>
-                <label>
-                  此时间前入睡
+                <label>此时间前入睡
                   <input
                     type="time"
                     aria-label={`${OWNER_NAMES[owner]}目标入睡时间`}
                     value={goalForm.before}
-                    disabled={busy}
-                    onChange={(event) =>
-                      setGoalForm({ ...goalForm, before: event.target.value })
-                    }
+                    disabled={disabled || !connected}
+                    onChange={(event) => setGoalForm({ ...goalForm, before: event.target.value })}
                   />
                 </label>
-                <small>
-                  {currentWeek} — {shiftDate(currentWeek, 6)} · 按夜间归属
-                </small>
-                <div
-                  className="journal-week-dots"
-                  aria-label={`本周已达标 ${summary.reached} 晚`}
-                >
-                  {summary.days.map((day, index) => (
-                    <span
-                      key={day.date}
-                      className={
-                        day.reached === true
-                          ? 'is-reached'
-                          : day.reached === false
-                            ? 'is-missed'
-                            : ''
-                      }
-                      role="img"
-                      aria-label={`${day.date}：${day.reached === null ? '未记录' : day.reached ? '已达标' : '未达标'}`}
-                      title={`${day.date}：${day.reached === null ? '未记录' : day.reached ? '已达标' : '未达标'}`}
-                    >
-                      {'一二三四五六日'[index]}
-                    </span>
-                  ))}
-                </div>
-                <div className="journal-sleep-legend" aria-hidden="true">
-                  <span>
-                    <i className="reached" />
-                    达标
-                  </span>
-                  <span>
-                    <i className="missed" />
-                    未达标
-                  </span>
-                  <span>
-                    <i />
-                    未记录
-                  </span>
-                </div>
-                <button disabled={busy || !connected} onClick={updateGoal}>
-                  保存目标
-                </button>
-              </div>
-            </details>
-          )}
+                <button disabled={disabled || !connected} onClick={updateGoal}>保存本周目标</button>
+              </>}
+            </div>
+          </details>
         </div>
+        <p className="journal-night-context">记录 {nightLabel} · 计入{weekLabel}</p>
         <div className="journal-sleep-line">
           <div className="journal-sleep-value">
             {entry.sleepTime ? (
               <>
                 <strong>{entry.sleepTime}</strong>
-                <small>
-                  {shiftDate(date, -1).slice(5).replace('-', '/')} 夜间
-                </small>
               </>
             ) : (
               <span>未记录</span>
@@ -559,6 +550,7 @@ function JournalPage({
               入睡时间
               <input
                 id={`sleep-${owner}`}
+                aria-label={`${OWNER_NAMES[owner]}${nightLabel}入睡时间`}
                 type="time"
                 value={entry.sleepTime}
                 disabled={disabled}
@@ -585,8 +577,9 @@ function JournalPage({
               </button>
             )}
             <button disabled={disabled} onClick={() => setSleepEditing(false)}>
-              完成
+              收起填写
             </button>
+            <small className="journal-sleep-save-hint">凌晨入睡也记在这一晚；填好后请点页底「保存记录」。</small>
           </div>
         )}
       </section>
@@ -636,16 +629,16 @@ function JournalPage({
         />
       </section>
       <section className="journal-growth">
-        <label htmlFor={`growth-${owner}`}>今天的一点进步</label>
+        <label htmlFor={`growth-${owner}`}>今天的小小感受</label>
         <textarea
           ref={growthInput}
           id={`growth-${owner}`}
-          aria-label={`${OWNER_NAMES[owner]}今天的一点进步`}
+          aria-label={`${OWNER_NAMES[owner]}今天的小小感受`}
           rows={1}
           maxLength={500}
           value={entry.growthNote || ''}
           disabled={disabled}
-          placeholder="生活、学习、想法，都可以。"
+          placeholder="开心、疲惫，或只是平常的一天，都可以写在这里。"
           onChange={(event) => change({ growthNote: event.target.value })}
         />
       </section>
@@ -852,10 +845,11 @@ export default function GrowthJournal() {
       result,
     ])
   return (
-    <section className="journal-shell" aria-label="每日签到簿">
+    <section className="journal-shell journal-cream" aria-label="每日签到簿">
       <header className="journal-heading">
         <span>DAILY JOURNAL</span>
         <h2>日有所进</h2>
+        <LiteraryQuote quote={literaryQuotes.journal} className="lq-compact" />
       </header>
       <div className="journal-toolbar">
         <button
@@ -937,6 +931,7 @@ export default function GrowthJournal() {
               connected={connected}
               active={owner === id}
               onRefresh={() => setRetry((value) => value + 1)}
+              onNavigate={navigate}
             />
           ))}
         </div>

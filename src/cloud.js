@@ -758,7 +758,7 @@ export function isMessageMultiImageReady() {
 function isMissingMessageImageColumn(error) {
   if (!error) return false
   const text = `${error.code || ''} ${error.message || ''} ${error.details || ''} ${error.hint || ''}`
-  return text.includes('image_urls') || text.includes('42703') || text.includes('PGRST204')
+  return ['42703', 'PGRST204'].includes(error.code) && text.includes('image_urls')
 }
 
 function parseImageUrlList(raw) {
@@ -911,66 +911,108 @@ export async function saveCloudMessage({ content = '', imageUrl = '', imageUrls 
 async function loadCloudMessageById(id) {
   try {
     const supabase = await getSupabase()
-    if (!supabase || !id) return null
+    if (!supabase || !id) return { error: new Error('未连接云端'), message: null }
     let { data, error } = await supabase
       .from('wwcxrl_messages')
       .select(MESSAGE_COLUMNS)
       .eq('id', id)
       .maybeSingle()
     if (error && isMissingMessageImageColumn(error)) {
+      messageMultiImageSupported = false
       ;({ data, error } = await supabase
         .from('wwcxrl_messages')
         .select(MESSAGE_COLUMNS_LEGACY)
         .eq('id', id)
         .maybeSingle())
     }
-    if (error || !data) return null
-    return normalizeMessageRow(data)
+    return { error, message: data ? normalizeMessageRow(data) : null }
   } catch (error) {
     console.warn('[wwcxrl cloud] message load-by-id failed', error.message)
-    return null
+    return { error, message: null }
   }
+}
+
+function sameMessageContent(left, right) {
+  if (!left || !right || String(left.content ?? '') !== String(right.content ?? '')) return false
+  const images = item => normalizeOutgoingImageUrls({ imageUrls: item.images, imageUrl: item.imageUrl })
+  return JSON.stringify(images(left)) === JSON.stringify(images(right))
+}
+
+function sameMessageSnapshot(left, right, multiImage) {
+  const keys = multiImage ? ['content', 'imageUrl', 'imageUrls'] : ['content', 'imageUrl']
+  return keys.every(key => JSON.stringify(left?.[key] ?? null) === JSON.stringify(right?.[key] ?? null))
 }
 
 export async function updateCloudMessage(id, { content = '', imageUrl = '', imageUrls = null }, expected = null) {
   try {
     const supabase = await getSupabase()
     if (!supabase || !id) return { ok: false, error: '未连接云端' }
+    if (!expected) return { ok: false, error: '缺少原留言的编辑参考，请先复制保留修改，再重新打开这条留言编辑。' }
     const list = normalizeOutgoingImageUrls({ imageUrl, imageUrls })
-    if (list.length > 1 && messageMultiImageSupported === false) {
-      return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
-    }
-    let snapshot = expected?.editSnapshot
-    if (expected && !snapshot) {
+    const desired = { content: String(content || '').trim(), images: list }
+    let snapshot = expected.editSnapshot
+    const baseline = snapshot
+      ? normalizeMessageRow({ content: snapshot.content, image_url: snapshot.imageUrl, image_urls: snapshot.imageUrls })
+      : expected
+    const readFailure = { ok: false, conflict: false, error: '暂时无法核验最新留言；你的编辑仍保留，请稍后重试。' }
+    const unavailable = { ok: false, conflict: false, error: '暂时读不到原留言，可能已删除或读取权限变化；你的编辑仍保留。' }
+    const conflict = { ok: false, conflict: true, error: '云端留言与你开始编辑时的内容不同；你的编辑仍保留，请核对最新内容后再编辑。' }
+    if (!snapshot) {
       const latest = await loadCloudMessageById(id)
-      const originalImages = normalizeOutgoingImageUrls({imageUrls:expected.images,imageUrl:expected.imageUrl})
-      const latestImages = latest && normalizeOutgoingImageUrls({imageUrls:latest.images,imageUrl:latest.imageUrl})
-      if (!latest || latest.content !== expected.content || JSON.stringify(originalImages) !== JSON.stringify(latestImages))
-        return {ok:false,conflict:true,error:'这条留言已更新，你的编辑仍保留，请先核对最新内容。'}
-      snapshot = latest.editSnapshot
+      if (latest.error) return readFailure
+      if (!latest.message) return unavailable
+      if (sameMessageContent(latest.message, desired)) return { ok: true, message: latest.message }
+      if (!sameMessageContent(latest.message, baseline)) return { ...conflict, current: latest.message }
+      snapshot = latest.message.editSnapshot
     }
-    const runUpdate = (payload, columns) => {
-      let query = supabase.from('wwcxrl_messages').update(payload).eq('id', id)
-      if (snapshot) {
+    if (list.length > 1 && messageMultiImageSupported === false)
+      return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
+
+    const runUpdate = async () => {
+      const update = columns => {
+        const payload = columns === MESSAGE_COLUMNS ? messagePayload({ content, imageUrls: list }) : messagePayloadLegacy({ content, imageUrls: list })
+        let query = supabase.from('wwcxrl_messages').update(payload).eq('id', id)
         for (const [column, value] of [['content', snapshot.content], ['image_url', snapshot.imageUrl], ...(columns === MESSAGE_COLUMNS ? [['image_urls', snapshot.imageUrls]] : [])]) {
           query = value == null ? query.is(column, null) : query.eq(column, column === 'image_urls' ? JSON.stringify(value) : value)
         }
+        return query.select(columns).maybeSingle()
       }
-      return query.select(columns).maybeSingle()
+      let result = await update(messageMultiImageSupported === false ? MESSAGE_COLUMNS_LEGACY : MESSAGE_COLUMNS)
+      if (result.error && isMissingMessageImageColumn(result.error)) {
+        messageMultiImageSupported = false
+        if (list.length > 1) return { error: { message: MESSAGE_MULTI_IMAGE_HINT } }
+        result = await update(MESSAGE_COLUMNS_LEGACY)
+      }
+      return result
     }
-    let { data, error } = await runUpdate(messagePayload({ content, imageUrls: list }), MESSAGE_COLUMNS)
-    if (error && isMissingMessageImageColumn(error)) {
-      messageMultiImageSupported = false
-      if (list.length > 1) return { ok: false, error: MESSAGE_MULTI_IMAGE_HINT }
-      ;({ data, error } = await runUpdate(messagePayloadLegacy({ content, imageUrls: list }), MESSAGE_COLUMNS_LEGACY))
+
+    // Every write retains the full compare-and-swap guard. A zero-row response
+    // also happens under RLS, so it is not proof of another device editing.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { data, error } = await runUpdate()
+      if (error) return { ok: false, conflict: false, error: error.message }
+      if (data) return { ok: true, message: normalizeMessageRow(data) }
+      const latest = await loadCloudMessageById(id)
+      if (latest.error) return readFailure
+      if (!latest.message) return unavailable
+      // A prior response may have been lost after the write committed.
+      if (sameMessageContent(latest.message, desired)) return { ok: true, message: latest.message }
+      if (!sameMessageContent(latest.message, baseline)) return { ...conflict, current: latest.message }
+      const fresh = latest.message.editSnapshot
+      if (attempt === 0 && !sameMessageSnapshot(snapshot, fresh, messageMultiImageSupported !== false)) {
+        // Only representation changed (e.g. image_urls null -> []), not content.
+        // Rebase once, then compare the fresh raw values atomically as well.
+        snapshot = fresh
+        continue
+      }
+      return {
+        ok: false, conflict: false, reason: 'not_applied',
+        error: '原留言没有变化，但服务器未应用修改，可能是留言编辑权限未生效；你的编辑仍保留。请管理员检查 UPDATE 权限和 RLS 策略。'
+      }
     }
-    if (!error && data) return { ok: true, message: normalizeMessageRow(data) }
-    // Never delete and recreate a row when updating fails: replies and
-    // another device's edits must survive permissions errors and conflicts.
-    return { ok: false, conflict: !error, error: error?.message || '这条留言已在另一台设备修改或删除；你的编辑仍保留，请先核对最新内容。' }
   } catch (error) {
     console.warn('[wwcxrl cloud] message update exception', error)
-    return { ok: false, error: error.message || '未知错误' }
+    return { ok: false, conflict: false, error: error.message || '未知错误' }
   }
 }
 

@@ -31,6 +31,10 @@ export function weekStart(date) {
   const weekday = new Date(`${date}T12:00:00Z`).getUTCDay()
   return shiftDate(date, -((weekday + 6) % 7))
 }
+// A Monday journal page records Sunday night, which belongs to the prior week.
+export function sleepWeekStart(pageDate) {
+  return weekStart(shiftDate(pageDate, -1))
+}
 export function validTime(value) {
   return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value)
 }
@@ -188,7 +192,7 @@ export function normalizeEntry(value) {
     value.growthNote != null &&
     (typeof value.growthNote !== 'string' || value.growthNote.length > 500)
   )
-    throw new Error('进步记录格式不正确，最多 500 字')
+    throw new Error('感受记录格式不正确，最多 500 字')
   const minutes =
     value.studyMinutes === '' || value.studyMinutes == null
       ? null

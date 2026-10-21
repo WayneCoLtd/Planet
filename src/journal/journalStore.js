@@ -1,6 +1,6 @@
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
 import { reuseSignedMedia } from '../media/signedUrlCache'
-import { entryNotes, entryFingerprint, shiftDate, weekStart } from './journalModel'
+import { entryNotes, entryFingerprint, shiftDate, sleepWeekStart } from './journalModel'
 
 // Keep the newest draft readable during a quick in-app page turn while IndexedDB
 // is still committing. Persistent-write failures are still reported to the UI.
@@ -142,7 +142,7 @@ export async function journalRequest(body, date) {
   }
 }
 export async function loadWeek(date) {
-  const start = weekStart(date),
+  const start = sleepWeekStart(date),
     end = shiftDate(start, 7)
   if (cloudEnabled) return journalRequest(null, date)
   return {

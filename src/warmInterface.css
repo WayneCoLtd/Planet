@@ -3,6 +3,16 @@
 body.warm-site {
   color: #302c28;
 }
+.warm-ui .site-footer .site-access-note {
+  flex: 0 0 100%;
+  width: 100%;
+  margin: 6px 0 0;
+  color: var(--ui-muted);
+  opacity: .65;
+  font-size: clamp(10px, 2.7vw, 12px);
+  line-height: 1.6;
+  text-align: center;
+}
 .warm-ui {
   --ui-bg: #f7f5f0;
   --ui-surface: #fffefa;

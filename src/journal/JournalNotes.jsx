@@ -120,7 +120,7 @@ export default function JournalNotes({
   function fit() {
     if (!input.current) return
     input.current.style.height = 'auto'
-    input.current.style.height = `${Math.min(240, Math.max(84, input.current.scrollHeight + 1))}px`
+    input.current.style.height = `${Math.max(132, input.current.scrollHeight + 1)}px`
   }
   React.useLayoutEffect(fit, [text, active])
   useEffect(() => {
@@ -181,11 +181,11 @@ export default function JournalNotes({
   }
   return (
     <div
-      className={`journal-single-editor ${images.length ? 'has-images' : ''}`}
+      className={`journal-single-editor journal-scrapbook ${images.length ? 'has-images' : ''}`}
     >
       <div className="journal-single-text">
         <div className="journal-editor-hint">
-          <span>可直接编辑、增删文字</span>
+          <span>把今天，慢慢写下来</span>
           <button
             type="button"
             disabled={disabled}
@@ -215,26 +215,33 @@ export default function JournalNotes({
         />
       </div>
       <div className="journal-single-media">
-        <label className="journal-upload">
-          ＋ 照片
-          <input
-            type="file"
-            accept="image/*"
-            multiple
-            disabled={disabled}
-            aria-label={`${OWNER_NAMES[owner]}手记添加照片`}
-            onChange={(event) => {
-              const files = Array.from(event.target.files || [])
-              event.target.value = ''
-              if (!files.length) return
-              const unified = singleJournalNote(notes, text)
-              onChange(unified)
-              void onImages(unified[0].id, files)
-            }}
-          />
-        </label>
+        <div className="journal-media-heading">
+          <div className="journal-media-title">
+            <span aria-hidden="true">✷</span>
+            <strong>今日碎片</strong>
+            <small>{images.length ? `${images.length} 张照片` : '留住一个小瞬间'}</small>
+          </div>
+          <label className="journal-upload">
+            ＋ {images.length ? '添加照片' : '放入照片'}
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={disabled}
+              aria-label={`${OWNER_NAMES[owner]}手记添加照片`}
+              onChange={(event) => {
+                const files = Array.from(event.target.files || [])
+                event.target.value = ''
+                if (!files.length) return
+                const unified = singleJournalNote(notes, text)
+                onChange(unified)
+                void onImages(unified[0].id, files)
+              }}
+            />
+          </label>
+        </div>
         {!!images.length && (
-          <div className="journal-note-images has-many">
+          <div className={`journal-note-images journal-photo-grid ${images.length === 1 ? 'is-single' : ''}`}>
             {images.map((image, index) => (
               <figure key={image.id}>
                 <NotePhoto
@@ -242,14 +249,19 @@ export default function JournalNotes({
                   refresh={onRefresh}
                   open={() => setViewer({ images, index })}
                 />
-                <button
-                  className="journal-photo-remove"
-                  disabled={disabled}
-                  aria-label={`移除第 ${index + 1} 张附图`}
-                  onClick={() => removeImage(index)}
-                >
-                  移除
-                </button>
+                <figcaption>
+                  <span className="journal-photo-number" aria-hidden="true">
+                    {String(index + 1).padStart(2, '0')} <span> / 今日碎片</span>
+                  </span>
+                  <button
+                    className="journal-photo-remove"
+                    disabled={disabled}
+                    aria-label={`移除第 ${index + 1} 张附图`}
+                    onClick={() => removeImage(index)}
+                  >
+                    移除
+                  </button>
+                </figcaption>
               </figure>
             ))}
           </div>

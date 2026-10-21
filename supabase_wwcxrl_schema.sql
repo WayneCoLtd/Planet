@@ -513,3 +513,35 @@ create table if not exists public.wwcxrl_music_requests (
   created_at timestamptz not null default now()
 );
 alter table public.wwcxrl_music_requests enable row level security;
+
+-- ============ Data API 显式授权（2026-10-30 起新表不再自动授权） ============
+-- 按当前调用授权；必须在所有建表及旧表重命名之后执行。
+-- 仅增加所需权限，不撤销旧库已有权限；完整矩阵见 docs/DEPLOY_AND_CLOUD.md。
+-- 未使用 Supabase Auth，不为 authenticated 新增授权。UUID/text 主键无需序列授权。
+grant select, insert, update on table public.wwcxrl_profiles to anon;
+grant select on table public.wwcxrl_profiles to service_role;
+grant select, insert, update on table public.wwcxrl_checkins to anon;
+grant select on table public.wwcxrl_checkins to service_role;
+grant select, insert, update on table public.wwcxrl_day_progress to anon;
+grant select on table public.wwcxrl_day_progress to service_role;
+grant select, insert, delete on table public.wwcxrl_backpack_items to anon;
+grant select on table public.wwcxrl_backpack_items to service_role;
+grant select, insert, update, delete on table public.wwcxrl_photo_wall to anon;
+grant select on table public.wwcxrl_photo_wall to service_role;
+grant select on table public.wwcxrl_energy_events to service_role;
+grant insert on table public.wwcxrl_activity_logs to anon;
+grant select on table public.wwcxrl_activity_logs to service_role;
+grant select, insert, update, delete on table public.wwcxrl_daily_tasks to anon;
+grant select on table public.wwcxrl_daily_tasks to service_role;
+grant select, insert, update on table public.wwcxrl_wishes to anon;
+grant select on table public.wwcxrl_wishes to service_role;
+grant select, insert, delete on table public.wwcxrl_meeting_dates to anon;
+grant select on table public.wwcxrl_meeting_dates to service_role;
+grant select, insert, update, delete on table public.wwcxrl_messages to anon;
+grant select on table public.wwcxrl_messages to service_role;
+grant select, insert, delete on table public.wwcxrl_feedback to anon;
+grant select on table public.wwcxrl_feedback to service_role;
+grant select, insert, delete on table public.wwcxrl_changelog to anon;
+grant select on table public.wwcxrl_changelog to service_role;
+grant select, insert, update, delete on table public.wwcxrl_music_tracks to service_role;
+grant select, insert, delete on table public.wwcxrl_music_requests to service_role;

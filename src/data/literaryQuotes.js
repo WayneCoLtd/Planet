@@ -1,6 +1,10 @@
 // Display copy only. Never used to rewrite messages, captions or daily tasks.
 // User-supplied text without a verified source deliberately has no attribution.
 export const literaryQuotes = {
+  journal: {
+    text: '人间有味是清欢。', author: '苏轼', work: '浣溪沙·细雨斜风作晓寒',
+    source: 'https://zh.wikisource.org/zh-hans/浣溪沙_(蘇軾)', provenance: 'public-domain'
+  },
   nextHome: {
     text: '海上生明月，天涯共此时。', author: '张九龄', work: '望月怀远',
     source: 'https://zh.wikisource.org/wiki/望月懷遠', provenance: 'public-domain'

@@ -4,7 +4,7 @@
 >
 > **5 个非连续完整案例（Day 01 / 02 / 03 / 05 / 08）+ 其余日期自由续写 + 本地优先 + 可选 Supabase 云端同步。**
 
-![Vite](https://img.shields.io/badge/Vite-6.4.3-646CFF?logo=vite&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-6.4.4-646CFF?logo=vite&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-61DAFB?logo=react&logoColor=white)
 ![Cloudflare Pages](https://img.shields.io/badge/Deploy-Cloudflare%20Pages-F38020?logo=cloudflare&logoColor=white)
 

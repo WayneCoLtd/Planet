@@ -73,3 +73,10 @@ from pg_policies
 where schemaname = 'storage'
   and tablename = 'objects'
   and coalesce(qual, '') like '%wwcxrl-music%';
+
+-- ============ Data API 显式授权（2026-10-30 起新表不再自动授权） ============
+-- 按当前调用授权；必须在所有建表及旧表重命名之后执行。
+-- 仅增加所需权限，不撤销旧库已有权限；完整矩阵见 docs/DEPLOY_AND_CLOUD.md。
+-- 未使用 Supabase Auth，不为 authenticated 新增授权。UUID/text 主键无需序列授权。
+grant select, insert, update, delete on table public.wwcxrl_music_tracks to service_role;
+grant select, insert, delete on table public.wwcxrl_music_requests to service_role;

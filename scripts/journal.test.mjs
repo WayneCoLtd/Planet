@@ -68,7 +68,7 @@ const source = readFileSync(
 )
   .replace(/^import[\s\S]*?from ['"][^'"]+['"]\r?$/gm, '')
   .replace('export default async function handler', 'async function handler')
-function harness(level = 1) {
+function harness(level = 1, today = '2026-10-17') {
   const records = [],
     tables = []
   const db = {
@@ -162,7 +162,7 @@ function harness(level = 1) {
   }
   const context = vm.createContext({
     ...model,
-    todayInShanghai: () => '2026-10-17',
+    todayInShanghai: () => today,
     LEVEL_SITE: 1,
     readLevel: () => level,
     checkServiceConfig: () => ({ ok: true }),
@@ -176,7 +176,7 @@ function harness(level = 1) {
   return {
     records,
     tables,
-    async run(body, method = 'POST') {
+    async run(body, method = 'POST', date = '2026-10-14') {
       const response = {
         setHeader() {},
         status(code) {
@@ -189,7 +189,7 @@ function harness(level = 1) {
         },
       }
       await context.handler(
-        { method, body, headers: {}, url: '/api/journal?date=2026-10-14' },
+        { method, body, headers: {}, url: `/api/journal?date=${date}` },
         response,
       )
       return response
@@ -586,4 +586,53 @@ test('two devices read saved text and signed photos and cannot overwrite with an
   assert.equal(rejected.code,409)
   assert.equal(rejected.data.current.growthNote,'另一设备的新修改')
   assert.equal(rejected.data.current.notes[0].images.length,1)
+})
+
+test('sleep weeks follow the previous night across Monday, month and year boundaries', () => {
+  for (const [page, expected] of [
+    ['2026-10-19', '2026-10-12'],
+    ['2026-10-20', '2026-10-19'],
+    ['2026-11-02', '2026-10-26'],
+    ['2027-01-04', '2026-12-28'],
+    ['2026-10-14', '2026-10-12'],
+  ]) assert.equal(model.sleepWeekStart(page), expected)
+})
+
+test('Monday can save Sunday night and a fresh GET returns its full sleep week and both goal versions', async () => {
+  const h = harness(1, '2026-10-19')
+  for (const date of ['2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17', '2026-10-18', '2026-10-19']) {
+    const saved = await h.run({ ...model.emptyEntry('pomelo', date), sleepTime: '23:30', action: 'save' })
+    assert.equal(saved.code, 200)
+  }
+  h.records.push({ _table: 'wwcxrl_journal_goals', owner: 'pomelo', week_start: '2026-10-12', nights: 5, before_time: '00:00', version: 1 })
+  assert.equal((await h.run({ owner: 'pomelo', action: 'goal', week_start: '2026-10-19', nights: 4, before: '22:00', version: 0 })).code, 200)
+  const monday = await h.run({}, 'GET', '2026-10-19')
+  assert.equal(monday.code, 200)
+  assert.equal(monday.data.entries.length, 6, 'a fresh Monday load must include last week, not only Monday')
+  const oldGoal = monday.data.goals.find(g => g.week_start === '2026-10-12')
+  assert.ok(oldGoal)
+  assert.ok(monday.data.goals.find(g => g.week_start === '2026-10-19'))
+  const summary = model.weekSummary(monday.data.entries, 'pomelo', model.sleepWeekStart('2026-10-19'), { nights: oldGoal.nights, before: oldGoal.before_time })
+  assert.equal(summary.days[6].date, '2026-10-18')
+  assert.equal(summary.days[6].reached, true)
+  assert.equal(summary.reached, 6, 'new Monday target must not retroactively change last week')
+  const tuesday = await h.run({}, 'GET', '2026-10-20')
+  assert.equal(model.weekSummary(tuesday.data.entries, 'pomelo', model.sleepWeekStart('2026-10-20')).reached, 0)
+  assert.equal((await h.run({ owner: 'pomelo', action: 'goal', week_start: '2026-10-12', nights: 1, before: '22:00', version: 1 })).code, 400)
+})
+
+test('local Monday loading uses the same previous-night range as the API', async () => {
+  const storeSource = readFileSync(new URL('../src/journal/journalStore.js', import.meta.url), 'utf8')
+    .replace(/^import[\s\S]*?from ['"][^'"]+['"]\r?$/gm, '')
+    .replace(/^export /gm, '')
+  const fixtures = {
+    entries: ['2026-10-12', '2026-10-13', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-26'].map(date => model.emptyEntry('pomelo', date)),
+    goals: [],
+  }
+  const context = vm.createContext({ ...model, cloudEnabled: false, fixtures })
+  vm.runInContext(storeSource + '\njournalStore = async name => fixtures[name]; globalThis.load = loadWeek;', context)
+  const monday = await context.load('2026-10-19')
+  assert.deepEqual(Array.from(monday.entries, row => row.date), ['2026-10-12', '2026-10-13', '2026-10-18', '2026-10-19'])
+  const tuesday = await context.load('2026-10-20')
+  assert.deepEqual(Array.from(tuesday.entries, row => row.date), ['2026-10-19', '2026-10-20', '2026-10-26'])
 })

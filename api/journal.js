@@ -7,6 +7,7 @@ import {
   entryNotes,
   normalizeGoal,
   shiftDate,
+  sleepWeekStart,
   todayInShanghai,
   validDate,
   weekStart,
@@ -73,7 +74,7 @@ export default async function handler(req, res) {
       )
       if (!validDate(date))
         return res.status(400).json({ error: '请选择有效日期' })
-      const start = weekStart(date)
+      const start = sleepWeekStart(date)
       const [records, ...goalResults] = await Promise.all([
         db
           .from(ENTRIES)
@@ -86,7 +87,8 @@ export default async function handler(req, res) {
             .from(GOALS)
             .select('*')
             .eq('owner', owner)
-            .lte('week_start', start)
+            // Monday needs both the previous sleep week's goal and this week's setting.
+            .lte('week_start', weekStart(date))
             .order('week_start', { ascending: false })
             .limit(2),
         ),

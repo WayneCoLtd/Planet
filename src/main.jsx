@@ -1221,7 +1221,7 @@ function Hero({ setCurrent }) {
             <span>{signedCount}/65</span>
           </div>
 
-          <small>那 65 天</small>
+          <small>来时的我们</small>
         </div>
         <div className="hero-actions">
           <button onClick={() => setCurrent('checkin')}>📮 每日签到</button>
@@ -1294,11 +1294,11 @@ function NextChapter() {
   return <section className={`content-section next-chapter ${section === 'journal' ? 'has-journal' : ''}`}>
     <div className="chapter-switch" role="group" aria-label="内容篇章">
       <button aria-pressed={section === 'journal'} onClick={() => setSection('journal')}>每日签到</button>
-      <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
+      <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>来时的我们</button>
     </div>
     {section === 'journal' ? <React.Suspense fallback={<p role="status">正在打开签到簿…</p>}><GrowthJournal /></React.Suspense> : section === 'archive' ? <CheckIn archive /> : <>
       <header className="section-heading playful-heading"><span>NOTES & FINDS</span><h2>内容小册</h2><LiteraryQuote quote={literaryQuotes.nextReading} /></header>
-      {!entries.length && <div className="chapter-empty"><span aria-hidden="true">✧</span><p>还没有新的分享</p><button onClick={() => setSection('archive')}>翻翻那 65 天</button></div>}
+      {!entries.length && <div className="chapter-empty"><span aria-hidden="true">✧</span><p>还没有新的分享</p><button onClick={() => setSection('archive')}>回看来时的我们</button></div>}
       {active ? <article className="chapter-reading sticker-card"><button onClick={() => setSelected(null)}>‹ 返回目录</button><small>{active.date}</small><h3>{active.title}</h3>
         {!['nightReading', 'dailyLight'].includes(active.type) && active.prompt && <p className="user-multiline">{active.prompt}</p>}
         <DailyInteraction key={active.day} item={active} freeRead />
@@ -1522,7 +1522,7 @@ function CheckIn({ archive = false }) {
     <section className="content-section checkin-section legacy-experience">
       <header className="section-heading playful-heading">
         <span>300 → 365</span>
-        <h2>{archive ? '那 65 天' : '300→365每日签到星图'}</h2>
+        <h2>{archive ? '来时的我们' : '300→365每日签到星图'}</h2>
         <LiteraryQuote quote={literaryQuotes.album} />
       </header>
       <div className={`checkin-layout ${sidebarCollapsed ? 'is-sidebar-collapsed' : ''}`}>
@@ -9056,7 +9056,7 @@ function PhotoWall() {
   const [section, setSection] = useState('life')
   return <section className="content-section life-album-page"><div className="chapter-switch" role="group" aria-label="相册篇章">
     <button aria-pressed={section === 'life'} onClick={() => setSection('life')}>最近的生活</button>
-    <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>那 65 天</button>
+    <button aria-pressed={section === 'archive'} onClick={() => setSection('archive')}>来时的我们</button>
   </div><div hidden={section !== 'life'}><React.Suspense fallback={<p role="status">正在打开相册…</p>}><LifeAlbum /></React.Suspense></div>{section === 'archive' && <ArchivePhotoWall />}</section>
 }
 
@@ -10402,7 +10402,7 @@ function BackpackView() {
             </article>
           )
         })}
-        {!entries.length && <article className="sticker-card inventory-card empty-feature"><CuteIcon>✨</CuteIcon><h3>下一件道具正在路上</h3><p>可以在“那 65 天”中回看任务与道具的来历。</p></article>}
+        {!entries.length && <article className="sticker-card inventory-card empty-feature"><CuteIcon>✨</CuteIcon><h3>下一件道具正在路上</h3><p>可以在“来时的我们”中回看任务与道具的来历。</p></article>}
         {placeholders.map(id => {
           const item = BACKPACK_ITEMS[id]
           return <article className="sticker-card inventory-card is-locked" key={`placeholder-${id}`}><CuteIcon>{item.icon}</CuteIcon><h3>{item.name}</h3><p>等待被发现</p></article>
@@ -11933,7 +11933,7 @@ function EnergyCapsule() {
           <div className="capsule-energy-meter" aria-label={`累计能量 ${energy} / 目标 ${ENERGY_TARGET}`}>
             <div><strong>累计能量 · 目标 {ENERGY_TARGET}</strong><span>{energy}/{ENERGY_TARGET}</span></div>
             <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} />{ENERGY_MILESTONES.map(milestone => <em key={milestone.at} style={{ left: `${milestone.at / ENERGY_TARGET * 100}%` }} />)}</b>
-            <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '抽能量次数来自“那 65 天”的签到与相册记录。'}</small>
+            <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '抽能量次数来自“来时的我们”的签到与相册记录。'}</small>
           </div>
           <div className="capsule-milestones" aria-label={`能量印章 ${reachedCount} / ${ENERGY_MILESTONES.length}`}>
             {ENERGY_MILESTONES.map(milestone => {
@@ -12220,7 +12220,7 @@ function PlanetApp() {
       {firstGuideOpen && <div className="first-run-guide-backdrop" role="presentation">
         <div className="first-run-guide-modal" role="dialog" aria-modal="true" aria-labelledby="first-run-guide-title">
           <button type="button" className="first-run-guide-close" onClick={dismissFirstGuide} aria-label="关闭首次运行说明书">×</button>
-          <div className="first-run-guide-welcome"><span>✦</span><div><strong id="first-run-guide-title">欢迎来到小星球</strong><p>照片、音乐和随手记下的事，都在这里。那 65 天，也可以随时回看。</p></div></div>
+          <div className="first-run-guide-welcome"><span>✦</span><div><strong id="first-run-guide-title">欢迎来到小星球</strong><p>照片、音乐和随手记下的事，都在这里。那些一起走过的日子，也可以随时回看。</p></div></div>
           <TemplateGuide setCurrent={next => { dismissFirstGuide(); setCurrent(next) }} />
         </div>
       </div>}
@@ -12232,6 +12232,7 @@ function PlanetApp() {
         <button type="button" className="theme-toggle-button subtle" onClick={() => setFeedbackOpen(true)}>💡 网站建议</button>
         <button type="button" onClick={returnToInvitationLayer}>✉️ 回到邀请信</button>
         <BackToTopButton />
+        <p className="site-access-note">如遇访问不畅的情况，请尝试打开VPN访问</p>
       </footer>
       {changelogOpen && (
         <div className="changelog-backdrop" role="presentation" onClick={() => setChangelogOpen(false)}>
