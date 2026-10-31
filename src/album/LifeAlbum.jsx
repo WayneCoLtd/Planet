@@ -342,10 +342,11 @@ export default function LifeAlbum() {
               }}
             />
             <figcaption>
-              <span>
-                {photo.taken_on} · {names[photo.owner]}
-              </span>
               {photo.caption && <Caption text={photo.caption} />}
+              <div className="life-photo-meta">
+                <time dateTime={photo.taken_on}>{photo.taken_on.replaceAll('-', '.')}</time>
+                <span>{names[photo.owner]}</span>
+              </div>
             </figcaption>
           </figure>
         ))}
