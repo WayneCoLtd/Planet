@@ -12199,7 +12199,7 @@ function PlanetApp() {
   }
   return (
     <main className={`warm-ui ${voyageTheme ? 'interstellar-voyage-theme' : ''}`}>
-      <StarField />
+      <StarField night={voyageTheme} />
       <header className="top-bar">
         <button className="brand" onClick={() => setCurrent('home')}><span>琛❤️琳</span></button>
         <Nav current={current} setCurrent={setCurrent} />

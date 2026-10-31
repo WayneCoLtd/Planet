@@ -1,0 +1,94 @@
+/* Midnight haze replaces tiled dots and stripes; soft gradients move without a blur filter. */
+.warm-ui.interstellar-voyage-theme {
+  background:
+    radial-gradient(ellipse at 82% 5%, #34305d55, transparent 48%),
+    radial-gradient(ellipse at 8% 48%, #224c5c35, transparent 44%),
+    linear-gradient(155deg, #0b1020, #11172a 48%, #0b1522) !important;
+}
+.warm-ui.interstellar-voyage-theme::before,
+.warm-ui.interstellar-voyage-theme::after { content: none; animation: none; filter: none; }
+.warm-ui.interstellar-voyage-theme > .star-field {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+}
+.warm-ui.interstellar-voyage-theme > .star-field::before {
+  content: '';
+  position: absolute;
+  inset: -12%;
+  background:
+    radial-gradient(ellipse at 76% 20%, #6b559b42, transparent 56%),
+    radial-gradient(ellipse at 16% 66%, #3e87923d, transparent 54%),
+    radial-gradient(ellipse at 62% 95%, #536c9a30, transparent 50%);
+  opacity: .6;
+  transform-origin: 50% 55%;
+  animation: night-liquid-drift 32s ease-in-out infinite alternate;
+}
+@keyframes night-liquid-drift {
+  0% { transform: translate3d(-2%, 1%, 0) rotate(-4deg) scale(1); opacity: .5; }
+  50% { transform: translate3d(2%, -2%, 0) rotate(2deg) scale(1.04); opacity: .8; }
+  100% { transform: translate3d(-1%, 3%, 0) rotate(5deg) scale(1.08); opacity: .65; }
+}
+.warm-ui.interstellar-voyage-theme .star-field .sky-star {
+  width: var(--night-size);
+  height: var(--night-size);
+  opacity: var(--night-opacity);
+  background: #dbe6fa;
+  box-shadow: none;
+  animation: none;
+  will-change: auto;
+}
+.warm-ui.interstellar-voyage-theme .star-field .sky-star:nth-child(4n) {
+  background: #fff1d8;
+  box-shadow: 0 0 5px #d1ddff45;
+  animation: night-star-breathe 7s ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+@keyframes night-star-breathe {
+  0%, 100% { opacity: var(--night-opacity); }
+  50% { opacity: .18; }
+}
+.warm-ui .star-field .sky-meteor {
+  position: absolute;
+  width: clamp(100px, 14vw, 190px);
+  height: 1px;
+  border-radius: 50%;
+  background: linear-gradient(90deg, #fff4dc, #d4e3ffb0 12%, #a3b9ef38 50%, transparent);
+  transform-origin: left center;
+  opacity: 0;
+  --flight-x: clamp(-520px, -36vw, -220px);
+  --flight-y: clamp(154px, 25.2vw, 364px);
+  animation: night-meteor-flight 1.35s cubic-bezier(.22,.38,.68,.86) both;
+}
+.warm-ui .star-field .sky-meteor::before {
+  content: '';
+  position: absolute;
+  top: -1px;
+  left: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff7e6;
+  box-shadow: 0 0 6px 1px #d2e1ff80;
+}
+@keyframes night-meteor-flight {
+  0% { opacity: 0; transform: translate3d(0, 0, 0) rotate(-35deg) scaleX(.35); }
+  18% { opacity: .78; }
+  70% { opacity: .55; }
+  100% { opacity: 0; transform: translate3d(var(--flight-x), var(--flight-y), 0) rotate(-35deg) scaleX(1); }
+}
+.warm-ui.interstellar-voyage-theme .star-field.is-paused .sky-star,
+.warm-ui .star-field.is-paused .sky-star { animation-play-state: paused; }
+.warm-ui.interstellar-voyage-theme > .star-field.is-paused::before { animation-play-state: paused; }
+@media (max-width: 640px) {
+  .warm-ui.interstellar-voyage-theme .star-field .sky-star:nth-child(n+57) { display: none; }
+  .warm-ui .star-field .sky-meteor { width: 110px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .warm-ui.interstellar-voyage-theme > .star-field::before { animation: none; transform: none; }
+  .warm-ui.interstellar-voyage-theme .star-field .sky-star { animation: none !important; }
+  .warm-ui .star-field .sky-meteor { display: none; animation: none; }
+}
+@media (forced-colors: active) {
+  .warm-ui.interstellar-voyage-theme .star-field { display: none; }
+}
