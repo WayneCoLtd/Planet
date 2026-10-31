@@ -2,13 +2,13 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { startMeteorShower } from '../src/meteorShower.js'
 
-function fixture({ enabled = true, hidden = false, reduced = false, mobile = false } = {}) {
+function fixture({ enabled = true, hidden = false, reduced = false, randomValue = .5 } = {}) {
   const visibility = Object.assign(new EventTarget(), { hidden })
   const motion = Object.assign(new EventTarget(), { matches: reduced })
   const timers = new Map(), meteors = [], pauses = []
   let id = 0
-  const stop = startMeteorShower({ enabled, visibility, motion, compact: { matches: mobile },
-    onMeteor: value => meteors.push(value), onPause: value => pauses.push(value), random: () => .5,
+  const stop = startMeteorShower({ enabled, visibility, motion,
+    onMeteor: value => meteors.push(value), onPause: value => pauses.push(value), random: () => randomValue,
     setTimer: (fn, delay) => { timers.set(++id, { fn, delay }); return id },
     clearTimer: key => timers.delete(key),
   })
@@ -28,16 +28,20 @@ test('only one short-lived meteor is scheduled, with quiet intervals', () => {
   assert.deepEqual(f.meteors.at(-1), { left: 75, top: 15 })
   assert.equal(f.next(), 1400)
   assert.equal(f.meteors.at(-1), null)
-  assert.equal(f.next(), 6600)
+  assert.equal(f.next(), 3100)
   f.stop()
   assert.equal(f.timers.size, 0)
 })
 
-test('mobile has a longer interval between meteors', () => {
-  const f = fixture({ mobile: true })
-  f.next(); f.next()
-  assert.equal(f.next(), 10100)
-  f.stop()
+test('consecutive meteor starts stay 4–5 seconds apart including the visible lifetime', () => {
+  for (const randomValue of [0, .5, 1]) {
+    const f = fixture({ randomValue })
+    f.next()
+    const lifetime = f.next()
+    const gap = f.next()
+    assert.ok(lifetime + gap >= 4000 && lifetime + gap <= 5000)
+    f.stop()
+  }
 })
 
 test('background tabs remove the active meteor and cancel pending work', () => {

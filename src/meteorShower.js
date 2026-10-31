@@ -1,5 +1,5 @@
 // One short-lived meteor at a time; no frame loop or work in hidden tabs.
-export function startMeteorShower({ enabled, visibility, motion, compact, onMeteor, onPause,
+export function startMeteorShower({ enabled, visibility, motion, onMeteor, onPause,
   setTimer = setTimeout, clearTimer = clearTimeout, random = Math.random }) {
   let timer = null
   let stopped = false
@@ -10,7 +10,8 @@ export function startMeteorShower({ enabled, visibility, motion, compact, onMete
       onMeteor({ left: 58 + random() * 34, top: 6 + random() * 18 })
       timer = setTimer(() => {
         onMeteor(null)
-        if (canAnimate()) schedule((compact.matches ? 9000 : 6000) + random() * (compact.matches ? 5000 : 4000) - 1400)
+        // Count the 1.4s visible lifetime toward the 4–5s start-to-start interval.
+        if (canAnimate()) schedule(4000 + random() * 1000 - 1400)
       }, 1400)
     }, delay)
   }

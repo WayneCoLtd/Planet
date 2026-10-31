@@ -9,7 +9,6 @@ export default function StarField({ night = false }) {
     enabled: night,
     visibility: document,
     motion: window.matchMedia('(prefers-reduced-motion: reduce)'),
-    compact: window.matchMedia('(max-width: 640px)'),
     onMeteor: setMeteor,
     onPause: setPaused,
   }), [night])
@@ -19,8 +18,8 @@ export default function StarField({ night = false }) {
     '--top': `${Math.random() * 100}%`,
     '--delay': `${Math.random() * 5}s`,
     '--size': `${Math.random() * 5 + 3}px`,
-    '--night-size': `${i % 9 === 0 ? 2 : 1 + Math.random() * .6}px`,
-    '--night-opacity': .22 + Math.random() * .46,
+    '--night-size': `${i % 9 === 0 ? 3 : 1.4 + Math.random() * .8}px`,
+    '--night-opacity': .45 + Math.random() * .45,
   })), [])
 
   return <div className={`star-field${paused ? ' is-paused' : ''}`} aria-hidden="true">

@@ -15,38 +15,38 @@
 .warm-ui.interstellar-voyage-theme > .star-field::before {
   content: '';
   position: absolute;
-  inset: -12%;
+  inset: -24%;
   background:
-    radial-gradient(ellipse at 76% 20%, #6b559b42, transparent 56%),
-    radial-gradient(ellipse at 16% 66%, #3e87923d, transparent 54%),
-    radial-gradient(ellipse at 62% 95%, #536c9a30, transparent 50%);
-  opacity: .6;
+    radial-gradient(ellipse at 76% 20%, #7c68b86b, transparent 56%),
+    radial-gradient(ellipse at 16% 66%, #4896aa59, transparent 54%),
+    radial-gradient(ellipse at 62% 95%, #637fb74a, transparent 50%);
+  opacity: .8;
   transform-origin: 50% 55%;
-  animation: night-liquid-drift 32s ease-in-out infinite alternate;
+  animation: night-liquid-drift 18s ease-in-out infinite alternate;
 }
 @keyframes night-liquid-drift {
-  0% { transform: translate3d(-2%, 1%, 0) rotate(-4deg) scale(1); opacity: .5; }
-  50% { transform: translate3d(2%, -2%, 0) rotate(2deg) scale(1.04); opacity: .8; }
-  100% { transform: translate3d(-1%, 3%, 0) rotate(5deg) scale(1.08); opacity: .65; }
+  0% { transform: translate3d(-10%, 2%, 0) rotate(-7deg) scale(1.06); opacity: .65; }
+  50% { transform: translate3d(1%, -3%, 0) rotate(-1deg) scale(1.12); opacity: .95; }
+  100% { transform: translate3d(12%, 3%, 0) rotate(5deg) scale(1.06); opacity: .8; }
 }
 .warm-ui.interstellar-voyage-theme .star-field .sky-star {
   width: var(--night-size);
   height: var(--night-size);
   opacity: var(--night-opacity);
-  background: #dbe6fa;
+  background: #e4edff;
   box-shadow: none;
   animation: none;
   will-change: auto;
 }
 .warm-ui.interstellar-voyage-theme .star-field .sky-star:nth-child(4n) {
   background: #fff1d8;
-  box-shadow: 0 0 5px #d1ddff45;
+  box-shadow: 0 0 6px #d1ddff75;
   animation: night-star-breathe 7s ease-in-out infinite;
   animation-delay: var(--delay);
 }
 @keyframes night-star-breathe {
   0%, 100% { opacity: var(--night-opacity); }
-  50% { opacity: .18; }
+  50% { opacity: .32; }
 }
 .warm-ui .star-field .sky-meteor {
   position: absolute;
