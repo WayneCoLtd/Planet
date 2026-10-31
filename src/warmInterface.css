@@ -100,6 +100,24 @@ body.warm-site {
 .warm-ui .planet-nav button > span { display: none; }
 .warm-ui .planet-nav button[aria-current='page'] { background: var(--ui-soft) !important; color: var(--ui-ink) !important; }
 .warm-ui .music-dock-trigger { background: var(--ui-soft) !important; border: 0 !important; border-radius: 50%; }
+.warm-ui .header-tools { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.warm-ui .appearance-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 70px;
+  min-height: 44px;
+  padding: 7px 10px;
+  font-size: 13px;
+  white-space: nowrap;
+  background: var(--ui-soft);
+  border-color: transparent;
+}
+.warm-ui .appearance-toggle > span:first-child { font: 22px/1 system-ui !important; }
+@media (max-width: 900px) {
+  .warm-ui .header-tools { grid-area: dock; justify-self: end; }
+}
 .warm-ui .chapter-switch { gap: 4px; margin-bottom: 16px; }
 .warm-ui .chapter-switch button {
   min-height: 44px;
@@ -134,8 +152,48 @@ body.warm-site {
 .warm-ui .section-heading > span:not(.legacy-experience *) { color: var(--ui-muted) !important; font: 500 11px/1.5 system-ui; letter-spacing: .12em; }
 .warm-ui .literary-quote:not(.legacy-experience *) { color: var(--ui-muted); }
 .warm-ui .hero-copy { padding: clamp(24px, 4vw, 48px) !important; }
-.warm-ui .hero-copy h1 { color: var(--ui-ink) !important; font: 600 clamp(42px, 7vw, 76px)/1.05 system-ui !important; letter-spacing: -.04em !important; text-shadow: none !important; }
-.warm-ui .hero-copy h2 { color: var(--ui-ink) !important; font: 400 clamp(23px, 3vw, 34px)/1.5 'Songti SC', serif !important; text-shadow: none !important; }
+/* Cream lettering with a small peach offset; real text stays selectable. */
+.warm-ui .hero-copy h1 {
+  color: #ad603a !important;
+  font: 900 clamp(44px, 7vw, 80px)/1.15 'Arial Rounded MT Bold', 'Trebuchet MS', ui-rounded, system-ui, sans-serif !important;
+  letter-spacing: -.035em !important;
+  margin: 8px 0 14px;
+  text-shadow: 1px 1px 0 #f3c3a7, 2px 2px 0 #f3c3a7, 3px 3px 0 #e6ac8b, 0 7px 12px #ad603a14 !important;
+  -webkit-text-stroke: 0;
+}
+.warm-ui .hero-copy h2 {
+  color: #b36b46 !important;
+  font: 800 clamp(24px, 2.8vw, 34px)/1.5 ui-rounded, 'PingFang SC', 'Microsoft YaHei', system-ui, sans-serif !important;
+  letter-spacing: .06em;
+  margin: 0 0 22px;
+  -webkit-text-stroke: .8px #fff4df;
+  paint-order: stroke fill;
+  text-shadow: 1px 2px 0 #f4d5bd !important;
+}
+@supports (-webkit-text-stroke: 1px #bd734a) {
+  .warm-ui .hero-copy h1 {
+    color: #fff0c9 !important;
+    -webkit-text-stroke: 2px #b66c42;
+    paint-order: stroke fill;
+  }
+}
+.warm-ui.interstellar-voyage-theme .hero-copy h1 {
+  color: #ffe8b3 !important;
+  -webkit-text-stroke-color: #d2966c;
+  text-shadow: 1px 1px 0 #9b6557, 2px 2px 0 #9b6557, 3px 3px 0 #875448, 0 7px 12px #00000024 !important;
+}
+.warm-ui.interstellar-voyage-theme .hero-copy h2 {
+  color: #f3bd91 !important;
+  -webkit-text-stroke-color: #543b32;
+  text-shadow: 1px 2px 0 #543b32 !important;
+}
+@media (forced-colors: active) {
+  .warm-ui .hero-copy h1, .warm-ui .hero-copy h2 {
+    color: CanvasText !important;
+    -webkit-text-stroke: 0 !important;
+    text-shadow: none !important;
+  }
+}
 .warm-ui .hero-copy > .cute-icon, .warm-ui .hero-copy > .tiny-label { display: none; }
 .warm-ui .hero-stats { color: var(--ui-muted); gap: 8px; }
 .warm-ui .hero-progress-card { border: 0 !important; border-top: 1px solid var(--ui-line) !important; border-radius: 0 !important; background: none !important; box-shadow: none !important; padding: 18px 0 0 !important; }
@@ -184,7 +242,8 @@ body.warm-site {
   .warm-ui .planet-nav button { padding: 8px 12px; font-size: 13px; }
   .warm-ui .section-heading h2:not(.legacy-experience *) { font-size: 28px !important; }
   .warm-ui .hero-copy { padding: 24px 20px !important; }
-  .warm-ui .hero-copy h1 { font-size: 44px !important; }
+  .warm-ui .hero-copy h1 { font-size: clamp(42px, 12.5vw, 58px) !important; }
+  .warm-ui .hero-copy h2 { font-size: clamp(22px, 6vw, 28px) !important; letter-spacing: .04em; }
   .warm-ui .floating-note { display: none; }
   .warm-ui .site-footer { margin-top: 32px; }
 }

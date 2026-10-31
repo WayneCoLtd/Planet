@@ -10,6 +10,7 @@ import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
 import { changelog } from './data/changelog'
 import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, compressImageFile, isMessageMultiImageReady, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog, getCloudStatus, resolveCloudAssetUrl } from './cloud'
 import { installStorageGuard, safeGetItem, safeSetItem, safeRemoveItem } from './safeStorage'
+import { readVoyageAppearance, saveVoyageAppearance, clearVoyageAppearance } from './themePreference'
 import './styles.css'
 import { createReadResource } from './readResource'
 import { toCanonicalCloudUrl } from './cloud'
@@ -310,6 +311,7 @@ async function saveCloudGlobalPatch(patch = {}, eventType = 'global_state_saved'
 }
 
 function setVoyageThemeLocal(enabled, source = 'theme-update', { cloud = true } = {}) {
+  clearVoyageAppearance()
   const themeMode = enabled ? 'voyage' : 'classic'
   localStorage.setItem('wwcxrl-voyage-theme', enabled ? 'yes' : 'classic')
   saveGlobalLocalState({ ...loadGlobalLocalState(), themeMode, voyageUnlocked: Boolean(enabled) })
@@ -12098,12 +12100,10 @@ function PlanetApp() {
   const [current, setCurrent] = useState('home')
   const [toast, setToast] = useState('')
   const firstPageRenderRef = React.useRef(true)
-  const readVoyageTheme = () => {
-    try { return localStorage.getItem('wwcxrl-voyage-theme') === 'yes' } catch { return false }
-  }
+  const readVoyageTheme = readVoyageAppearance
   const [voyageTheme, setVoyageTheme] = useState(readVoyageTheme)
   const setThemeMode = (enabled) => {
-    setVoyageThemeLocal(Boolean(enabled), 'manual-toggle', { cloud: true })
+    saveVoyageAppearance(Boolean(enabled))
     setVoyageTheme(Boolean(enabled))
   }
   React.useEffect(() => {
@@ -12167,9 +12167,6 @@ function PlanetApp() {
       window.removeEventListener('wwcxrl-open-observatory', openObservatory)
     }
   }, [])
-  const themeSwitchAvailable = (() => {
-    try { return voyageTheme || getRoleJson('wwcxrl-completed-days', []).includes(TEMPLATE_THEME_SWITCH_DAY) } catch { return voyageTheme }
-  })()
   const [firstGuideOpen, setFirstGuideOpen] = useState(() => {
     if (typeof window === 'undefined') return false
     if (new URLSearchParams(window.location.search).get('showGuide') === '1') return true
@@ -12206,7 +12203,17 @@ function PlanetApp() {
       <header className="top-bar">
         <button className="brand" onClick={() => setCurrent('home')}><span>琛❤️琳</span></button>
         <Nav current={current} setCurrent={setCurrent} />
-        <MusicDock />
+        <div className="header-tools">
+          <button
+            type="button"
+            className="appearance-toggle"
+            aria-label="深色模式"
+            aria-pressed={voyageTheme}
+            title={voyageTheme ? '切换为浅色模式' : '切换为深色模式'}
+            onClick={() => setThemeMode(!voyageTheme)}
+          ><span aria-hidden="true">{voyageTheme ? '☀' : '☾'}</span><span>{voyageTheme ? '浅色' : '深色'}</span></button>
+          <MusicDock />
+        </div>
       </header>
       {current === 'home' && <Hero setCurrent={setCurrent} />}
       {current === 'guide' && <TemplateGuide setCurrent={setCurrent} />}
@@ -12227,7 +12234,6 @@ function PlanetApp() {
       <CloudStatusPill />
       {toast && <div className="wwcxrl-soft-toast" role="status">{toast}</div>}
       <footer className="site-footer">
-        {themeSwitchAvailable && <button type="button" className="theme-toggle-button subtle" onClick={() => setThemeMode(!voyageTheme)}>{voyageTheme ? '🍊 切回旧皮肤' : '🚀 切到新皮肤'}</button>}
         <button type="button" className="theme-toggle-button subtle" onClick={() => setChangelogOpen(true)}>📜 更新日志</button>
         <button type="button" className="theme-toggle-button subtle" onClick={() => setFeedbackOpen(true)}>💡 网站建议</button>
         <button type="button" onClick={returnToInvitationLayer}>✉️ 回到邀请信</button>
