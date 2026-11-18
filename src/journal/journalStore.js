@@ -173,25 +173,25 @@ export async function saveEntry(entry) {
         let path = image.path,
           thumbPath = image.thumbPath
         if (image.pendingImage) {
-          path = (
-            await journalRequest({
-              action: 'image',
-              owner: entry.owner,
-              date: entry.date,
-              id: image.id,
-              image: image.pendingImage.data,
-            })
-          ).screenshotPath
-          thumbPath = (
-            await journalRequest({
-              action: 'image',
-              owner: entry.owner,
-              date: entry.date,
-              id: image.id,
+          const upload = {
+            action: 'image',
+            owner: entry.owner,
+            date: entry.date,
+            id: image.id,
+          }
+          // Keep the save locked until both requests settle, including on failure.
+          const [full, thumb] = await Promise.allSettled([
+            journalRequest({ ...upload, image: image.pendingImage.data }),
+            journalRequest({
+              ...upload,
               variant: 'thumb',
               image: image.pendingImage.thumbnail,
-            })
-          ).screenshotPath
+            }),
+          ])
+          if (full.status === 'rejected') throw full.reason
+          if (thumb.status === 'rejected') throw thumb.reason
+          path = full.value.screenshotPath
+          thumbPath = thumb.value.screenshotPath
         }
         images.push({ id: image.id, path, thumbPath })
       }

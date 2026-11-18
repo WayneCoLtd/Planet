@@ -621,10 +621,11 @@ test('Monday can save Sunday night and a fresh GET returns its full sleep week a
   assert.equal((await h.run({ owner: 'pomelo', action: 'goal', week_start: '2026-10-12', nights: 1, before: '22:00', version: 1 })).code, 400)
 })
 
+const storeSource = readFileSync(new URL('../src/journal/journalStore.js', import.meta.url), 'utf8')
+  .replace(/^import[\s\S]*?from ['"][^'"]+['"]\r?$/gm, '')
+  .replace(/^export /gm, '')
+
 test('local Monday loading uses the same previous-night range as the API', async () => {
-  const storeSource = readFileSync(new URL('../src/journal/journalStore.js', import.meta.url), 'utf8')
-    .replace(/^import[\s\S]*?from ['"][^'"]+['"]\r?$/gm, '')
-    .replace(/^export /gm, '')
   const fixtures = {
     entries: ['2026-10-12', '2026-10-13', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-26'].map(date => model.emptyEntry('pomelo', date)),
     goals: [],
@@ -635,4 +636,42 @@ test('local Monday loading uses the same previous-night range as the API', async
   assert.deepEqual(Array.from(monday.entries, row => row.date), ['2026-10-12', '2026-10-13', '2026-10-18', '2026-10-19'])
   const tuesday = await context.load('2026-10-20')
   assert.deepEqual(Array.from(tuesday.entries, row => row.date), ['2026-10-19', '2026-10-20', '2026-10-26'])
+})
+
+test('journal waits for both parallel uploads before failing or saving', async () => {
+  const pending = []
+  const saves = []
+  const request = (body) => {
+    if (body.action === 'save') {
+      saves.push(body)
+      return Promise.resolve({ entry: body })
+    }
+    return new Promise((resolve, reject) => pending.push({ body, resolve, reject }))
+  }
+  const context = vm.createContext({ entryNotes: model.entryNotes, cloudEnabled: true, request })
+  vm.runInContext(storeSource + '\njournalRequest = request; globalThis.save = saveEntry;', context)
+  const image = { id: '11111111-1111-4111-8111-111111111111', pendingImage: { data: 'full', thumbnail: 'thumb' } }
+  const entry = { ...model.emptyEntry('pomelo', '2026-10-14'), notes: [{ id: 'note', text: '', images: [image] }] }
+  const saving = context.save(entry)
+  let finished = false
+  void saving.catch(() => { finished = true })
+  assert.deepEqual(pending.map(({ body }) => [body.image, body.variant || 'full']), [['full', 'full'], ['thumb', 'thumb']])
+  pending[0].reject(new Error('storage failed'))
+  await new Promise(setImmediate)
+  assert.equal(finished, false)
+  pending[1].resolve({ screenshotPath: 'thumb.jpg' })
+  await assert.rejects(saving, /storage failed/)
+  assert.equal(saves.length, 0)
+
+  const retry = context.save(entry)
+  assert.deepEqual(pending.slice(2).map(({ body }) => body.id), [image.id, image.id])
+  pending[3].resolve({ screenshotPath: 'thumb.jpg' })
+  await new Promise(setImmediate)
+  assert.equal(saves.length, 0)
+  pending[2].resolve({ screenshotPath: 'full.jpg' })
+  const saved = await retry
+  assert.equal(saved.notes[0].images[0].path, 'full.jpg')
+  assert.equal(saved.notes[0].images[0].thumbPath, 'thumb.jpg')
+  assert.equal(saves.length, 1)
+  assert.deepEqual(image.pendingImage, { data: 'full', thumbnail: 'thumb' })
 })

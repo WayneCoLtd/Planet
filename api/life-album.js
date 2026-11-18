@@ -89,15 +89,22 @@ export default async function handler(req, res) {
       if (existing) return res.status(200).json({ photo: shape(existing) })
       const image_path = `life-album/${body.id}/image.jpg`,
         thumb_path = `life-album/${body.id}/thumb.jpg`
-      for (const [path, bytes] of [
+      const storage = db.storage.from(BUCKET)
+      const files = [
         [image_path, original],
         [thumb_path, thumb],
-      ]) {
-        const { error } = await db.storage
-          .from(BUCKET)
-          .upload(path, bytes, { contentType: 'image/jpeg', cacheControl: '604800', upsert: true })
+      ]
+      // A retry can reuse these paths after both storage writes have settled.
+      const uploads = await Promise.allSettled(files.map(async ([path, bytes]) => {
+        const { error } = await storage.upload(path, bytes, {
+          contentType: 'image/jpeg',
+          cacheControl: '604800',
+          upsert: true,
+        })
         if (error) throw error
-      }
+      }))
+      const failedUpload = uploads.find((result) => result.status === 'rejected')
+      if (failedUpload) throw failedUpload.reason
       const { data, error } = await db
         .from(TABLE)
         .insert({

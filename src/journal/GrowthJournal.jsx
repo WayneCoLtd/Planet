@@ -275,7 +275,7 @@ function JournalPage({
     setBusy(true)
     setNote('正在整理截图…')
     try {
-      const prepared = await prepareLifePhoto(file, {})
+      const prepared = await prepareLifePhoto(file, {}, { includeThumbnail: false })
       change({
         pendingImage: { id: prepared.id, data: prepared.image },
         screenshotPath: '',

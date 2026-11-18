@@ -10,7 +10,7 @@ const source = readFileSync(
 )
   .replace(/^import .*$/gm, '')
   .replace('export default async function handler', 'async function handler')
-function harness({ level = 1, existing = null } = {}) {
+function harness({ level = 1, existing = null, upload = async () => ({}) } = {}) {
   const calls = []
   const db = {
     from(table) {
@@ -51,9 +51,9 @@ function harness({ level = 1, existing = null } = {}) {
           getPublicUrl: (path) => ({
             data: { publicUrl: `https://test.invalid/${path}` },
           }),
-          upload: async (path) => {
+          upload: (path) => {
             calls.push(['upload', path])
-            return {}
+            return upload(path)
           },
         }
       },
@@ -66,7 +66,7 @@ function harness({ level = 1, existing = null } = {}) {
     getAdminClient: () => db,
     Buffer,
     URL,
-    console,
+    console: { warn() {} },
   })
   vm.runInContext(source + ';globalThis.run=handler', context)
   return {
@@ -114,6 +114,30 @@ test('retry after a lost upload response does not duplicate a photo', async () =
     h.calls.filter((c) => ['insert', 'upload'].includes(c[0])).length,
     0,
   )
+})
+test('both album files start together and a partial failure leaves no published row', async () => {
+  const finishes = []
+  const h = harness({ upload: () => new Promise(resolve => finishes.push(resolve)) })
+  const publishing = h.run('POST', body)
+  let finished = false
+  void publishing.then(() => { finished = true })
+  await new Promise(setImmediate)
+  const paths = [`life-album/${body.id}/image.jpg`, `life-album/${body.id}/thumb.jpg`]
+  assert.deepEqual(h.calls.filter(([action]) => action === 'upload').map(([, path]) => path), paths)
+  finishes[0]({ error: new Error('storage failed') })
+  await new Promise(setImmediate)
+  assert.equal(finished, false)
+  finishes[1]({})
+  assert.equal((await publishing).code, 500)
+  assert.equal(h.calls.some(([action]) => action === 'insert'), false)
+
+  const retry = h.run('POST', body)
+  await new Promise(setImmediate)
+  finishes[2]({})
+  finishes[3]({})
+  assert.equal((await retry).code, 200)
+  assert.deepEqual(h.calls.filter(([action]) => action === 'upload').map(([, path]) => path), [...paths, ...paths])
+  assert.equal(h.calls.filter(([action]) => action === 'insert').length, 1)
 })
 test('separate photos on the same date have distinct IDs and preserve multiline captions', async () => {
   const h = harness()
