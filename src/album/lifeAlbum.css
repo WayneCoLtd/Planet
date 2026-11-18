@@ -129,7 +129,7 @@
   overflow-x: auto;
 }
 .life-pending figure {
-  flex: 0 0 120px;
+  flex: 0 0 180px;
   margin: 0 0 16px;
 }
 .life-pending img {
@@ -140,6 +140,21 @@
 .life-pending figcaption {
   font-size: 12px;
 }
+.life-draft-fields {
+  display: grid;
+  gap: 8px;
+}
+.life-draft-fields label {
+  display: grid;
+  gap: 4px;
+}
+.life-draft-fields :is(select, input, textarea) {
+  min-height: 44px;
+  width: 100%;
+  color: var(--ui-ink, #453d35);
+  font-size: 16px;
+}
+.life-album .life-status { color: var(--ui-muted, #756b61); }
 .life-pending button {
   font-size: 13px;
 }

@@ -6,7 +6,7 @@ import vm from 'node:vm'
 function runtime(fetch, timeout = 100) {
   const storage = new Map()
   const source = readFileSync(new URL('../src/cloud.js', import.meta.url), 'utf8')
-    .replace(/^import .*$/m, '')
+    .replace(/^import .*$/gm, '')
     .replaceAll('import.meta.env.VITE_SUPABASE_URL', "'https://test.supabase.co'")
     .replaceAll('import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY', "'test-key'")
     .replaceAll('export ', '')

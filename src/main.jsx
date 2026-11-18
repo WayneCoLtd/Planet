@@ -1,4 +1,5 @@
-import { mediaPreviewUrl } from './media/previewUrl'
+import { blobToDataUrl, prepareJpegFile, shrinkLargeJpeg } from './media/imagePreparation'
+import PreviewImage from './media/PreviewImage'
 import { reuseSignedMedia, invalidateSignedMedia } from './media/signedUrlCache'
 import { loadMailboxDraft, saveMailboxDraft, clearMailboxComposer } from './mailboxDrafts'
 import StarField from './StarField'
@@ -7,8 +8,8 @@ import React, { useMemo, useState, useRef } from 'react'
 import { createRoot } from 'react-dom/client'
 import { createPortal } from 'react-dom'
 import { timeline, loveNotes, wishes, dailyAdventures } from './data/loveData'
-import { changelog } from './data/changelog'
-import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, compressImageFile, isMessageMultiImageReady, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, loadCloudChangelog, saveCloudChangelog, getCloudStatus, resolveCloudAssetUrl } from './cloud'
+import { loadChangelog, saveChangelog, visibleChangelog } from './changelogStore'
+import { cloudEnabled, getSupabase, getCloudIdentity, ensureProfile, logCloudEvent, loadCloudCheckins, markCloudSigned, markCloudTaskCompleted, clearCloudDayStatus, saveCloudDayProgress, syncCloudBackpack, loadCloudBackpack, addCloudBackpackItems, removeCloudBackpackItems, loadCloudDailyTasks, saveCloudDailyTask, deleteCloudDailyTask, uploadCloudTaskImage, loadCloudWish, saveCloudWish, loadCloudMeetingDates, saveCloudMeetingDates, loadCloudMessages, saveCloudMessage, updateCloudMessage, deleteCloudMessage, uploadMessageImage, compressImageFile, isMessageMultiImageReady, loadCloudFeedback, saveCloudFeedback, deleteCloudFeedback, getCloudStatus, resolveCloudAssetUrl } from './cloud'
 import { installStorageGuard, safeGetItem, safeSetItem, safeRemoveItem } from './safeStorage'
 import { readVoyageAppearance, saveVoyageAppearance, clearVoyageAppearance } from './themePreference'
 import './styles.css'
@@ -16,6 +17,7 @@ import { createReadResource } from './readResource'
 import { toCanonicalCloudUrl } from './cloud'
 import { ENERGY_TARGET, createEnergyDraw, normalizeEnergyLedger, readEnergyProgress, writeEnergyProgress } from './energyLedger'
 import AlbumTheater from './album/AlbumTheater'
+import AnniversaryBadge from './backpack/AnniversaryBadge'
 import LiteraryQuote from './LiteraryQuote'
 import { literaryQuotes } from './data/literaryQuotes'
 import { countJourneySignedDays, JOURNEY_TOTAL_DAYS } from './checkinProgress'
@@ -1491,7 +1493,7 @@ function CheckIn({ archive = false }) {
     markCloudSigned(selected.day, selected.date)
     logCloudEvent('signed_day', { day: selected.day, title: selected.title }, selected.day)
     if (selected.day === 300) {
-      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '300 天纪念日已签到，未来的日子继续温柔铺开。' }))
+      window.dispatchEvent(new CustomEvent('wwcxrl-soft-toast', { detail: '300 天纪念日已签到。' }))
     }
   }
 
@@ -7902,7 +7904,7 @@ function DailyBestCard({ item, freeRead = false, taskCompleted = false, onTaskCo
           >当前浏览器暂不支持视频播放。</video>
         ) : (
           <a href={mediaUrl} target="_blank" rel="noreferrer" aria-label="打开今日最佳大图">
-            <img src={mediaUrl} alt={config.altText || '今日最佳趣图'} loading="lazy" onError={() => setMediaFailed(true)} />
+            <PreviewImage src={mediaUrl} alt={config.altText || '今日最佳趣图'} onError={() => setMediaFailed(true)} />
           </a>
         )}
       </div>
@@ -7910,7 +7912,7 @@ function DailyBestCard({ item, freeRead = false, taskCompleted = false, onTaskCo
       {!freeRead && <button type="button" className="daily-best-collect" onClick={collectBest} disabled={taskCompleted || collecting}>
         {taskCompleted ? '🏆 今日最佳已收下' : collecting ? '正在盖章…' : '🏆 收下今日最佳'}
       </button>}
-      {!taskCompleted && <small className="daily-best-note">{mediaKind === 'video' ? '视频默认静音，点播放器音量按钮即可打开声音。' : '点图片可以查看原图。'}</small>}
+      {!taskCompleted && <small className="daily-best-note">{mediaKind === 'video' ? '视频默认静音，点播放器音量按钮即可打开声音。' : '点击图片查看大图。'}</small>}
     </section>
   )
 }
@@ -7962,7 +7964,7 @@ function NightReadingQuest({ item, freeRead = false, taskCompleted = false, onTa
           </p>
         )}
       </header>
-      {item.image && <img className="night-reading-cover" src={item.image} alt="夜读封面" loading="lazy" />}
+      {item.image && <PreviewImage className="night-reading-cover" src={item.image} alt="夜读封面" />}
       {!embedded && intro && <p className="night-reading-intro">{intro}</p>}
       {hasBlocks && (
         <div className="night-reading-blocks">
@@ -7980,7 +7982,7 @@ function NightReadingQuest({ item, freeRead = false, taskCompleted = false, onTa
               }
               return (
                 <figure key={`${item.day}-b-${index}`} className="night-reading-block-figure">
-                  <img className="night-reading-block-image" src={block.url} alt={block.caption || `${columnMeta.label}图片 ${index + 1}`} loading="lazy" referrerPolicy="no-referrer" />
+                  <img className="night-reading-block-image" src={block.url} alt={block.caption || `${columnMeta.label}图片 ${index + 1}`} loading="lazy" decoding="async" referrerPolicy="no-referrer" />
                   {block.caption && <figcaption>{block.caption}</figcaption>}
                 </figure>
               )
@@ -8003,7 +8005,7 @@ function NightReadingQuest({ item, freeRead = false, taskCompleted = false, onTa
       {!hasBlocks && gallery.length > 0 && (
         <div className="night-reading-gallery">
           {gallery.map((url, index) => (
-            <img key={`${item.day}-g-${index}`} src={url} alt={`夜读配图 ${index + 1}`} loading="lazy" />
+            <img key={`${item.day}-g-${index}`} src={url} alt={`夜读配图 ${index + 1}`} loading="lazy" decoding="async" />
           ))}
         </div>
       )}
@@ -8247,7 +8249,7 @@ function StickerQuest({ item, freeRead = false, taskCompleted, onTaskComplete })
             onChange={event => setWishText(event.target.value)}
             rows={3}
             maxLength={200}
-            placeholder="把今天想说的话留在这里，我会收进小星球。"
+            placeholder="输入心愿"
             aria-label="写下心愿"
           />
           <button type="button" className="letter-done-button" onClick={saveWish} disabled={saving || !wishText.trim()}>
@@ -8619,28 +8621,6 @@ function loadPhotoWallLocal() {
 
 function savePhotoWallLocal(next) {
   localStorage.setItem(PHOTO_WALL_KEY, JSON.stringify(next || {}))
-}
-
-async function resizeImageFile(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = reject
-    reader.onload = () => {
-      const image = new Image()
-      image.onerror = reject
-      image.onload = () => {
-        const maxSide = 1200
-        const scale = Math.min(1, maxSide / Math.max(image.width, image.height))
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.max(1, Math.round(image.width * scale))
-        canvas.height = Math.max(1, Math.round(image.height * scale))
-        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height)
-        resolve(canvas.toDataURL('image/jpeg', 0.84))
-      }
-      image.src = reader.result
-    }
-    reader.readAsDataURL(file)
-  })
 }
 
 function normalizeCloudPhoto(row) {
@@ -9205,7 +9185,7 @@ function ArchivePhotoWall() {
     const frame = 'cream'
     setStatus('正在把照片裱进相册…')
     try {
-      const dataUrl = await resizeImageFile(file)
+      const dataUrl = await compressImageFile(file)
       removePhotoWallPending('remove', day.day, owner.id)
       const localPhoto = {
         src: dataUrl,
@@ -9376,7 +9356,7 @@ function ArchivePhotoWall() {
                           <div className="slot-heading"><img className="owner-avatar owner-avatar-lg" src={owner.icon} alt={owner.label} /><strong>{owner.label}</strong></div>
                           {photo?.src ? (
                             <button type="button" className="mini-framed-photo frame-cream" onClick={() => setLightbox({ photo, owner, day })}>
-                              <img src={mediaPreviewUrl(photo.src)} onError={event => { if (event.currentTarget.getAttribute('src') !== photo.src) event.currentTarget.src = photo.src }} loading="lazy" decoding="async" alt={`${owner.label} Day ${day.day}`} />
+                              <PreviewImage src={photo.src} alt={`${owner.label} Day ${day.day}`} />
                               <small>{photo.name || photo.caption || owner.hint}</small>
                               {pendingUploadKeys.has(key) && <span className="album-pending-chip">排队中</span>}
                             </button>
@@ -9412,6 +9392,20 @@ function ArchivePhotoWall() {
     </section>
   )
 }
+
+const BACKPACK_ANNIVERSARIES = [
+  {
+    days: 365,
+    date: ANNIVERSARY_YEAR_ONE_DATE,
+    caption: '《金水东路的日子》',
+    photo: { src: '/api/anniversary-photo', alt: '金水东路的日子纪念相册封面' },
+  },
+  {
+    days: 400,
+    date: '2026-11-17',
+    caption: '我们就这样一起走到了第 400 天。日子平平常常，有你陪着，就是件很幸福的事。',
+  },
+]
 
 const BACKPACK_ITEMS = {
   matchbox: { icon: '📦', name: '空火柴盒', desc: '521 烟花任务留下的火柴盒，边缘还有一点点星火味。' },
@@ -10350,20 +10344,18 @@ function BackpackView() {
   return (
     <section className="content-section backpack-section premium-section">
       <header className="section-heading playful-heading premium-heading">
-        <span>Backpack</span>
         <h2>小背包 · 道具收纳室</h2>
         <LiteraryQuote quote={literaryQuotes.backpack} />
-        <p>已获得的道具会亮起，可在下方查看数量和使用方式。</p>
       </header>
       <div className="backpack-hero sticker-card premium-card">
         <div>
-          <div className="tiny-label">Inventory Status</div>
-          <h3>{entries.length ? `已经收好 ${entries.length} 种小道具` : '背包现在空空的，但已经准备好接住惊喜'}</h3>
-          <p>{entries.length ? '道具数量和使用方式显示在下方。' : '完成每日任务后，小道具会带着盖章动画来到这里。'}</p>
+          <h3>{entries.length ? `已获得 ${entries.length} 种道具` : `已获得 ${BACKPACK_ANNIVERSARIES.length} 枚纪念徽章`}</h3>
+          {!entries.length && <p>完成有道具奖励的任务后，可在这里查看。</p>}
         </div>
         <div className="backpack-orb" aria-hidden="true"><span>🎒</span><i /></div>
       </div>
       <div className={`backpack-grid premium-inventory-grid ${casting ? 'magic-casting-grid' : ''}`}>
+        {BACKPACK_ANNIVERSARIES.map(badge => <AnniversaryBadge key={badge.days} {...badge} />)}
         {entries.map(([id, count]) => {
           const item = BACKPACK_ITEMS[id] || { icon: '🎁', name: id, desc: '一件来自小星球的小东西。' }
           const isCoffee = id === 'coffee_cup'
@@ -10519,14 +10511,14 @@ function MeetingCountdownCalendar() {
   while (cells.length % 7 !== 0) cells.push(null)
 
   const countdownCopy = !loaded
-    ? '正在翻日历…'
-    : !data.next
-      ? '下一次见面的日子还在路上 💌'
+    ? '正在读取见面日期…'
+    : !data.next || daysLeft === null
+      ? '下次见面日期待定'
       : daysLeft > 0
         ? `距离下次见面还有`
         : daysLeft === 0
-          ? '就是今天！我们要见面啦'
-          : '已经见面啦，期待下一次 💕'
+          ? '今天见面'
+          : '约定的见面日期已过'
 
   return (
     <section className="meeting-calendar-card sticker-card" aria-label="异地见面倒计时与见面日历">
@@ -10541,13 +10533,13 @@ function MeetingCountdownCalendar() {
             </b>
           )}
         </div>
-        {data.next && <p className="meeting-next-date">📅 {data.next.replace(/-/g, '.')} 是我们约定的见面日</p>}
+        {data.next && <p className="meeting-next-date">见面日期 <time dateTime={data.next}>{data.next.replace(/-/g, '.')}</time></p>}
       </div>
 
       <div className="meeting-calendar">
         <div className="meeting-calendar-head">
           <button type="button" className="meeting-calendar-nav" onClick={() => moveMonth(-1)} aria-label="上个月">‹</button>
-          <strong>{year} 年 {month + 1} 月</strong>
+          <strong aria-live="polite">{year} 年 {month + 1} 月</strong>
           <button type="button" className="meeting-calendar-nav" onClick={() => moveMonth(1)} aria-label="下个月">›</button>
         </div>
         <div className="meeting-calendar-week">
@@ -10566,6 +10558,7 @@ function MeetingCountdownCalendar() {
             return (
               <span
                 key={ds}
+                aria-current={isToday ? 'date' : undefined}
                 className={`meeting-calendar-cell ${isPast ? 'is-past-day' : ''} ${isPast && pastInfo.edge === 'mid' ? 'is-past-mid' : ''} ${isPast && (pastInfo.edge === 'start' || pastInfo.edge === 'single') ? 'is-past-start' : ''} ${isPast && pastInfo.edge === 'end' ? 'is-past-end' : ''} ${isNext ? 'is-next-day' : ''} ${isToday ? 'is-today' : ''}`}
                 title={isPast ? `${pastInfo.emoji} ${pastInfo.note || '我们见面的日子'}` : isNext ? '下次见面的日子 💕' : ''}
               >
@@ -10611,15 +10604,6 @@ function messageImageList(item) {
   if (!item) return []
   if (Array.isArray(item.images) && item.images.length) return item.images.filter(Boolean).slice(0, MESSAGE_IMAGE_LIMIT)
   return item.imageUrl ? [item.imageUrl] : []
-}
-
-function fileToDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = reject
-    reader.onload = () => resolve(reader.result)
-    reader.readAsDataURL(file)
-  })
 }
 
 // 把扁平的 parent_id 列表拼成楼中楼树。
@@ -10670,7 +10654,7 @@ function MessageImagePicker({ items = [], onAdd, onRemove, disabled = false }) {
     <div className="message-picker">
       {items.map((item, index) => (
         <span className="message-picker-thumb" key={item.key}>
-          <img src={item.dataUrl || item.url} alt={`已选第 ${index + 1} 张照片`} />
+          <PreviewImage src={item.dataUrl || item.url} alt={`已选第 ${index + 1} 张照片`} />
           {index === 0 && items.length > 1 && <em className="message-picker-cover">封面</em>}
           {!disabled && (
             <button type="button" onClick={() => onRemove(item.key)} aria-label={`移除第 ${index + 1} 张照片`}>✕</button>
@@ -10713,7 +10697,7 @@ function MessageMedia({ images = [], compact = false, onOpen }) {
         onClick={() => onOpen(list, 0)}
         aria-label="查看大图"
       >
-        <img src={list[0]} alt="配图" loading="lazy" decoding="async" />
+        <PreviewImage src={list[0]} alt="配图" />
       </button>
     )
   }
@@ -10737,7 +10721,7 @@ function MessageMedia({ images = [], compact = false, onOpen }) {
             onClick={() => onOpen(list, index)}
             aria-label={`查看第 ${index + 1} 张图片`}
           >
-            <img src={url} alt={`第 ${index + 1} 张配图`} loading="lazy" decoding="async" />
+            <PreviewImage src={url} alt={`第 ${index + 1} 张配图`} />
           </button>
         ))}
       </div>
@@ -10920,11 +10904,13 @@ function MessageBoard() {
     for (const file of incoming.slice(0, room)) {
       const key = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
       try {
-        accepted.push({ key, file, dataUrl: await compressImageFile(file) })
+        const blob = await prepareJpegFile(file)
+        const preparedFile = new File([blob], file.name, { type: blob.type, lastModified: file.lastModified })
+        accepted.push({ key, file: preparedFile, prepared: true, dataUrl: await blobToDataUrl(blob) })
       } catch (error) {
         // canvas 解不开的格式（比如某些 HEIC）用原图兜底，至少不会选不上
         try {
-          accepted.push({ key, file, dataUrl: await fileToDataUrl(file) })
+          accepted.push({ key, file, dataUrl: await blobToDataUrl(file) })
         } catch {}
       }
     }
@@ -10940,7 +10926,7 @@ function MessageBoard() {
       const item = items[index]
       if (!item) continue
       if (item.file && cloudEnabled) {
-        const upload = await uploadMessageImage(item.file, role)
+        const upload = await uploadMessageImage(item.file, role, item.prepared)
         if (!upload?.ok) {
           return { ok: false, error: `第 ${index + 1} 张照片上传失败：${upload?.error || '请稍后再试。'}` }
         }
@@ -11499,7 +11485,7 @@ function MessageBoard() {
           </div>
           {node.children.length > 0
             ? <div className="message-thread-list">{renderReplyList(message.id, node.children, message, 1)}</div>
-            : <p className="message-comments-empty">还没有评论，来说第一句吧。</p>}
+            : <p className="message-comments-empty">暂无评论</p>}
           {/* 主留言自己的入口单独占一行、上方有分隔线，避免和评论里的「回复」看成一串 */}
           <div className="message-thread-foot">
             {replyOpenId === message.id
@@ -11507,7 +11493,7 @@ function MessageBoard() {
               : (
                 <button type="button" className="message-comment-entry" onClick={() => toggleReplyComposer(message.id)} aria-label="写评论">
                   <span className="message-entry-avatar" aria-hidden="true">{senderRole === 'orange' ? '🌞' : '🌟'}</span>
-                  <span className="message-entry-hint">说点什么…</span>
+                  <span className="message-entry-hint">写评论</span>
                 </button>
               )}
           </div>
@@ -11519,7 +11505,6 @@ function MessageBoard() {
   return (
     <section className="content-section message-board-section">
       <header className="section-heading playful-heading">
-        <span>Little Mailbox</span>
         <h2>💌 小信箱</h2>
         <LiteraryQuote quote={literaryQuotes.mailbox} />
       </header>
@@ -11545,7 +11530,7 @@ function MessageBoard() {
           onChange={event => setContent(event.target.value)}
           rows={3}
           maxLength={500}
-          placeholder="写下此刻想对 TA 说的话…（想念的话、路上的云、今天的饭，都可以）"
+          placeholder="写留言，也可以只发照片"
           disabled={sending || !mailDraftReady}
           aria-label="留言内容"
         />
@@ -11556,7 +11541,7 @@ function MessageBoard() {
           onRemove={key => setComposeItems(items => items.filter(item => item.key !== key))}
         />
         {!isMessageMultiImageReady() && composeItems.length > 1 && (
-          <p className="message-status">线上库还没开启多图字段：先在 Supabase 执行 image_urls 那句 SQL，再发多张照片。</p>
+          <p className="message-status">当前只支持发送一张照片，请移除多余的照片。</p>
         )}
         <div className="message-compose-bar">
           <span className="message-compose-count">
@@ -11571,7 +11556,7 @@ function MessageBoard() {
 
       <div className="message-list">
         {thread.roots.length === 0 ? (
-          <div className="message-empty sticker-card"><span>🕊️</span><p>还没有留言，写第一句吧。</p></div>
+          <div className="message-empty sticker-card"><p>暂无留言</p></div>
         ) : thread.roots.map(node => renderRootCard(node))}
       </div>
 
@@ -11738,14 +11723,14 @@ function FeedbackBoard() {
           onChange={event => setContent(event.target.value)}
           rows={3}
           maxLength={500}
-          placeholder="比如：这个页面加载有点慢 / 想要一个可爱的功能 / 哪里的字看不清…"
+          placeholder="描述遇到的问题或想改的地方"
           disabled={sending}
           aria-label="网站建议内容"
         />
         <div className="feedback-compose-bar">
           <span className="message-compose-count">{content.length}/500</span>
           <button type="button" className="feedback-send" disabled={sending} onClick={submit}>
-            {sending ? '寄出中…' : '💡 提交建议'}
+            {sending ? '提交中…' : '提交建议'}
           </button>
         </div>
         {status && <p className="message-status">{status}</p>}
@@ -11798,14 +11783,8 @@ function EnergyCapsule() {
   const photoCount = energyState.claimedPhotoDays.length
   const reachedCount = ENERGY_MILESTONES.filter(milestone => energy >= milestone.at).length
   const sealCopy = energy >= ENERGY_TARGET
-    ? '1314 目标已达成！每次抽到的能量仍会继续累计。'
-    : energy >= 669
-      ? `小星球已点亮，向 1314 出发，还差 ${ENERGY_TARGET - energy} 点能量。`
-    : energy >= 459
-      ? '第二枚印章亮了，离完全点亮只差最后一段光。'
-      : energy >= 100
-        ? '第一枚印章亮了，能量还在慢慢积攒。'
-        : '能量还在积蓄，封存的内容正在慢慢解冻…'
+    ? '目标已达成，仍可继续累计能量。'
+    : `距 ${ENERGY_TARGET} 点目标还差 ${ENERGY_TARGET - energy} 点。`
 
   React.useEffect(() => {
     rollingRef.current = rolling
@@ -11913,9 +11892,8 @@ function EnergyCapsule() {
   return (
     <section className="content-section capsule-section premium-section">
       <header className="section-heading playful-heading premium-heading">
-        <span>Small Planet Energy</span>
         <h2>小星球能量胶囊</h2>
-        <p>每天完成签到、或当天至少上传一张相册照片，都会存下一次抽能量机会。{energyState.energyFinale ? '最后一段能量旅程已经准备好，一起点亮 1314。' : '来到这里就能真实抽取随机 5-15 点小星球能量。'}</p>
+        <p>抽取次数来自「来时的我们」的签到和相册记录。</p>
       </header>
       <MeetingCountdownCalendar />
       <div className={`capsule-vault sticker-card premium-card ${rolling ? 'is-rolling' : ''}`}>
@@ -11929,13 +11907,12 @@ function EnergyCapsule() {
           {burst && <span key={burst.key} className="capsule-energy-burst">+{burst.gain}</span>}
         </div>
         <div className="capsule-copy">
-          <h3>彩蛋内容暂时封存中</h3>
+          <h3>抽取能量</h3>
           <p className="capsule-seal-copy">{sealCopy}</p>
-          <p>抽奖次数、抽到的能量和历史记录都会自动同步。下次打开，进度不会丢。</p>
           <div className="capsule-energy-meter" aria-label={`累计能量 ${energy} / 目标 ${ENERGY_TARGET}`}>
             <div><strong>累计能量 · 目标 {ENERGY_TARGET}</strong><span>{energy}/{ENERGY_TARGET}</span></div>
             <b className="capsule-energy-track"><i style={{ width: `${percent}%` }} />{ENERGY_MILESTONES.map(milestone => <em key={milestone.at} style={{ left: `${milestone.at / ENERGY_TARGET * 100}%` }} />)}</b>
-            <small>{signedCount || photoCount ? `已有 ${signedCount} 天签到 + ${photoCount} 次相册上传兑换为抽奖机会。剩余 ${drawChances} 次。` : '抽能量次数来自“来时的我们”的签到与相册记录。'}</small>
+            {!!(signedCount || photoCount) && <small>已计入 {signedCount} 天签到和 {photoCount} 次相册上传。</small>}
           </div>
           <div className="capsule-milestones" aria-label={`能量印章 ${reachedCount} / ${ENERGY_MILESTONES.length}`}>
             {ENERGY_MILESTONES.map(milestone => {
@@ -11954,7 +11931,7 @@ function EnergyCapsule() {
             <strong>抽能量次数：{drawChances}</strong>
             <button type="button" onClick={drawEnergy} disabled={rolling || drawChances <= 0}>{rolling ? '抽取中…' : energyState.energyFinale ? '抽取能量' : '抽取 5-15 点能量'}</button>
             <p aria-live="polite">{status}</p>
-            <small className="capsule-auto-refresh-note">已开启自动同步；另一台设备抽完后，这里会自动跟上。</small>
+            <small className="capsule-auto-refresh-note">抽取次数和结果会同步到其他设备。</small>
           </div>
           {!!energyState.draws.length && (
             <div className="capsule-draw-history">
@@ -12117,6 +12094,7 @@ function PlanetApp() {
     const hydrateSecondaryData = () => {
       if (!alive) return
       musicLoadTracks()
+      void loadChangelog()
       loadCloudBackpack().then(cloudBag => {
         if (!alive || !cloudBag) return
         const next = { ...loadBackpack(), ...(cloudBag || {}) }
@@ -12173,7 +12151,7 @@ function PlanetApp() {
     return false
   })
   const [changelogOpen, setChangelogOpen] = useState(false)
-  const [changelogEntries, setChangelogEntries] = useState(changelog)
+  const [changelogEntries, setChangelogEntries] = useState(visibleChangelog)
   const [feedbackOpen, setFeedbackOpen] = useState(false)
   React.useEffect(() => {
     if (!changelogOpen) return
@@ -12190,7 +12168,7 @@ function PlanetApp() {
   React.useEffect(() => {
     if (!changelogOpen) return
     let alive = true
-    loadChangelog().then(list => { if (alive && list) setChangelogEntries(list) })
+    loadChangelog().then(list => { if (alive) setChangelogEntries(visibleChangelog(list)) })
     return () => { alive = false }
   }, [changelogOpen])
   function dismissFirstGuide() {
@@ -12234,7 +12212,10 @@ function PlanetApp() {
       <CloudStatusPill />
       {toast && <div className="wwcxrl-soft-toast" role="status">{toast}</div>}
       <footer className="site-footer">
-        <button type="button" className="theme-toggle-button subtle" onClick={() => setChangelogOpen(true)}>📜 更新日志</button>
+        <button type="button" className="theme-toggle-button subtle" onClick={() => {
+          setChangelogEntries(visibleChangelog())
+          setChangelogOpen(true)
+        }}>📜 更新日志</button>
         <button type="button" className="theme-toggle-button subtle" onClick={() => setFeedbackOpen(true)}>💡 网站建议</button>
         <button type="button" onClick={returnToInvitationLayer}>✉️ 回到邀请信</button>
         <BackToTopButton />
@@ -12251,16 +12232,16 @@ function PlanetApp() {
               <button type="button" className="changelog-close" onClick={() => setChangelogOpen(false)} aria-label="关闭更新日志">✕</button>
             </header>
             <div className="changelog-list">
-              {sortChangelogEntries(changelogEntries).map(item => (
+              {changelogEntries.map(item => (
                 <section key={item.version} className="changelog-entry">
                   <div className="changelog-entry-head">
                     <span className="changelog-version">{item.version}</span>
                     <span className="changelog-date">{item.date}</span>
                     <strong>{item.title}</strong>
                   </div>
-                  <ul>
+                  {!!item.notes.length && <ul>
                     {item.notes.map(note => <li key={note}>{note}</li>)}
-                  </ul>
+                  </ul>}
                 </section>
               ))}
             </div>
@@ -12401,64 +12382,6 @@ function formatMessageTime(iso) {
   const hh = String(date.getHours()).padStart(2, '0')
   const mi = String(date.getMinutes()).padStart(2, '0')
   return `${yyyy}-${mm}-${dd} ${hh}:${mi}`
-}
-
-// ---- 更新日志：管理端可编辑（云端优先，本地兜底，内置数据兜底） ----
-const CHANGELOG_LOCAL_KEY = 'wwcxrl-changelog-local'
-
-function loadChangelogLocal() {
-  try {
-    return JSON.parse(localStorage.getItem(CHANGELOG_LOCAL_KEY) || 'null')
-  } catch {
-    return null
-  }
-}
-
-function saveChangelogLocal(entries) {
-  localStorage.setItem(CHANGELOG_LOCAL_KEY, JSON.stringify(entries))
-}
-
-// 更新日志统一按日期倒序（最新在前）；同一天按 sort 倒序（后添加的在前）。
-function sortChangelogEntries(entries = []) {
-  return [...entries].sort((a, b) => {
-    const dateA = String(a.date || '').trim()
-    const dateB = String(b.date || '').trim()
-    if (dateA && dateB && dateA !== dateB) {
-      return dateA < dateB ? 1 : -1
-    }
-    const sortA = Number(a.sort || 0)
-    const sortB = Number(b.sort || 0)
-    return sortB - sortA
-  })
-}
-
-async function loadChangelog() {
-  const cloud = cloudEnabled ? await loadCloudChangelog() : null
-  if (Array.isArray(cloud) && cloud.length) {
-    const sorted = sortChangelogEntries(cloud)
-    saveChangelogLocal(sorted)
-    return sorted
-  }
-  const local = loadChangelogLocal()
-  return sortChangelogEntries(local || changelog)
-}
-
-async function saveChangelog(entries) {
-  const normalized = sortChangelogEntries(
-    (entries || []).filter(item => item && String(item.version || '').trim())
-  ).map((item, index) => ({
-    version: String(item.version || '').trim(),
-    date: String(item.date || '').trim(),
-    title: String(item.title || '').trim(),
-    notes: Array.isArray(item.notes) ? item.notes.map(String).filter(Boolean) : [],
-    sort: index
-  }))
-  saveChangelogLocal(normalized)
-  if (cloudEnabled) {
-    const result = await saveCloudChangelog(normalized)
-    return { ok: Boolean(result?.ok), error: result?.error || '', saved: normalized }
-  }
-  return { ok: true, error: '', saved: normalized }
 }
 
 // 按 Day 自动推算解锁日期：Day 300 = 2026-08-09，之后每天顺延。
@@ -12689,7 +12612,7 @@ async function resolveNightReadingImageBlob(url) {
 async function uploadNightReadingImageBlob(blob, day, sourceName = '') {
   const supabase = await getSupabase()
   if (!supabase) return null
-  const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/gif' ? 'gif' : blob.type === 'image/webp' ? 'webp' : 'jpg'
+    const extension = blob.type === 'image/png' ? 'png' : blob.type === 'image/gif' ? 'gif' : blob.type === 'image/webp' ? 'webp' : 'jpg'
   const safeSource = String(sourceName || 'import').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 28)
   const path = `admin-task-images/day-${Number(day) || 0}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeSource}.${extension}`
   const { error } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
@@ -13057,11 +12980,12 @@ function AdminTaskPage() {
     setUploadingImage(true)
     setBestMediaProgress(`正在准备${target === 'posterUrl' ? '视频封面' : isVideo ? '视频' : '图片'}上传…`)
     try {
+      const body = isImage ? await shrinkLargeJpeg(file, 2000, 750_000) : file
       const signResponse = await fetch(TASK_MEDIA_API, {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'sign-upload', contentType, size: file.size })
+        body: JSON.stringify({ action: 'sign-upload', contentType, size: body.size })
       })
       const sign = await signResponse.json().catch(() => ({}))
       if (!signResponse.ok || !sign.uploadUrl || !sign.publicUrl) throw new Error(sign.error || '拿不到上传地址')
@@ -13069,7 +12993,7 @@ function AdminTaskPage() {
       const uploadResponse = await fetch(resolveCloudAssetUrl(sign.uploadUrl) || sign.uploadUrl, {
         method: 'PUT',
         headers: { 'Content-Type': contentType },
-        body: file
+        body
       })
       if (!uploadResponse.ok) throw new Error(`上传失败（HTTP ${uploadResponse.status}）`)
       setDraft(previous => ({
@@ -14792,8 +14716,8 @@ function MusicRoom() {
               {current && current.coverUrl ? <img src={musicPlayableUrl(current.coverUrl)} alt="" /> : <i>🎶</i>}
             </span>
             <div className="music-turntable-info">
-              <strong>{current ? current.title : '唱针还没落下'}</strong>
-              <small>{current ? (current.artist || current.mood || '我们的音乐室') : '从下面挑一首开始吧'}</small>
+              <strong>{current ? current.title : '未播放'}</strong>
+              {(current?.artist || current?.mood) && <small>{current.artist || current.mood}</small>}
             </div>
           </div>
 
@@ -14937,7 +14861,7 @@ function AdminMusicPanel() {
       let coverPath = ''
       if (coverFile) {
         setStatus('正在上传封面…')
-        coverPath = await uploadOne(coverFile, 'cover')
+        coverPath = await uploadOne(await shrinkLargeJpeg(coverFile, 1200, 350_000), 'cover')
       }
       setStatus('正在读取时长…')
       const duration = await readDuration(audioFile)

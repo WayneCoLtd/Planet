@@ -19,8 +19,9 @@ function withStorage(run) {
   }
 }
 
-test('first visit stays light; existing story-unlocked dark theme is retained', () => withStorage(storage => {
-  assert.equal(readVoyageAppearance(), false)
+test('first visit uses dark appearance without storing story progress', () => withStorage((storage, values) => {
+  assert.equal(readVoyageAppearance(), true)
+  assert.equal(values.size, 0)
   storage.setItem('wwcxrl-voyage-theme', 'yes')
   assert.equal(readVoyageAppearance(), true)
 }))
@@ -68,7 +69,7 @@ test('unavailable browser storage does not break appearance controls', () => {
     removeItem() { throw new Error('blocked') },
   } }
   try {
-    assert.equal(readVoyageAppearance(), false)
+    assert.equal(readVoyageAppearance(), true)
     assert.doesNotThrow(() => saveVoyageAppearance(true))
     assert.doesNotThrow(clearVoyageAppearance)
   } finally {

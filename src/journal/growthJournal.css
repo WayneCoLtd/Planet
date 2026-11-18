@@ -1766,6 +1766,39 @@
 /* Sleep belongs to the previous night; make cross-week backfill explicit. */
 .journal-cream .journal-night-context { margin: 4px 0 0; color: #806c62; font-size: 11px; line-height: 1.7; }
 .journal-cream .journal-sleep-save-hint { flex-basis: 100%; color: #806c62; font-size: 11px; line-height: 1.7; }
+.journal-cream .journal-sleep-edit input {
+  min-height: 44px;
+  font-size: 16px;
+}
+.warm-ui .journal-shell.journal-cream .journal-sleep-remove {
+  background: #fbefea;
+  border-color: #e6cbbd;
+  color: #814635;
+}
+.journal-cream .journal-sleep-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+.journal-cream .journal-sleep-actions span,
+.journal-cream .journal-photo-status {
+  margin: 0;
+  color: #685448;
+  font-size: 13px;
+  line-height: 1.55;
+}
+.journal-cream .journal-photo-status:not(:empty) { margin: 8px 0; }
+.journal-cream .journal-sleep-actions span:empty { display: none; }
+@media (max-width: 760px) {
+  .journal-cream .journal-study-heading input {
+    min-width: 48px;
+    min-height: 44px;
+    font-size: 16px;
+  }
+}
 .journal-cream .journal-week-target { margin: 0; font-size: 12px; line-height: 1.6; }
 .journal-cream .journal-goal-editor-title { border-top: 1px dashed #dfcbb5; padding-top: 12px; }
 .journal-cream .journal-goal > div { top: 100%; max-height: min(620px, 70dvh); overflow-y: auto; overscroll-behavior: contain; }

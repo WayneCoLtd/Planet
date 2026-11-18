@@ -6,7 +6,7 @@ import { literaryQuotes } from '../data/literaryQuotes'
 import { albumStore, mergeLifePhotos, prepareLifePhoto } from './lifeAlbumStore'
 import './lifeAlbum.css'
 import { todayInShanghai } from '../journal/journalModel'
-import { mediaPreviewUrl } from '../media/previewUrl'
+import { encodePhotoUpload, PHOTO_UPLOAD_TYPE } from '../media/photoUpload'
 
 const names = { orange: '小琛', pomelo: '小琳' }
 const today = todayInShanghai
@@ -17,8 +17,8 @@ async function api(method = 'GET', body, query = '') {
   try {
     const response = await fetch(`/api/life-album${query}`, {
       method,
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
+      headers: body ? { 'Content-Type': PHOTO_UPLOAD_TYPE } : undefined,
+      body: body ? await encodePhotoUpload(body) : undefined,
       signal: controller.signal,
     })
     const result = await response.json()
@@ -52,7 +52,7 @@ function Photo({ photo, onOpen }) {
     >
       <img
         key={retry}
-        src={original ? resolveCloudAssetUrl(photo.thumb) : mediaPreviewUrl(resolveCloudAssetUrl(photo.thumb))}
+        src={resolveCloudAssetUrl(original ? photo.src : photo.thumb)}
         width={photo.width}
         height={photo.height}
         loading="lazy"
@@ -94,19 +94,21 @@ export default function LifeAlbum() {
     [caption, setCaption] = useState('')
   const [status, setStatus] = useState(''),
     [busy, setBusy] = useState(false),
+    [restoringDrafts, setRestoringDrafts] = useState(true),
     [loading, setLoading] = useState(false),
-    [loadError, setLoadError] = useState(false),
+    [loadError, setLoadError] = useState(''),
     [theater, setTheater] = useState(false),
     [position, setPosition] = useState(null)
   useEffect(() => { visiblePhotoCache = photos }, [photos])
   const lock = useRef(false),
     alive = useRef(true),
-    loadingRef = useRef(false)
+    loadingRef = useRef(false),
+    draftWrites = useRef(Promise.resolve())
   const load = async (append = false) => {
     if (loadingRef.current || lock.current) return
     loadingRef.current = true
     setLoading(true)
-    setLoadError(false)
+    setLoadError('')
     try {
       if (!cloudEnabled) {
         setPhotos(mergeLifePhotos([], await albumStore('photos', 'getAll')))
@@ -121,9 +123,8 @@ export default function LifeAlbum() {
       )
       setMore(data.more)
       setCursor(data.photos.at(-1) || null)
-      setStatus('')
     } catch (error) {
-      if (alive.current) { setStatus(error.message); setLoadError(true) }
+      if (alive.current) setLoadError(error.message)
     } finally {
       loadingRef.current = false
       if (alive.current) setLoading(false)
@@ -136,6 +137,7 @@ export default function LifeAlbum() {
         if (alive.current) setDrafts(rows)
       })
       .catch(() => setStatus('浏览器无法保存待上传照片，请检查存储空间'))
+      .finally(() => { if (alive.current) setRestoringDrafts(false) })
     void load()
     return () => {
       alive.current = false
@@ -154,7 +156,7 @@ export default function LifeAlbum() {
   async function choose(event) {
     const files = Array.from(event.target.files || [])
     event.target.value = ''
-    if (lock.current || loadingRef.current || !files.length) return
+    if (lock.current || restoringDrafts || !files.length) return
     lock.current = true
     setBusy(true)
     let count = 0
@@ -170,9 +172,31 @@ export default function LifeAlbum() {
         setDrafts((rows) => [...rows, draft])
         count++
       }
-      setStatus(`已选好 ${count} 张，点击发布。`)
+      setStatus(`已选 ${count} 张，确认信息后发布。`)
     } catch (error) {
-      setStatus(`已保留 ${count} 张；${error.message}`)
+      setStatus(`已保留 ${count} 张。${error.message}`)
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
+  function updateDraft(draft, patch) {
+    const next = { ...draft, ...patch }
+    setDrafts((rows) => rows.map((row) => row.id === next.id ? next : row))
+    draftWrites.current = draftWrites.current.catch(() => {}).then(() => albumStore('drafts', 'put', next))
+    void draftWrites.current.catch(() => setStatus('照片信息未保存到本机，请检查存储空间'))
+  }
+  async function removeDraft(id) {
+    if (lock.current) return
+    lock.current = true
+    setBusy(true)
+    try {
+      await draftWrites.current.catch(() => {})
+      await albumStore('drafts', 'delete', id)
+      setDrafts((rows) => rows.filter((row) => row.id !== id))
+      setStatus('')
+    } catch {
+      setStatus('无法移除草稿，请重试')
     } finally {
       lock.current = false
       setBusy(false)
@@ -184,6 +208,7 @@ export default function LifeAlbum() {
     setBusy(true)
     let count = 0
     try {
+      await draftWrites.current.catch(() => {})
       for (const draft of drafts) {
         setStatus(`正在上传 ${count + 1}/${drafts.length}`)
         let photo
@@ -209,7 +234,7 @@ export default function LifeAlbum() {
       )
     } catch (error) {
       setStatus(
-        `已完成 ${count} 张；剩余照片已保留，可以重试。${error.message}`,
+        `已发布 ${count} 张，剩余照片已保留。${error.message}`,
       )
     } finally {
       lock.current = false
@@ -223,7 +248,7 @@ export default function LifeAlbum() {
       date: photo.taken_on,
     },
     owner: { id: photo.owner, label: names[photo.owner] },
-    photo: { src: resolveCloudAssetUrl(photo.src), previewSrc: mediaPreviewUrl(resolveCloudAssetUrl(photo.thumb)), previewFallbackSrc: resolveCloudAssetUrl(photo.thumb), caption: photo.caption },
+    photo: { src: resolveCloudAssetUrl(photo.src), previewSrc: resolveCloudAssetUrl(photo.thumb), caption: photo.caption },
   }))
   return (
     <div className="life-album">
@@ -234,12 +259,23 @@ export default function LifeAlbum() {
       <details className="life-composer">
         <summary>＋ 添加照片</summary>
         <div className="life-fields">
+          <label className="life-upload">
+            选择照片
+            <input
+              type="file"
+              accept="image/*"
+              multiple
+              disabled={busy || restoringDrafts || !date}
+              onChange={choose}
+            />
+          </label>
+          <small>可多选。以下设置用于新选的照片。</small>
           <label>
             署名
             <select
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
-              disabled={busy || loading}
+              disabled={busy}
             >
               <option value="orange">小琛</option>
               <option value="pomelo">小琳</option>
@@ -252,7 +288,7 @@ export default function LifeAlbum() {
               value={date}
               max={today()}
               onChange={(e) => setDate(e.target.value)}
-              disabled={busy || loading}
+              disabled={busy}
             />
           </label>
           <label className="life-caption">
@@ -262,27 +298,17 @@ export default function LifeAlbum() {
               maxLength={2000}
               value={caption}
               onChange={(e) => setCaption(e.target.value)}
-              disabled={busy || loading}
+              disabled={busy}
             />
           </label>
-          <label className="life-upload">
-            选择照片
-            <input
-              type="file"
-              accept="image/*"
-              multiple
-              disabled={busy || loading || !date}
-              onChange={choose}
-            />
-          </label>
-          <small>可以一次选多张；相册保存高清压缩版。</small>
         </div>
       </details>
       {!!photos.length && <button className="life-play" onClick={() => {
         setPosition(null)
         setTheater(true)
-      }}>慢慢看 ↗</button>}
+      }}>打开画廊 ↗</button>}
       </div>
+      <p role="status" className="life-status">{status}</p>
       {!!drafts.length && (
         <div className="life-pending">
           <p>{drafts.length} 张照片待发布</p>
@@ -290,29 +316,23 @@ export default function LifeAlbum() {
             {drafts.map((draft) => (
               <figure key={draft.id}>
                 <img src={draft.thumbnail} alt="待发布照片" />
-                <figcaption>
-                  {names[draft.owner]} · {draft.taken_on}
+                <figcaption className="life-draft-fields">
+                  <label>署名
+                    <select value={draft.owner} disabled={busy} onChange={event => updateDraft(draft, { owner: event.target.value })}>
+                      <option value="orange">小琛</option>
+                      <option value="pomelo">小琳</option>
+                    </select>
+                  </label>
+                  <label>照片日期
+                    <input type="date" value={draft.taken_on} max={today()} disabled={busy}
+                      onChange={event => event.target.value && updateDraft(draft, { taken_on: event.target.value })} />
+                  </label>
+                  <label>配文
+                    <textarea value={draft.caption} maxLength={2000} disabled={busy}
+                      onChange={event => updateDraft(draft, { caption: event.target.value })} />
+                  </label>
+                  <button disabled={busy} onClick={() => removeDraft(draft.id)}>移除草稿</button>
                 </figcaption>
-                <textarea aria-label={`待发布照片配文 ${draft.id}`} value={draft.caption} maxLength={2000} disabled={busy || loading} onChange={event => {
-                  const next = {...draft, caption: event.target.value}
-                  setDrafts(rows => rows.map(row => row.id === next.id ? next : row))
-                  void albumStore('drafts', 'put', next).catch(() => setStatus('配文暂未保存，请检查浏览器存储空间'))
-                }} />
-                <button
-                  disabled={busy || loading}
-                  onClick={async () => {
-                    try {
-                      await albumStore('drafts', 'delete', draft.id)
-                      setDrafts((rows) =>
-                        rows.filter((row) => row.id !== draft.id),
-                      )
-                    } catch {
-                      setStatus('无法移除草稿，请重试')
-                    }
-                  }}
-                >
-                  取消这张
-                </button>
               </figure>
             ))}
           </div>
@@ -322,13 +342,13 @@ export default function LifeAlbum() {
         </div>
       )}
       <p role="status" className="life-status">
-        {status || (loading ? '正在读取相册…' : '')}
+        {loadError || (loading ? '正在读取相册…' : '')}
         {loadError && <button disabled={loading || busy} onClick={() => load()}>重新加载</button>}
       </p>
       {!photos.length && !loading && !loadError && (
         <div className="chapter-empty">
           <span aria-hidden="true">✧</span>
-          <p>还没有新的照片</p>
+          <p>相册还没有照片</p>
         </div>
       )}
       <div className="life-grid">

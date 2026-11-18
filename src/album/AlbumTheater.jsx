@@ -23,8 +23,8 @@ function MemoryImage({ src, fullSrc, alt, queue, onResult }) {
     return () => cancel.forEach(stop => stop())
   }, [src, fullSrc, queue, attempt, onResult])
   return <>
-    {!result && <span className="mt-image-placeholder" role="status"><span>✧</span>正在展开这一帧…</span>}
-    {result?.error ? <span className="mt-image-error">这一帧暂时没能打开<button type="button" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1) }}>重新加载</button></span>
+    {!result && <span className="mt-image-placeholder" role="status">正在加载照片…</span>}
+    {result?.error ? <span className="mt-image-error">照片加载失败<button type="button" onClick={event => { event.stopPropagation(); setAttempt(value => value + 1) }}>重新加载</button></span>
       : result && <img className="mt-photo-image" src={result.src} alt={alt} decoding="async" draggable="false" width={result.width} height={result.height} />}
   </>
 }
@@ -217,10 +217,10 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
           <span className="mt-eyebrow">THE DAYS WE KEPT</span>
           <h2 id="mt-title" className="mt-dialog-title">我们的每一天 · 回忆画廊</h2>
           <LiteraryQuote quote={lifeMode ? literaryQuotes.nextHome : literaryQuotes.albumOpening} className="mt-opening-quote" />
-          <div className="mt-intro-meta"><span>{memories.length ? memories[0].day.date?.replaceAll('-', '.') : '尚待收藏'}</span><i /><span>{memories.length} 帧记忆</span></div>
+          {!!memories.length && <div className="mt-intro-meta"><span>{memories[0].day.date?.replaceAll('-', '.')}</span><i /><span>{memories.length} 张照片</span></div>}
           <span className="mt-scroll-hint">向下翻阅 <span aria-hidden="true">↓</span></span>
         </section>
-        {!memories.length && <div className="mt-empty" role="status"><span>✧</span><h3>{loading ? '正在翻开相册…' : '这一卷，留给接下来的照片。'}</h3><p>{loading ? '照片正在路上，先在这里等一小会儿。' : '暂时没有可显示的照片，可以回到相册查看或上传。'}</p><button type="button" onClick={onClose}>回到相册</button></div>}
+        {!memories.length && <div className="mt-empty" role="status"><h3>{loading ? '正在加载相册…' : '相册还没有照片'}</h3><button type="button" onClick={onClose}>回到相册</button></div>}
         <div ref={streamRef} className="mt-stream" style={{ height }}>
           {mountedRows.map(row => <div key={row.key} className="mt-row is-pair" style={{ top: row.offset, height: row.height }}>
             {row.items.map((item, slotIndex) => <figure className="mt-memory" key={`${item.key}:${item.photo.src}`} style={{ '--mt-media-height': `${row.mediaHeights[slotIndex]}px`, '--mt-card-width': `${row.mediaWidths[slotIndex]}px`, gridColumn: row.mobile ? 1 : item.owner.id === 'pomelo' ? 2 : 1 }}>

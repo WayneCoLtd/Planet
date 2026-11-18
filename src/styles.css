@@ -12152,6 +12152,7 @@ html { overflow-x: hidden; }
 }
 .meeting-calendar {
   align-self: center;
+  box-sizing: border-box;
   width: min(100%, 360px);
   margin-inline: auto;
   padding: 10px;
@@ -12170,8 +12171,8 @@ html { overflow-x: hidden; }
   font-size: .98rem;
 }
 .meeting-calendar-nav {
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -12326,9 +12327,63 @@ html { overflow-x: hidden; }
 .meeting-past-chip b { font-style: normal; }
 .meeting-past-chip em { color: var(--rose); font-style: normal; font-weight: 700; white-space: nowrap; }
 .meeting-past-chip small { color: var(--soft-ink); white-space: nowrap; }
+.interstellar-voyage-theme .meeting-calendar-card {
+  --meeting-panel: #202637;
+  --meeting-cell: #30384c;
+  --meeting-line: #525e78;
+  --meeting-text: #f3f1f8;
+  --meeting-muted: #c5ccde;
+  --meeting-rose: #ffc0d5;
+  --meeting-today: #9bd9ff;
+}
+.interstellar-voyage-theme :is(.meeting-countdown, .meeting-calendar) {
+  background: var(--meeting-panel);
+  border-color: var(--meeting-line);
+  color: var(--meeting-text);
+}
+.interstellar-voyage-theme :is(.meeting-countdown-main strong, .meeting-calendar-head strong) {
+  color: var(--meeting-text);
+}
+.interstellar-voyage-theme :is(.meeting-next-date, .meeting-calendar-week span, .meeting-calendar-legend, .meeting-past-chip small) {
+  color: var(--meeting-muted);
+}
+.interstellar-voyage-theme :is(.meeting-calendar-week .is-weekend, .meeting-past-chip em, .meeting-countdown-main b em) {
+  color: var(--meeting-rose);
+}
+.interstellar-voyage-theme .meeting-countdown-main b {
+  color: var(--meeting-rose);
+}
+.warm-ui.interstellar-voyage-theme .meeting-calendar-nav,
+.interstellar-voyage-theme .meeting-calendar-cell:not(.is-empty),
+.interstellar-voyage-theme .meeting-past-chip {
+  background: var(--meeting-cell);
+  border-color: var(--meeting-line);
+  color: var(--meeting-text);
+}
+.interstellar-voyage-theme .meeting-calendar-cell.is-past-day {
+  color: #ffe8f0;
+  background: #58354b;
+  border-color: #b57e9a;
+  box-shadow: none;
+}
+.interstellar-voyage-theme .meeting-calendar-cell.is-next-day {
+  color: #fff1d8;
+  background: #584025;
+  border-color: #edbd78;
+  animation: none;
+}
+.interstellar-voyage-theme .meeting-calendar-cell.is-today {
+  outline: 2px solid var(--meeting-today);
+  outline-offset: -2px;
+}
+.interstellar-voyage-theme .meeting-calendar-cell.is-today b:after {
+  background: var(--meeting-today);
+}
+.interstellar-voyage-theme .meeting-day-mark.is-mid { color: var(--meeting-rose); }
+.interstellar-voyage-theme .meeting-past-chips { scrollbar-color: #727e98 var(--meeting-panel); }
 @media (max-width: 760px) {
   .meeting-calendar-card {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
   .meeting-calendar {
     width: min(100%, 360px);

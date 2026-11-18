@@ -1,4 +1,5 @@
 import { installStorageGuard, safeGetItem, safeSetItem } from './safeStorage'
+import { ATTACHMENT_MAX_BYTES, blobToDataUrl, prepareJpegFile } from './media/imagePreparation'
 
 // 尽早装上存储保护：Safari 阻止 Cookie / 存储写满时，下面这些读写会抛异常，
 // 一抛就会把调用它的 React 渲染一起带崩。
@@ -552,49 +553,16 @@ export async function deleteCloudDailyTask(day) {
   }
 }
 
-// ---- 管理页：任务配图上传（复用 wwcxrl-photos 存储桶） ----
-function dataUrlToBlob(dataUrl) {
-  const [header, base64] = String(dataUrl).split(',')
-  const mime = (header.match(/data:(.*?);/) || [])[1] || 'image/jpeg'
-  const binary = atob(base64)
-  const bytes = new Uint8Array(binary.length)
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-  return new Blob([bytes], { type: mime })
-}
-
-function resizeImageFile(file, maxSide = 1200, quality = 0.84) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onerror = reject
-    reader.onload = () => {
-      const image = new Image()
-      image.onerror = reject
-      image.onload = () => {
-        const scale = Math.min(1, maxSide / Math.max(image.width, image.height))
-        const canvas = document.createElement('canvas')
-        canvas.width = Math.max(1, Math.round(image.width * scale))
-        canvas.height = Math.max(1, Math.round(image.height * scale))
-        canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height)
-        resolve(canvas.toDataURL('image/jpeg', quality))
-      }
-      image.src = reader.result
-    }
-    reader.readAsDataURL(file)
-  })
-}
-
-// 选图时先用同一套规则压一遍：本地模式的数据全存在 localStorage 里，
-// 原图直接塞进去很容易把存储写满（之后所有读写都会失败）。
-export function compressImageFile(file, maxSide = 1200, quality = 0.84) {
-  return resizeImageFile(file, maxSide, quality)
+// 本地照片草稿沿用 Data URL；云端直接传 JPEG Blob。
+export async function compressImageFile(file, maxSide = 1200, quality = 0.84) {
+  return blobToDataUrl(await prepareJpegFile(file, maxSide, ATTACHMENT_MAX_BYTES, quality))
 }
 
 export async function uploadCloudTaskImage(file, day) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return null
-    const dataUrl = await resizeImageFile(file)
-    const blob = dataUrlToBlob(dataUrl)
+    const blob = await prepareJpegFile(file)
     const safeName = String(file.name || 'task.jpg').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-40)
     const path = `admin-task-images/day-${Number(day) || 0}-${Date.now()}-${safeName}.jpg`
     const { error: uploadError } = await supabase.storage.from('wwcxrl-photos').upload(path, blob, {
@@ -1077,12 +1045,13 @@ export async function deleteCloudMessage(id) {
   }
 }
 
-export async function uploadMessageImage(file, role = null) {
+export async function uploadMessageImage(file, role = null, prepared = false) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return { ok: false, error: '未连接云端' }
-    const dataUrl = await resizeImageFile(file)
-    const blob = dataUrlToBlob(dataUrl)
+    const blob = prepared && file.type === 'image/jpeg' && file.size <= ATTACHMENT_MAX_BYTES
+      ? file
+      : await prepareJpegFile(file)
     const safeName = String(file.name || 'message.jpg').replace(/[^a-zA-Z0-9._-]/g, '_').slice(-40)
     // 多图是连续上传，同一毫秒内可能出现同名文件，这里加随机后缀避免互相覆盖。
     const unique = Math.random().toString(36).slice(2, 8)
@@ -1228,13 +1197,14 @@ export async function saveCloudChangelog(entries) {
   try {
     const { supabase, identity } = await ensureProfile()
     if (!supabase || !identity) return { ok: false, error: '未连接云端' }
-    await supabase.from('wwcxrl_changelog').delete().neq('id', '00000000-0000-0000-0000-000000000000')
-    const rows = (entries || []).filter(item => item && String(item.version || '').trim()).map((item, index) => ({
+    const { error: deleteError } = await supabase.from('wwcxrl_changelog').delete().neq('id', '00000000-0000-0000-0000-000000000000')
+    if (deleteError) return { ok: false, error: deleteError.message }
+    const rows = (entries || []).filter(item => item && String(item.version || '').trim()).map((item, index, list) => ({
       version: String(item.version || '').trim(),
       date: String(item.date || '').trim(),
       title: String(item.title || '').trim(),
       notes: Array.isArray(item.notes) ? item.notes.map(String).filter(Boolean) : [],
-      sort: index
+      sort: list.length - index - 1
     }))
     if (!rows.length) return { ok: true, error: '' }
     const { error } = await supabase.from('wwcxrl_changelog').insert(rows)

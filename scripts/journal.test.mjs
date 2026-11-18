@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import * as model from '../src/journal/journalModel.js'
+import { decodePhotoUpload, encodePhotoUpload, PHOTO_UPLOAD_TYPE, readJpegBytes } from '../src/media/photoUpload.js'
 
 test('Shanghai dates and Monday-based weeks cross months and years correctly', () => {
   assert.equal(
@@ -70,11 +71,13 @@ const source = readFileSync(
   .replace('export default async function handler', 'async function handler')
 function harness(level = 1, today = '2026-10-17') {
   const records = [],
-    tables = []
+    tables = [],
+    uploads = []
   const db = {
     storage: {
       from() {
         return {
+          upload: async (path, bytes) => { uploads.push({ path, bytes }); return {} },
           createSignedUrls: async (paths) => ({
             data: paths.map((path) => ({
               path,
@@ -167,6 +170,9 @@ function harness(level = 1, today = '2026-10-17') {
     readLevel: () => level,
     checkServiceConfig: () => ({ ok: true }),
     getAdminClient: () => db,
+    decodePhotoUpload,
+    PHOTO_UPLOAD_TYPE,
+    readJpegBytes,
     Buffer,
     URL,
     Error,
@@ -176,7 +182,8 @@ function harness(level = 1, today = '2026-10-17') {
   return {
     records,
     tables,
-    async run(body, method = 'POST', date = '2026-10-14') {
+    uploads,
+    async run(body, method = 'POST', date = '2026-10-14', headers = {}) {
       const response = {
         setHeader() {},
         status(code) {
@@ -189,7 +196,7 @@ function harness(level = 1, today = '2026-10-17') {
         },
       }
       await context.handler(
-        { method, body, headers: {}, url: `/api/journal?date=${date}` },
+        { method, body, headers, url: `/api/journal?date=${date}` },
         response,
       )
       return response
@@ -588,6 +595,24 @@ test('two devices read saved text and signed photos and cannot overwrite with an
   assert.equal(rejected.data.current.notes[0].images.length,1)
 })
 
+test('weekly sleep data only includes signed images for the open date', async () => {
+  const h = harness()
+  const id = '11111111-1111-4111-8111-111111111111'
+  for (const date of ['2026-10-14', '2026-10-15']) {
+    const saved = await h.run({ ...model.emptyEntry('pomelo', date), action: 'save', sleepTime: '23:58',
+      screenshotPath: `pomelo/${date}/${id}.jpg` })
+    assert.equal(saved.code, 200)
+  }
+  const first = (await h.run({}, 'GET', '2026-10-14')).data.entries
+  const second = (await h.run({}, 'GET', '2026-10-15')).data.entries
+  assert.ok(first.find(row => row.date === '2026-10-14').screenshotUrl)
+  const previous = second.find(row => row.date === '2026-10-14')
+  assert.equal(previous.sleepTime, '23:58')
+  assert.equal(previous.screenshotUrl, undefined)
+  assert.ok(second.find(row => row.date === '2026-10-15').screenshotUrl)
+  assert.ok(model.mergeRemoteEntries(first, second).find(row => row.date === '2026-10-14').screenshotUrl)
+})
+
 test('sleep weeks follow the previous night across Monday, month and year boundaries', () => {
   for (const [page, expected] of [
     ['2026-10-19', '2026-10-12'],
@@ -674,4 +699,22 @@ test('journal waits for both parallel uploads before failing or saving', async (
   assert.equal(saved.notes[0].images[0].thumbPath, 'thumb.jpg')
   assert.equal(saves.length, 1)
   assert.deepEqual(image.pendingImage, { data: 'full', thumbnail: 'thumb' })
+})
+
+test('journal accepts binary and cached JSON JPEG uploads with the same private paths', async () => {
+  const h = harness()
+  const id = '11111111-1111-4111-8111-111111111111'
+  const body = { action: 'image', owner: 'orange', date: '2026-10-14', id, variant: 'thumb', image: 'data:image/jpeg;base64,/9j/2Q==' }
+  const packed = await encodePhotoUpload(body)
+  const headers = { 'content-type': packed.type }
+  const bytes = Buffer.from(await packed.arrayBuffer())
+  const binary = await h.run(bytes, 'POST', body.date, headers)
+  const legacy = await h.run(body)
+  assert.equal(binary.code, 200)
+  assert.equal(legacy.code, 200)
+  assert.equal(binary.data.screenshotPath, `orange/${body.date}/${id}-thumb.jpg`)
+  assert.equal(binary.data.screenshotPath, legacy.data.screenshotPath)
+  assert.deepEqual(h.uploads[0].bytes, h.uploads[1].bytes)
+  assert.equal((await h.run(bytes.subarray(0, -1), 'POST', body.date, headers)).code, 400)
+  assert.equal(h.uploads.length, 2)
 })

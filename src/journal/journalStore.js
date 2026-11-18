@@ -1,5 +1,6 @@
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
 import { reuseSignedMedia } from '../media/signedUrlCache'
+import { encodePhotoUpload, PHOTO_UPLOAD_TYPE } from '../media/photoUpload'
 import { entryNotes, entryFingerprint, shiftDate, sleepWeekStart } from './journalModel'
 
 // Keep the newest draft readable during a quick in-app page turn while IndexedDB
@@ -121,12 +122,13 @@ export async function journalRequest(body, date) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30000)
   try {
+    const binary = body?.action === 'image'
     const response = await fetch(
       date ? `/api/journal?date=${date}` : '/api/journal',
       {
         method: date ? 'GET' : 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: date ? undefined : JSON.stringify(body),
+        headers: { 'Content-Type': binary ? PHOTO_UPLOAD_TYPE : 'application/json' },
+        body: date ? undefined : binary ? await encodePhotoUpload(body) : JSON.stringify(body),
         signal: controller.signal,
       },
     )

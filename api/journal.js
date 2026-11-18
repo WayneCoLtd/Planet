@@ -1,5 +1,6 @@
 import { LEVEL_SITE, readLevel } from './_lib/session.js'
 import { checkServiceConfig, getAdminClient } from './_lib/supabaseAdmin.js'
+import { decodePhotoUpload, PHOTO_UPLOAD_TYPE, readJpegBytes } from '../src/media/photoUpload.js'
 import {
   JOURNAL_FIRST_DATE,
   OWNERS,
@@ -99,7 +100,7 @@ export default async function handler(req, res) {
       if (error) throw error
       return res.status(200).json({
         entries: await Promise.all(
-          records.data.map((row) => withImage(shape(row))),
+          records.data.map((row) => row.date === date ? withImage(shape(row)) : shape(row)),
         ),
         goals: goalResults.flatMap((result) => result.data),
       })
@@ -108,8 +109,11 @@ export default async function handler(req, res) {
       res.setHeader('Allow', 'GET, POST')
       return res.status(405).json({ error: '不支持的操作' })
     }
-    const body =
-      typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
+    const binary = req.headers?.['content-type'] === PHOTO_UPLOAD_TYPE
+    const raw = req.body
+    const body = binary ? decodePhotoUpload(raw, false) : typeof raw === 'string' ? JSON.parse(raw) : raw || {}
+    if (binary && body?.action !== 'image')
+      return res.status(400).json({ error: '图片上传格式不正确' })
     if (!OWNERS.includes(body.owner))
       return res.status(400).json({ error: '署名不正确' })
     if (body.action === 'goal') {
@@ -155,14 +159,10 @@ export default async function handler(req, res) {
     )
       return res.status(400).json({ error: '只能记录已到来的日期' })
     if (body.action === 'image') {
-      if (
-        !uuid.test(body.id) ||
-        typeof body.image !== 'string' ||
-        !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(body.image)
-      )
+      if (!uuid.test(body.id))
         return res.status(400).json({ error: '截图格式不正确' })
-      const bytes = Buffer.from(body.image.split(',')[1], 'base64')
-      if (bytes.length > 2097152 || bytes[0] !== 255 || bytes[1] !== 216)
+      const bytes = readJpegBytes(body.image, 2097152)
+      if (!bytes)
         return res.status(400).json({ error: '截图过大或格式不正确' })
       const path = `${body.owner}/${body.date}/${body.id}${body.variant === 'thumb' ? '-thumb' : ''}.jpg`
       const result = await db.storage

@@ -1,6 +1,11 @@
 // 琛琳星球 · 更新日志
 // 按时间倒序排列，写给自己和小琳看的，越短越好。
+export const releaseNotes = [
+  { version: 'v4.3', date: '2026-11-18', title: '修复了一些已知问题', notes: [] },
+]
+
 export const changelog = [
+  ...releaseNotes,
   {
     version: 'v3.5',
     date: '2026-09-06',

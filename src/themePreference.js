@@ -6,7 +6,8 @@ const PREFERENCE_KEY = 'wwcxrl-appearance-preference'
 export function readVoyageAppearance() {
   const preference = safeGetItem(PREFERENCE_KEY)
   if (preference === 'classic' || preference === 'voyage') return preference === 'voyage'
-  return safeGetItem('wwcxrl-voyage-theme') === 'yes'
+  // A story reset can still return to the classic appearance.
+  return safeGetItem('wwcxrl-voyage-theme') !== 'classic'
 }
 
 export function saveVoyageAppearance(enabled) {

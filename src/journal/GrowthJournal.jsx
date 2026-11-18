@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import LiteraryQuote from '../LiteraryQuote'
 import { literaryQuotes } from '../data/literaryQuotes'
 import { cloudEnabled } from '../cloud'
+import { safeGetItem, safeSetItem } from '../safeStorage'
 import { invalidateSignedMedia } from '../media/signedUrlCache'
 import { prepareLifePhoto } from '../album/lifeAlbumStore'
 import {
@@ -100,6 +101,7 @@ function JournalPage({
   const [pendingAction, setPendingAction] = useState(null)
   const lock = useRef(false)
   const [note, setNote] = useState('')
+  const [statusArea, setStatusArea] = useState('page')
   const [conflict, setConflict] = useState(null)
   const [recovery, setRecovery] = useState([])
   const [viewImage, setViewImage] = useState(false)
@@ -245,7 +247,7 @@ function JournalPage({
     return () => window.removeEventListener('beforeunload', warn)
   }, [draftFailure])
 
-  function change(patch) {
+  function change(patch, area = 'page') {
     const next = { ...currentRef.current, ...patch }
     const base = baseRef.current
     currentRef.current = next
@@ -253,16 +255,19 @@ function JournalPage({
     setEntry(next)
     setDirty(true)
     rememberDraft(key, next, base)
+    setStatusArea(area)
     setNote('正在保存草稿…')
-    draftWrites.current = draftWrites.current
+    const write = draftWrites.current = draftWrites.current
       .catch(() => {})
       .then(() => journalStore('drafts', 'put', { key, entry: next, base }))
-    draftWrites.current
+    write
       .then(() => {
+        if (draftWrites.current !== write) return
         setDraftFailure(false)
-        setNote('草稿仅在本机，保存后同步')
+        setNote((message) => message === '正在保存草稿…' ? '草稿已存本机，待同步' : message)
       })
       .catch(() => {
+        if (draftWrites.current !== write) return
         setDraftFailure(true)
         setNote('本机空间不足，请保存记录后再离开')
       })
@@ -273,6 +278,7 @@ function JournalPage({
     if (!file || lock.current) return
     lock.current = true
     setBusy(true)
+    setStatusArea('sleep')
     setNote('正在整理截图…')
     try {
       const prepared = await prepareLifePhoto(file, {}, { includeThumbnail: false })
@@ -280,7 +286,7 @@ function JournalPage({
         pendingImage: { id: prepared.id, data: prepared.image },
         screenshotPath: '',
         screenshotUrl: '',
-      })
+      }, 'sleep')
       setImageFailed(false)
     } catch (error) {
       setNote(`截图未保存：${error.message}`)
@@ -293,6 +299,7 @@ function JournalPage({
     if (!files.length || lock.current) return
     lock.current = true
     setBusy(true)
+    setStatusArea('photos')
     let done = 0
     try {
       for (const file of files) {
@@ -317,7 +324,7 @@ function JournalPage({
               }
             : note,
         )
-        change({ notes })
+        change({ notes }, 'photos')
         done++
       }
       setNote(`${done} 张附图已加入草稿`)
@@ -328,11 +335,12 @@ function JournalPage({
       setBusy(false)
     }
   }
-  async function save(checkIn = false) {
-    if (lock.current || !ready) return
+  async function save(checkIn = false, area) {
+    if (lock.current || !ready || !connected) return
     lock.current = true
     setBusy(true)
     setPendingAction(checkIn ? 'checkin' : 'save')
+    setStatusArea(area ?? (photosPending || statusArea === 'photos' ? 'photos' : sleepDirty ? 'sleep' : 'page'))
     setNote('正在保存…')
     const submitted = currentRef.current
     try {
@@ -359,7 +367,7 @@ function JournalPage({
       }
       setNote(cloudEnabled ? '已同步，对方刷新后可见' : '已保存到此浏览器')
     } catch (error) {
-      setNote(error.message || '未同步，请稍后重试')
+      setNote(error.status === 409 ? '记录已有新版本，请查看冲突提示' : (error.message || '同步失败，请重试'))
       if (error.status === 409 && error.current) setConflict(error.current)
     } finally {
       lock.current = false
@@ -371,6 +379,7 @@ function JournalPage({
     if (lock.current || !canEditGoal) return
     lock.current = true
     setBusy(true)
+    setStatusArea('page')
     try {
       const checked = normalizeGoal(goalForm)
       const result = await saveGoal({
@@ -392,6 +401,10 @@ function JournalPage({
   }
   const screenshot = imageUrl(entry)
   const disabled = busy || !ready
+  const canSave = !disabled && connected && (dirty || entry.version === 0)
+  const sleepDirty = dirty && Boolean(entry.pendingImage || entry.sleepTime !== remote.sleepTime || entry.screenshotPath !== remote.screenshotPath)
+  const photosPending = entryNotes(entry).some((item) => item.images.some((image) => image.pendingImage))
+  const status = pendingAction ? '正在同步…' : note
   return (
     <article
       className={`journal-page is-${owner} ${active ? 'is-mobile-active' : ''}`}
@@ -500,9 +513,10 @@ function JournalPage({
             )}
             <button
               disabled={disabled}
+              aria-expanded={sleepEditing}
               onClick={() => setSleepEditing((value) => !value)}
             >
-              {sleepEditing ? '收起' : entry.sleepTime ? '修改' : '填写'}
+              {sleepEditing ? '收起' : entry.sleepTime ? '修改睡眠' : '填写时间'}
             </button>
           </div>
           <div className="journal-screenshot">
@@ -528,12 +542,14 @@ function JournalPage({
                 <img
                   src={screenshot}
                   alt="睡眠截图缩略图"
+                  loading="lazy"
+                  decoding="async"
                   onError={() => { invalidateSignedMedia(entry.screenshotUrl); setImageFailed(true) }}
                 />
               </button>
             )}
             <label className="journal-upload">
-              {screenshot ? '换截图' : '＋ 截图'}
+              {screenshot ? '换截图' : '添加截图'}
               <input
                 type="file"
                 accept="image/*"
@@ -558,28 +574,36 @@ function JournalPage({
                   change({
                     sleepTime: event.target.value,
                     sleepPreviousDay: true,
-                  })
+                  }, 'sleep')
                 }
               />
             </label>
             {screenshot && (
               <button
+                className="journal-sleep-remove"
                 disabled={disabled}
                 onClick={() =>
                   change({
                     screenshotPath: '',
                     screenshotUrl: '',
                     pendingImage: undefined,
-                  })
+                  }, 'sleep')
                 }
               >
                 移除截图
               </button>
             )}
-            <button disabled={disabled} onClick={() => setSleepEditing(false)}>
-              收起填写
-            </button>
-            <small className="journal-sleep-save-hint">凌晨入睡也记在这一晚；填好后请点页底「保存记录」。</small>
+            <small className="journal-sleep-save-hint">凌晨入睡也记在这一晚。</small>
+          </div>
+        )}
+        {(sleepDirty || statusArea === 'sleep') && (
+          <div className="journal-sleep-actions">
+            <span role={statusArea === 'sleep' ? 'status' : undefined}>{statusArea === 'sleep' ? status : '睡眠记录待同步'}</span>
+            {sleepDirty && (
+              <button className="journal-checkin" disabled={!canSave} onClick={() => save(true, 'sleep')}>
+                {pendingAction ? '正在同步…' : '保存当天记录'}
+              </button>
+            )}
           </div>
         )}
       </section>
@@ -623,22 +647,24 @@ function JournalPage({
           notes={entryNotes(entry)}
           disabled={disabled}
           onChange={(notes) => change({ notes })}
+          onPhotoChange={(notes) => change({ notes }, 'photos')}
           onImages={chooseNoteImages}
           onRefresh={onRefresh}
           active={active}
+          photoStatus={statusArea === 'photos' ? status : photosPending ? '照片待同步' : ''}
         />
       </section>
       <section className="journal-growth">
-        <label htmlFor={`growth-${owner}`}>今天的小小感受</label>
+        <label htmlFor={`growth-${owner}`}>今日感受</label>
         <textarea
           ref={growthInput}
           id={`growth-${owner}`}
-          aria-label={`${OWNER_NAMES[owner]}今天的小小感受`}
+          aria-label={`${OWNER_NAMES[owner]}今日感受`}
           rows={1}
           maxLength={500}
           value={entry.growthNote || ''}
           disabled={disabled}
-          placeholder="开心、疲惫，或只是平常的一天，都可以写在这里。"
+          placeholder="选填"
           onChange={(event) => change({ growthNote: event.target.value })}
         />
       </section>
@@ -726,11 +752,11 @@ function JournalPage({
         </details>
       )}
       <footer className="journal-page-footer">
-        <span role="status">{note || '内容均可选填'}</span>
+        <span role={statusArea === 'page' ? 'status' : undefined}>{status || '内容均可选填'}</span>
         <div>
           <button
             className="journal-checkin"
-            disabled={disabled || !connected || (!dirty && entry.version > 0)}
+            disabled={!canSave}
             onClick={() => save(true)}
           >
             {pendingAction ? '正在同步…' : '保存记录'}
@@ -749,7 +775,7 @@ function JournalPage({
 
 export default function GrowthJournal() {
   const [date, setDate] = useState(todayInShanghai)
-  const [owner, setOwner] = useState('pomelo')
+  const [owner, setOwner] = useState(() => safeGetItem('wwcxrl-journal-owner') === 'orange' ? 'orange' : 'pomelo')
   const [entries, setEntries] = useState([])
   const [goals, setGoals] = useState([])
   const [loading, setLoading] = useState(true)
@@ -783,7 +809,7 @@ export default function GrowthJournal() {
     return () => {
       alive = false
     }
-  }, [date, owner, retry])
+  }, [date, retry])
   useEffect(() => {
     const refresh = () => setRetry((value) => value + 1)
     window.addEventListener('focus', refresh)
@@ -847,7 +873,6 @@ export default function GrowthJournal() {
   return (
     <section className="journal-shell journal-cream" aria-label="每日签到簿">
       <header className="journal-heading">
-        <span>DAILY JOURNAL</span>
         <h2>日有所进</h2>
         <LiteraryQuote quote={literaryQuotes.journal} className="lq-compact" />
       </header>
@@ -893,7 +918,10 @@ export default function GrowthJournal() {
           <button
             key={id}
             aria-pressed={owner === id}
-            onClick={() => setOwner(id)}
+            onClick={() => {
+              setOwner(id)
+              safeSetItem('wwcxrl-journal-owner', id)
+            }}
           >
             {OWNER_NAMES[id]}
           </button>

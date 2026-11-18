@@ -77,7 +77,11 @@ export function mergeRemoteEntries(previous, incoming) {
   const records = new Map(previous.map(entry => [`${entry.date}:${entry.owner}`, entry]))
   for (const entry of incoming) {
     const key = `${entry.date}:${entry.owner}`
-    if (!records.has(key) || records.get(key).version <= entry.version) records.set(key, entry)
+    const existing = records.get(key)
+    // Other dates are returned for weekly stats without signing their images.
+    if (!existing || existing.version < entry.version || (
+      existing.version === entry.version && entry.screenshotUrl !== undefined
+    )) records.set(key, entry)
   }
   return [...records.values()]
 }

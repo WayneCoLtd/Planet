@@ -106,10 +106,12 @@ export default function JournalNotes({
   owner,
   notes,
   onChange,
+  onPhotoChange,
   onImages,
   onRefresh,
   disabled,
   active,
+  photoStatus,
 }) {
   const [removed, setRemoved] = useState([])
   const [viewer, setViewer] = useState(null)
@@ -163,7 +165,7 @@ export default function JournalNotes({
   }
   function removeImage(index) {
     setRemoved((stack) => [...stack, { image: images[index], index }])
-    onChange(
+    onPhotoChange(
       singleJournalNote(
         notes,
         text,
@@ -176,7 +178,7 @@ export default function JournalNotes({
       next = [...images]
     if (!next.some((image) => image.id === action.image.id))
       next.splice(Math.min(action.index, next.length), 0, action.image)
-    onChange(singleJournalNote(notes, text, next))
+    onPhotoChange(singleJournalNote(notes, text, next))
     setRemoved((stack) => stack.slice(0, -1))
   }
   return (
@@ -185,7 +187,6 @@ export default function JournalNotes({
     >
       <div className="journal-single-text">
         <div className="journal-editor-hint">
-          <span>把今天，慢慢写下来</span>
           <button
             type="button"
             disabled={disabled}
@@ -203,7 +204,7 @@ export default function JournalNotes({
           aria-label={`${OWNER_NAMES[owner]}今日手记`}
           value={text}
           disabled={disabled}
-          placeholder={'· 今天做了什么\n· 今天遇见的小事'}
+          placeholder="今天做了什么？"
           onChange={(event) => changeText(event.target.value)}
           onKeyDown={keyDown}
           onCompositionStart={() => {
@@ -218,11 +219,11 @@ export default function JournalNotes({
         <div className="journal-media-heading">
           <div className="journal-media-title">
             <span aria-hidden="true">✷</span>
-            <strong>今日碎片</strong>
-            <small>{images.length ? `${images.length} 张照片` : '留住一个小瞬间'}</small>
+            <strong>手记照片</strong>
+            {!!images.length && <small>{images.length} 张</small>}
           </div>
           <label className="journal-upload">
-            ＋ {images.length ? '添加照片' : '放入照片'}
+            ＋ 添加照片
             <input
               type="file"
               accept="image/*"
@@ -240,6 +241,7 @@ export default function JournalNotes({
             />
           </label>
         </div>
+        <p className="journal-photo-status" role="status">{photoStatus}</p>
         {!!images.length && (
           <div className={`journal-note-images journal-photo-grid ${images.length === 1 ? 'is-single' : ''}`}>
             {images.map((image, index) => (
@@ -251,7 +253,7 @@ export default function JournalNotes({
                 />
                 <figcaption>
                   <span className="journal-photo-number" aria-hidden="true">
-                    {String(index + 1).padStart(2, '0')} <span> / 今日碎片</span>
+                    {String(index + 1).padStart(2, '0')} <span> / 手记照片</span>
                   </span>
                   <button
                     className="journal-photo-remove"

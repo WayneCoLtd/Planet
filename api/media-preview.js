@@ -2,18 +2,19 @@ import crypto from 'node:crypto'
 import sharp from 'sharp'
 import { LEVEL_SITE, readLevel } from './_lib/session.js'
 import { checkServiceConfig, getAdminClient } from './_lib/supabaseAdmin.js'
+import { canPreviewPhoto } from '../src/media/previewUrl.js'
 
 const BUCKET = 'wwcxrl-photos' // Only public photo originals; never private journal/music.
 const pending = new Map()
 const MAX_BYTES = 20 * 1024 * 1024
 
-async function buildPreview(db, path, key) {
+async function buildPreview(db, sourceBucket, path, key) {
   const storage = db.storage.from(BUCKET)
   const stored = await storage.download(key)
   if (stored.data) return Buffer.from(await stored.data.arrayBuffer())
   const missing = String(stored.error?.statusCode) === '404' || stored.error?.code === 'NoSuchKey' || /not found|does not exist/i.test(stored.error?.message || '')
   if (!missing) throw new Error('Preview store unavailable')
-  const source = storage.getPublicUrl(path).data.publicUrl
+  const source = (sourceBucket === BUCKET ? storage : db.storage.from(sourceBucket)).getPublicUrl(path).data.publicUrl
   const response = await fetch(source, { signal: AbortSignal.timeout(15000), redirect: 'error' })
   if (!response.ok || Number(response.headers.get('content-length')) > MAX_BYTES) throw new Error('Source unavailable or too large')
   const reader = response.body.getReader(), parts = []
@@ -43,9 +44,11 @@ export default async function handler(req, res) {
   if (req.method !== 'GET' && req.method !== 'HEAD') return res.status(405).json({ error: '不支持的操作' })
   const url = new URL(req.url, 'https://local.invalid')
   const path = url.searchParams.get('path') || ''
-  if (url.searchParams.get('v') !== '1' || path.length > 800 || !path || /[\\%\x00-\x1f]/.test(path) || path.startsWith('/') || path.includes('..') || path.startsWith('media-previews/') || !/\.(jpe?g|png|webp|avif)$/i.test(path)) return res.status(400).json({ error: '照片路径不正确' })
+  const sourceBucket = url.searchParams.get('bucket') || BUCKET
+  if (url.searchParams.get('v') !== '1' || !canPreviewPhoto(sourceBucket, path)) return res.status(400).json({ error: '照片路径不正确' })
   if (!checkServiceConfig().ok) return res.status(503).json({ error: '预览暂不可用' })
-  const key = `media-previews/v1/${crypto.createHash('sha256').update(path).digest('hex')}.webp`
+  const sourceKey = sourceBucket === BUCKET ? path : `${sourceBucket}:${path}`
+  const key = `media-previews/v1/${crypto.createHash('sha256').update(sourceKey).digest('hex')}.webp`
   const etag = `"${crypto.createHash('sha256').update(key).digest('hex')}"`
   if (req.headers?.['if-none-match'] === etag) {
     res.setHeader('Cache-Control', 'private, max-age=604800, immutable')
@@ -54,7 +57,7 @@ export default async function handler(req, res) {
   }
   try {
     if (!pending.has(key)) {
-      const task = buildPreview(getAdminClient(), path, key)
+      const task = buildPreview(getAdminClient(), sourceBucket, path, key)
       pending.set(key, task)
       task.finally(() => pending.delete(key)).catch(() => {})
     }

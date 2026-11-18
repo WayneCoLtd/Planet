@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import vm from 'node:vm'
 import { readFileSync } from 'node:fs'
 import { mergeLifePhotos } from '../src/album/lifeAlbumStore.js'
+import { decodePhotoUpload, encodePhotoUpload, PHOTO_UPLOAD_TYPE, readJpegBytes } from '../src/media/photoUpload.js'
 
 const source = readFileSync(
   new URL('../api/life-album.js', import.meta.url),
@@ -51,9 +52,9 @@ function harness({ level = 1, existing = null, upload = async () => ({}) } = {})
           getPublicUrl: (path) => ({
             data: { publicUrl: `https://test.invalid/${path}` },
           }),
-          upload: (path) => {
+          upload: (path, bytes) => {
             calls.push(['upload', path])
-            return upload(path)
+            return upload(path, bytes)
           },
         }
       },
@@ -64,6 +65,9 @@ function harness({ level = 1, existing = null, upload = async () => ({}) } = {})
     readLevel: () => level,
     checkServiceConfig: () => ({ ok: true }),
     getAdminClient: () => db,
+    decodePhotoUpload,
+    PHOTO_UPLOAD_TYPE,
+    readJpegBytes,
     Buffer,
     URL,
     console: { warn() {} },
@@ -71,7 +75,7 @@ function harness({ level = 1, existing = null, upload = async () => ({}) } = {})
   vm.runInContext(source + ';globalThis.run=handler', context)
   return {
     calls,
-    async run(method, body, url = '/api/life-album') {
+    async run(method, body, url = '/api/life-album', headers = {}) {
       const res = {
         setHeader() {},
         status(code) {
@@ -83,7 +87,7 @@ function harness({ level = 1, existing = null, upload = async () => ({}) } = {})
           return this
         },
       }
-      await context.run({ method, body, url }, res)
+      await context.run({ method, body, url, headers }, res)
       return res
     },
   }
@@ -138,6 +142,20 @@ test('both album files start together and a partial failure leaves no published 
   assert.equal((await retry).code, 200)
   assert.deepEqual(h.calls.filter(([action]) => action === 'upload').map(([, path]) => path), [...paths, ...paths])
   assert.equal(h.calls.filter(([action]) => action === 'insert').length, 1)
+})
+test('binary album uploads retain JPEG bytes, caption and retry identity', async () => {
+  const blob = await encodePhotoUpload({ ...body, thumbnail: 'data:image/jpeg;base64,/9gAAQIDBA==' })
+  const packed = Buffer.from(await blob.arrayBuffer())
+  const headers = { 'content-type': blob.type }
+  const images = []
+  const h = harness({ upload: async (_, bytes) => { images.push(bytes); return {} } })
+  const result = await h.run('POST', packed, '/api/life-album', headers)
+  assert.equal(result.code, 200)
+  assert.equal(result.data.photo.id, body.id)
+  assert.equal(result.data.photo.caption, body.caption)
+  assert.deepEqual(images, [Buffer.from('/9j/2Q==', 'base64'), Buffer.from('/9gAAQIDBA==', 'base64')])
+  assert.equal((await h.run('POST', Buffer.from('malformed'), '/api/life-album', headers)).code, 400)
+  assert.equal(images.length, 2)
 })
 test('separate photos on the same date have distinct IDs and preserve multiline captions', async () => {
   const h = harness()

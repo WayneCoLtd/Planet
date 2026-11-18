@@ -8,3 +8,13 @@ test('signed URLs survive reload but expire at their original boundary',()=>{let
 test('private paths, project identities and signed expiry remain distinct',()=>{const c=createSignedUrlCache({now:()=>1000000});const a=signed(2000);c.reuse(a);assert.equal(c.reuse(signed(2400,'b','bucket/other.jpg')),signed(2400,'b','bucket/other.jpg'));assert.equal(c.reuse(a.replace('project.','other.')),a.replace('project.','other.'));assert.equal(c.reuse('https://project.supabase.co/private?token=bad'),'https://project.supabase.co/private?token=bad');assert.equal(c.reuse(signed(999)),signed(999))})
 test('preview URL accepts only the configured public photo bucket',()=>{const base='https://project.supabase.co';assert.equal(previewUrl(base+'/storage/v1/object/public/wwcxrl-photos/a.jpg',base),'/api/media-preview?v=1&path=a.jpg');assert.equal(previewUrl('https://site.cn/sb/storage/v1/object/public/wwcxrl-photos/a.jpg',base,'https://site.cn'),'/api/media-preview?v=1&path=a.jpg');for(const src of [signed(2000),base+'/storage/v1/object/public/wwcxrl-journal/a.jpg','https://evil.test/storage/v1/object/public/wwcxrl-photos/a.jpg',base+'/storage/v1/object/public/wwcxrl-photos/a.gif'])assert.equal(previewUrl(src,base),src)})
 test('gallery loading and readiness use preview while full resolution remains available',()=>{const item={key:'one',day:{day:1},owner:{id:'orange'},photo:{src:'full.jpg',previewSrc:'preview.webp'}};assert.equal(displayPhotoSource(item),'preview.webp');const rows=layoutMemories([item],390,new Map([['preview.webp',{width:500,height:1000}]]),844).rows;assert.equal(needsImagesAhead(rows,0,844,new Map([['preview.webp',{width:500,height:1000}]])),false);assert.equal(item.photo.src,'full.jpg')})
+test('today’s best previews are limited to static image uploads from its public bucket', () => {
+  const base = 'https://project.supabase.co'
+  const endpoint = base + '/storage/v1/object/public/wwcxrl-task-media/'
+  const id = '11111111-1111-4111-8111-111111111111'
+  const path = `daily-best/${id}.jpg`
+  assert.equal(previewUrl(endpoint + path, base), `/api/media-preview?v=1&path=${encodeURIComponent(path)}&bucket=wwcxrl-task-media`)
+  for (const url of [endpoint + `daily-best/${id}.gif`, endpoint + `daily-best/${id}.mp4`, endpoint + 'outside.jpg']) {
+    assert.equal(previewUrl(url, base), url)
+  }
+})

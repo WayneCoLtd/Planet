@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
 import crypto from 'node:crypto'
 import sharp from 'sharp'
+import { canPreviewPhoto } from '../src/media/previewUrl.js'
 
 const source = readFileSync(new URL('../api/media-preview.js', import.meta.url), 'utf8')
   .replace(/^import .*$/gm, '').replace('export default async function handler', 'async function handler')
@@ -14,15 +15,18 @@ function fixture({ level = 1, failure = null } = {}) {
     getPublicUrl: path => ({ data: { publicUrl: 'https://fixture.invalid/' + path } }),
     upload: async (key, bytes, options) => { counts.upload++; assert.equal(options.upsert, false); files.set(key, bytes); return {} },
   }
-  const ctx = vm.createContext({ crypto, sharp, Buffer, URL, AbortSignal, LEVEL_SITE: 1,
+  const ctx = vm.createContext({ crypto, sharp, Buffer, URL, AbortSignal, LEVEL_SITE: 1, canPreviewPhoto,
     readLevel: () => level, checkServiceConfig: () => ({ ok: true }),
-    getAdminClient: () => ({ storage: { from: bucket => { assert.equal(bucket, 'wwcxrl-photos'); return storage } } }),
+    getAdminClient: () => ({ storage: { from: bucket => {
+      assert.ok(['wwcxrl-photos', 'wwcxrl-task-media'].includes(bucket))
+      return storage
+    } } }),
     fetch: async () => { counts.source++; return new Response(await sharp({ create: { width: 800, height: 1600, channels: 3, background: '#bbccdd' } }).jpeg().toBuffer()) },
   })
   vm.runInContext(source + ';globalThis.handler=handler', ctx)
-  async function request({ path = 'owner/photo.jpg', headers = {}, method = 'GET' } = {}) {
+  async function request({ path = 'owner/photo.jpg', bucket = '', headers = {}, method = 'GET' } = {}) {
     const res = { code: 200, headers: {}, setHeader(k, v) { this.headers[k] = v }, status(n) { this.code = n; return this }, json(v) { this.body = v; return this }, end(v) { this.body = v; return this } }
-    await ctx.handler({ url: '/api/media-preview?v=1&path=' + encodeURIComponent(path), headers, method }, res)
+    await ctx.handler({ url: '/api/media-preview?v=1&path=' + encodeURIComponent(path) + '&bucket=' + encodeURIComponent(bucket), headers, method }, res)
     return res
   }
   return { request, counts, files }
@@ -48,4 +52,15 @@ test('unauthorized, invalid and unavailable requests never fetch originals', asy
   assert.equal(f.counts.source, 0)
   const failed = fixture({ failure: { statusCode: 503 } })
   const res = await failed.request(); assert.equal(res.code, 502); assert.equal(res.headers['Cache-Control'], 'no-store'); assert.equal(failed.counts.source, 0)
+})
+test('only approved task images can use previews and distinct buckets have distinct derivatives', async () => {
+  const f = fixture()
+  const path = 'daily-best/11111111-1111-4111-8111-111111111111.jpg'
+  assert.equal((await f.request({ path, bucket: 'wwcxrl-journal' })).code, 400)
+  assert.equal((await f.request({ path: 'outside.jpg', bucket: 'wwcxrl-task-media' })).code, 400)
+  assert.equal(f.counts.source, 0)
+  const [photo, task] = await Promise.all([f.request({ path }), f.request({ path, bucket: 'wwcxrl-task-media' })])
+  assert.equal(task.code, 200)
+  assert.notEqual(task.headers.ETag, photo.headers.ETag)
+  assert.equal(f.counts.source, 2)
 })

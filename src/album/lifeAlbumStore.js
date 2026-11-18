@@ -1,3 +1,5 @@
+import { blobToDataUrl, resizeJpeg, withDecodedImage } from '../media/imagePreparation.js'
+
 const database = () =>
   new Promise((resolve, reject) => {
     const req = indexedDB.open('wwcxrl-life-album-v1', 1)
@@ -42,54 +44,17 @@ export function mergeLifePhotos(previous, next) {
         b.taken_on.localeCompare(a.taken_on) || b.id.localeCompare(a.id),
     )
 }
-async function resizePhoto(image, maxSide, maxBytes, quality) {
-  const canvas = document.createElement('canvas')
-  const ctx = canvas.getContext('2d')
-  const imageSide = Math.max(image.naturalWidth, image.naturalHeight)
-  let blob
-
-  do {
-    const scale = Math.min(1, maxSide / imageSide)
-    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale))
-    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale))
-    ctx.fillStyle = '#fff'
-    ctx.fillRect(0, 0, canvas.width, canvas.height)
-    ctx.drawImage(image, 0, 0, canvas.width, canvas.height)
-    blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
-    if (!blob || blob.type !== 'image/jpeg') throw new Error('这张图片无法压缩')
-    if (blob.size > maxBytes) {
-      const shrink = Math.min(0.9, Math.sqrt(maxBytes / blob.size) * 0.95)
-      maxSide = Math.floor(Math.max(canvas.width, canvas.height) * shrink)
-    }
-  } while (blob.size > maxBytes)
-
-  const data = await new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.onerror = () => reject(new Error('无法读取压缩后的图片'))
-    reader.readAsDataURL(blob)
-  })
-  return { data, width: canvas.width, height: canvas.height }
-}
-
-export async function prepareLifePhoto(file, metadata, { includeThumbnail = true } = {}) {
-  if (!file.type.startsWith('image/')) throw new Error('请选择图片文件')
-  const url = URL.createObjectURL(file)
-  try {
-    const image = new Image()
-    image.src = url
-    await image.decode()
-    const full = await resizePhoto(image, 2400, 750000, 0.82)
-    const thumb = includeThumbnail ? await resizePhoto(image, 640, 100000, 0.78) : null
+export function prepareLifePhoto(file, metadata, { includeThumbnail = true } = {}) {
+  return withDecodedImage(file, async (image) => {
+    const full = await resizeJpeg(image, 2400, 750000, 0.82)
+    const thumb = includeThumbnail ? await resizeJpeg(image, 640, 100000, 0.78) : null
     return {
       ...metadata,
       id: crypto.randomUUID(),
-      image: full.data,
-      thumbnail: thumb?.data,
+      image: await blobToDataUrl(full.blob),
+      thumbnail: thumb ? await blobToDataUrl(thumb.blob) : undefined,
       width: full.width,
       height: full.height,
     }
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+  })
 }

@@ -96,12 +96,11 @@ function AccessGate({ children }) {
         {phase === 'checking' ? (
           <>
             <h1>正在确认身份</h1>
-            <p className="access-gate-hint">稍等一下下…</p>
           </>
         ) : (
           <form onSubmit={submit} className="access-gate-form">
             <h1>小星球的门</h1>
-            <p className="access-gate-hint">输入我们约定的口令，就能进来</p>
+            <p className="access-gate-hint">输入访问口令</p>
             <label className="access-gate-field">
               <input
                 type="password"
@@ -118,7 +117,7 @@ function AccessGate({ children }) {
               />
             </label>
             <button type="submit" className="access-gate-submit" disabled={busy || !password}>
-              {busy ? '正在核对…' : '进去吧'}
+              {busy ? '正在验证…' : '进入'}
             </button>
             {message && <p className="access-gate-error" role="alert">{message}</p>}
           </form>

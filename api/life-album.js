@@ -1,5 +1,6 @@
 import { LEVEL_SITE, readLevel } from './_lib/session.js'
 import { checkServiceConfig, getAdminClient } from './_lib/supabaseAdmin.js'
+import { decodePhotoUpload, PHOTO_UPLOAD_TYPE, readJpegBytes } from '../src/media/photoUpload.js'
 
 const TABLE = 'wwcxrl_life_photos'
 const BUCKET = 'wwcxrl-photos'
@@ -11,17 +12,6 @@ const isDate = (value) =>
   /^\d{4}-\d{2}-\d{2}$/.test(value || '') &&
   Number.isFinite(Date.parse(value)) &&
   new Date(value).toISOString().slice(0, 10) === value
-function jpeg(value) {
-  if (
-    typeof value !== 'string' ||
-    !/^data:image\/jpeg;base64,[A-Za-z0-9+/=]+$/.test(value)
-  )
-    throw new Error('图片格式不正确')
-  const bytes = Buffer.from(value.split(',')[1], 'base64')
-  if (bytes.length > 1800000 || bytes[0] !== 255 || bytes[1] !== 216)
-    throw new Error('图片过大或无法识别')
-  return bytes
-}
 export default async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store')
   res.setHeader('X-Content-Type-Options', 'nosniff')
@@ -62,8 +52,11 @@ export default async function handler(req, res) {
         .status(200)
         .json({ photos: data.slice(0, 30).map(shape), more: data.length > 30 })
     }
-    const body =
-      typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}
+    const binary = req.headers?.['content-type'] === PHOTO_UPLOAD_TYPE
+    const raw = req.body
+    const body = binary ? decodePhotoUpload(raw, true) : typeof raw === 'string' ? JSON.parse(raw) : raw || {}
+    if (binary && (!body || req.method !== 'POST'))
+      return res.status(400).json({ error: '照片上传格式不正确' })
     if (!isId(body.id)) return res.status(400).json({ error: '照片编号不正确' })
     if (req.method === 'POST') {
       if (
@@ -77,8 +70,10 @@ export default async function handler(req, res) {
         body.height > 2400
       )
         return res.status(400).json({ error: '请检查日期、署名和照片尺寸' })
-      const original = jpeg(body.image),
-        thumb = jpeg(body.thumbnail)
+      const original = readJpegBytes(body.image, 1800000),
+        thumb = readJpegBytes(body.thumbnail, 1800000)
+      if (!original || !thumb)
+        return res.status(400).json({ error: '图片过大或无法识别' })
       // A retry after an uncertain response returns the existing record, never duplicates it.
       const { data: existing, error: readError } = await db
         .from(TABLE)
