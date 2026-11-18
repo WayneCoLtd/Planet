@@ -43,6 +43,8 @@
 .anniversary-medallion b { font-size: 19px; }
 .inventory-card.anniversary-badge p { margin: 6px 0 0; }
 .inventory-card.anniversary-badge .anniversary-badge-caption { color: var(--ui-ink); font-weight: 650; }
+.anniversary-badge-caption a { color: inherit; text-decoration: underline; text-underline-offset: .2em; }
+.anniversary-badge-caption a:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
 
 .anniversary-photo-dialog {
   width: min(620px, calc(100vw - 24px));

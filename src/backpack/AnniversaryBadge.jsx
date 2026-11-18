@@ -1,7 +1,7 @@
 import React, { useId, useRef, useState } from 'react'
 import './anniversaryBadge.css'
 
-export default function AnniversaryBadge({ days, date, caption, photo }) {
+export default function AnniversaryBadge({ days, date, caption, captionUrl, photo }) {
   const dialog = useRef(null)
   const trigger = useRef(null)
   const photoTitleId = useId()
@@ -36,7 +36,9 @@ export default function AnniversaryBadge({ days, date, caption, photo }) {
       ) : <span className="anniversary-badge-icon">{medallion}</span>}
       <h3>{title}</h3>
       <p>获得于 <time dateTime={date}>{year}年{month}月{day}日</time></p>
-      <p className="anniversary-badge-caption">{caption}</p>
+      <p className="anniversary-badge-caption">
+        {captionUrl ? <a href={captionUrl} target="_blank" rel="noopener noreferrer">{caption}</a> : caption}
+      </p>
 
       {photo && <dialog
         ref={dialog}

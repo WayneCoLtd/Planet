@@ -9398,6 +9398,7 @@ const BACKPACK_ANNIVERSARIES = [
     days: 365,
     date: ANNIVERSARY_YEAR_ONE_DATE,
     caption: '《金水东路的日子》',
+    captionUrl: 'https://www.shiqichuban.com/simple/mshiqi/#/public/ebook/preview/VDqJCUXkLTyow19FBUnoAvUk1Mhw441XjxVxQz6VAxz7Mtu67gbe1j3MqSTwK9TYpwXfsYmhQqJNXcACStsVJA',
     photo: { src: '/api/anniversary-photo', alt: '金水东路的日子纪念相册封面' },
   },
   {
