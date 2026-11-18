@@ -10340,6 +10340,12 @@ function BackpackView() {
 
   const allEntries = Object.entries(bag || {}).filter(([, count]) => Number(count || 0) > 0)
   const entries = allEntries.filter(([id]) => !BACKPACK_HIDDEN_ITEM_IDS.has(id))
+  const inventoryCards = entries.map(([id, count]) => ({ id, count }))
+  const backpackCards = [
+    ...inventoryCards.filter(({ id }) => id === 'day300_badge'),
+    ...BACKPACK_ANNIVERSARIES.map(badge => ({ id: `anniversary-${badge.days}`, badge })),
+    ...inventoryCards.filter(({ id }) => id !== 'day300_badge'),
+  ]
   const placeholders = ['matchbox', 'match', 'magic_wand', 'coffee_cup', 'coconut_cup', 'foam_key'].filter(id => !entries.some(([entryId]) => entryId === id)).slice(0, 4)
   return (
     <section className="content-section backpack-section premium-section">
@@ -10355,8 +10361,8 @@ function BackpackView() {
         <div className="backpack-orb" aria-hidden="true"><span>🎒</span><i /></div>
       </div>
       <div className={`backpack-grid premium-inventory-grid ${casting ? 'magic-casting-grid' : ''}`}>
-        {BACKPACK_ANNIVERSARIES.map(badge => <AnniversaryBadge key={badge.days} {...badge} />)}
-        {entries.map(([id, count]) => {
+        {backpackCards.map(({ id, count, badge }) => {
+          if (badge) return <AnniversaryBadge key={id} {...badge} />
           const item = BACKPACK_ITEMS[id] || { icon: '🎁', name: id, desc: '一件来自小星球的小东西。' }
           const isCoffee = id === 'coffee_cup'
           const isCoconut = id === 'coconut_cup'
