@@ -118,13 +118,13 @@ async function saveLocalVersion(store, key, value) {
     }
   })
 }
-export async function journalRequest(body, date, commentOwner) {
+export async function journalRequest(body, date, query = {}) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30000)
   try {
     const binary = body?.action === 'image'
     const response = await fetch(
-      date ? '/api/journal?' + new URLSearchParams(commentOwner ? { date, comments: commentOwner } : { date }) : '/api/journal',
+      date ? '/api/journal?' + new URLSearchParams({ date, ...query }) : '/api/journal',
       {
         method: date ? 'GET' : 'POST',
         headers: { 'Content-Type': binary ? PHOTO_UPLOAD_TYPE : 'application/json' },
@@ -144,7 +144,7 @@ export async function journalRequest(body, date, commentOwner) {
   }
 }
 export async function readComments(owner, date) {
-  if (cloudEnabled) return (await journalRequest(null, date, owner)).comments
+  if (cloudEnabled) return (await journalRequest(null, date, { comments: owner })).comments
   const prefix = entryKey(owner, date) + ':'
   return journalStore('comments', 'getAll', IDBKeyRange.bound(prefix, prefix + '\uffff'))
 }
@@ -161,10 +161,13 @@ export async function postComment(owner, date, id, text) {
     throw error
   }
 }
+export async function loadPageMedia(date) {
+  return (await journalRequest(null, date, { media: '1' })).entries
+}
 export async function loadWeek(date) {
   const start = sleepWeekStart(date),
     end = shiftDate(start, 7)
-  if (cloudEnabled) return journalRequest(null, date)
+  if (cloudEnabled) return journalRequest(null, date, { summary: '1' })
   return {
     entries: (await journalStore('entries', 'getAll')).filter(
       (row) => row.date >= start && row.date <= end,

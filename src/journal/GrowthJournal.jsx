@@ -4,11 +4,12 @@ import LiteraryQuote from '../LiteraryQuote'
 import { literaryQuotes } from '../data/literaryQuotes'
 import { cloudEnabled } from '../cloud'
 import { safeGetItem, safeSetItem } from '../safeStorage'
-import { invalidateSignedMedia } from '../media/signedUrlCache'
 import { prepareLifePhoto } from '../album/lifeAlbumStore'
 import {
   DEFAULT_GOAL,
   JOURNAL_FIRST_DATE,
+  MAX_FEELING_LENGTH,
+  mergeJournalFeeling,
   OWNER_NAMES,
   OWNERS,
   emptyEntry,
@@ -33,14 +34,15 @@ import {
   parkDraft,
   clearMatchingDraft,
   loadWeek,
+  loadPageMedia,
   saveEntry,
   saveGoal,
 } from './journalStore'
 import './growthJournal.css'
 import JournalComments, { GrowingTextarea } from './JournalComments'
-import JournalNotes, { notePhotoUrl } from './JournalNotes'
+import JournalNotes, { notePhotoUrl, useJournalPhoto } from './JournalNotes'
 
-function ScreenshotViewer({ entry, close }) {
+function ScreenshotViewer({ entry, photo, refresh, close }) {
   const ref = useRef(null)
   useEffect(() => {
     const dialog = ref.current,
@@ -68,7 +70,9 @@ function ScreenshotViewer({ entry, close }) {
           关闭 ×
         </button>
       </header>
-      <img src={imageUrl(entry)} alt="睡眠截图完整预览" />
+      {photo.src ? <img src={photo.src} onError={photo.onError} alt="睡眠截图完整预览" /> : (
+        <button onClick={() => { photo.retry(); refresh() }}>截图未加载，点击重试</button>
+      )}
     </dialog>,
     document.body,
   )
@@ -82,15 +86,15 @@ function JournalPage({
   onSaved,
   onGoalSaved,
   refreshKey,
+  mediaLoading,
+  refreshMedia,
   connected,
   active,
-  onRefresh,
   onNavigate,
 }) {
   const key = entryKey(owner, date)
-  const remote =
-    entries.find((item) => item.owner === owner && item.date === date) ||
-    emptyEntry(owner, date)
+  const saved = entries.find(item => item.owner === owner && item.date === date)
+  const remote = React.useMemo(() => mergeJournalFeeling(saved || emptyEntry(owner, date)), [saved, owner, date])
   const remoteRef = useRef(remote)
   remoteRef.current = remote
   const [entry, setEntry] = useState(remote)
@@ -108,7 +112,6 @@ function JournalPage({
   const [recovery, setRecovery] = useState([])
   const [viewImage, setViewImage] = useState(false)
   const [sleepEditing, setSleepEditing] = useState(false)
-  const [imageFailed, setImageFailed] = useState(false)
   const [draftFailure, setDraftFailure] = useState(false)
   const draftWrites = useRef(Promise.resolve())
   const night = shiftDate(date, -1)
@@ -162,11 +165,11 @@ function JournalPage({
     Promise.all([journalStore('drafts', 'get', key), journalStore('recovery', 'getAll')])
       .then(async ([draft, backups]) => {
         if (!alive) return
-        setRecovery(backups.filter(item => item.sourceKey === key))
+        setRecovery(backups.filter(item => item.sourceKey === key).map(item => ({ ...item, entry: mergeJournalFeeling(item.entry) })))
         if (draft && !redundantDraft(draft, remoteRef.current) && remoteRef.current.version > draft.entry.version) {
           const backup = await parkDraft(key, draft)
           if (!alive) return
-          setRecovery(items => [...items, backup])
+          setRecovery(items => [...items, { ...backup, entry: mergeJournalFeeling(backup.entry) }])
           currentRef.current = remoteRef.current
           baseRef.current = entryFingerprint(remoteRef.current)
           dirtyRef.current = false
@@ -178,7 +181,7 @@ function JournalPage({
         }
         if (draft && !redundantDraft(draft, remoteRef.current)) {
           baseRef.current = draft.base ?? null
-          currentRef.current = mergeEntryMedia(draft.entry, remoteRef.current)
+          currentRef.current = mergeEntryMedia(mergeJournalFeeling(draft.entry), remoteRef.current)
           dirtyRef.current = true
           setEntry(currentRef.current)
           setDirty(true)
@@ -214,7 +217,6 @@ function JournalPage({
         ? mergeEntryMedia(currentRef.current, remote)
         : remote
       setEntry(currentRef.current)
-      setImageFailed(false)
     }
   }, [
     remote.version,
@@ -276,7 +278,6 @@ function JournalPage({
         screenshotPath: '',
         screenshotUrl: '',
       }, 'sleep')
-      setImageFailed(false)
     } catch (error) {
       setNote(`截图未保存：${error.message}`)
     } finally {
@@ -357,7 +358,7 @@ function JournalPage({
       setNote(cloudEnabled ? '已同步，对方刷新后可见' : '已保存到此浏览器')
     } catch (error) {
       setNote(error.status === 409 ? '记录已有新版本，请查看冲突提示' : (error.message || '同步失败，请重试'))
-      if (error.status === 409 && error.current) setConflict(error.current)
+      if (error.status === 409 && error.current) setConflict(mergeJournalFeeling(error.current))
     } finally {
       lock.current = false
       setBusy(false)
@@ -388,7 +389,8 @@ function JournalPage({
       setBusy(false)
     }
   }
-  const screenshot = imageUrl(entry)
+  const photo = useJournalPhoto(imageUrl(entry))
+  const hasScreenshot = Boolean(entry.pendingImage || entry.screenshotUrl || entry.screenshotPath)
   const disabled = busy || !ready
   const canSave = !disabled && connected && (dirty || entry.version === 0)
   const sleepDirty = dirty && Boolean(entry.pendingImage || entry.sleepTime !== remote.sleepTime || entry.screenshotPath !== remote.screenshotPath)
@@ -509,36 +511,37 @@ function JournalPage({
             </button>
           </div>
           <div className="journal-screenshot">
-            {screenshot && imageFailed && (
+            {hasScreenshot && !photo.src && (mediaLoading ? (
+              <span className="journal-media-loading" role="status">正在读取截图…</span>
+            ) : (
               <button
                 className="journal-screenshot-retry"
-                disabled={disabled || !connected}
                 onClick={() => {
-                  setImageFailed(false)
-                  onRefresh()
+                  photo.retry()
+                  refreshMedia()
                 }}
               >
                 截图未加载<br />
                 点击重试
               </button>
-            )}
-            {screenshot && !imageFailed && (
+            ))}
+            {photo.src && (
               <button
                 className="journal-screenshot-preview"
                 onClick={() => setViewImage(true)}
                 aria-label={`查看${OWNER_NAMES[owner]}睡眠截图`}
               >
                 <img
-                  src={screenshot}
+                  src={photo.src}
                   alt="睡眠截图缩略图"
                   loading="lazy"
                   decoding="async"
-                  onError={() => { invalidateSignedMedia(entry.screenshotUrl); setImageFailed(true) }}
+                  onError={photo.onError}
                 />
               </button>
             )}
             <label className="journal-upload">
-              {screenshot ? '换截图' : '添加截图'}
+              {hasScreenshot ? '换截图' : '添加截图'}
               <input
                 type="file"
                 accept="image/*"
@@ -567,7 +570,7 @@ function JournalPage({
                 }
               />
             </label>
-            {screenshot && (
+            {hasScreenshot && (
               <button
                 className="journal-sleep-remove"
                 disabled={disabled}
@@ -635,7 +638,7 @@ function JournalPage({
           aria-labelledby={'growth-heading-' + owner}
           placeholder="今天有什么想记下的感受？"
           value={entry.growthNote || ''}
-          rows={3} maxLength={500} disabled={disabled} active={active}
+          rows={3} maxLength={MAX_FEELING_LENGTH} disabled={disabled} active={active}
           onChange={(event) => change({ growthNote: event.target.value })}
         />
         <JournalNotes
@@ -645,7 +648,8 @@ function JournalPage({
           onChange={(notes) => change({ notes })}
           onPhotoChange={(notes) => change({ notes }, 'photos')}
           onImages={chooseNoteImages}
-          onRefresh={onRefresh}
+          onRefresh={refreshMedia}
+          mediaLoading={mediaLoading}
           photoStatus={statusArea === 'photos' ? status : photosPending ? '照片待同步' : ''}
         />
       </section>
@@ -658,14 +662,6 @@ function JournalPage({
               ? '未填'
               : `${conflict.studyMinutes} 分钟`}
           </p>
-          <p>
-            {entryNotes(conflict)
-              .map(
-                (note) =>
-                  `${note.text}${note.images.length ? `（${note.images.length} 张附图）` : ''}`,
-              )
-              .join('\n') || '未填写手记'}
-          </p>
           {conflict.growthNote && <p>今日感受：{conflict.growthNote}</p>}
           <p>本机草稿仍在上方。对照后选择：</p>
           <button
@@ -677,7 +673,7 @@ function JournalPage({
               try {
                 await draftWrites.current.catch(() => {})
                 const backup = await parkDraft(key, { entry: currentRef.current, base: baseRef.current })
-                setRecovery(items => [...items, backup])
+                setRecovery(items => [...items, { ...backup, entry: mergeJournalFeeling(backup.entry) }])
                 currentRef.current = conflict
                 baseRef.current = entryFingerprint(conflict)
                 dirtyRef.current = false
@@ -715,8 +711,7 @@ function JournalPage({
           {recovery.map(backup => (
             <div key={backup.key} className="journal-recovery-item">
               <p>睡眠：{backup.entry.sleepTime || '未填'} · 自习：{backup.entry.studyMinutes == null ? '未填' : `${backup.entry.studyMinutes} 分钟`}</p>
-              <p>{entryNotes(backup.entry).map(item => item.text).join('\n\n') || '未填写手记文字'}</p>
-              {backup.entry.growthNote && <p>进步：{backup.entry.growthNote}</p>}
+              {backup.entry.growthNote && <p>今日感受：{backup.entry.growthNote}</p>}
               <div className="journal-recovery-images">
                 {imageUrl(backup.entry) && <img src={imageUrl(backup.entry)} alt="草稿睡眠截图" />}
                 {entryNotes(backup.entry).flatMap(item => item.images).map(img => (
@@ -749,7 +744,7 @@ function JournalPage({
         {date.replaceAll('-', '.')}
       </span>
       {viewImage && (
-        <ScreenshotViewer entry={entry} close={() => setViewImage(false)} />
+        <ScreenshotViewer entry={entry} photo={photo} refresh={refreshMedia} close={() => setViewImage(false)} />
       )}
     </article>
   )
@@ -769,6 +764,19 @@ export default function GrowthJournal() {
   const commitTimer = useRef(null)
   const [turnDate, setTurnDate] = useState(date)
   const book = useRef(null)
+  const [mediaRetry, setMediaRetry] = useState(0)
+  const [finishedMedia, setFinishedMedia] = useState('')
+  const mediaKey = [date, retry, mediaRetry].join(':')
+  useEffect(() => {
+    if (!cloudEnabled) return
+    let alive = true
+    setFinishedMedia('')
+    loadPageMedia(date).then(rows => {
+      if (alive) setEntries(previous => mergeRemoteEntries(previous, rows))
+    }).catch(() => { /* Missing links keep their individual retry controls. */ })
+      .finally(() => { if (alive) setFinishedMedia(mediaKey) })
+    return () => { alive = false }
+  }, [mediaKey, date])
   useEffect(() => {
     let alive = true
     setLoading(true)
@@ -939,9 +947,10 @@ export default function GrowthJournal() {
               onSaved={mergeEntry}
               onGoalSaved={mergeGoal}
               refreshKey={retry}
+              mediaLoading={cloudEnabled && finishedMedia !== mediaKey}
+              refreshMedia={() => cloudEnabled ? setMediaRetry(n => n + 1) : setRetry(n => n + 1)}
               connected={connected}
               active={owner === id}
-              onRefresh={() => setRetry((value) => value + 1)}
               onNavigate={navigate}
             />
           ))}

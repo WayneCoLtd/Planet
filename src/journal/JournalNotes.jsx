@@ -1,10 +1,9 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { resolveCloudAssetUrl } from '../cloud'
+import { resolveCloudAssetUrl, toCanonicalCloudUrl } from '../cloud'
 import { invalidateSignedMedia } from '../media/signedUrlCache'
 import {
   OWNER_NAMES,
-  journalText,
 } from './journalModel'
 
 export const notePhotoUrl = (image, thumb = false) =>
@@ -14,15 +13,35 @@ export const notePhotoUrl = (image, thumb = false) =>
       : image.pendingImage.data
     : resolveCloudAssetUrl((thumb ? image.thumbUrl : image.url) || '')
 
-function NotePhoto({ image, open, refresh }) {
-  const [failed, setFailed] = useState(false)
-  const src = notePhotoUrl(image, true)
-  useEffect(() => setFailed(false), [src])
-  return failed || !src ? (
+// Retry a failed site proxy through the same private, signed storage link.
+function photoRoutes(url) {
+  if (!url) return []
+  if (!url.startsWith(window.location.origin + '/sb/storage/v1/object/sign/wwcxrl-journal/')) return [url]
+  return [...new Set([url, toCanonicalCloudUrl(url)])]
+}
+export function useJournalPhoto(primary, preview = '') {
+  const [failed, setFailed] = useState([])
+  const preferred = photoRoutes(primary)
+  const src = [...preferred, ...photoRoutes(preview)].find(url => !failed.includes(url))
+  return {
+    src,
+    usingPreview: Boolean(src && !preferred.includes(src)),
+    onError() {
+      invalidateSignedMedia(toCanonicalCloudUrl(src))
+      setFailed(urls => urls.includes(src) ? urls : [...urls, src])
+    },
+    retry() { setFailed([]) },
+  }
+}
+
+function NotePhoto({ image, open, refresh, loading }) {
+  const { src, onError, retry } = useJournalPhoto(notePhotoUrl(image, true), notePhotoUrl(image))
+  if (!src && loading) return <span className="journal-media-loading" role="status">正在读取照片…</span>
+  return !src ? (
     <button
       className="journal-photo-retry"
       onClick={() => {
-        setFailed(false)
+        retry()
         refresh()
       }}
     >
@@ -39,14 +58,17 @@ function NotePhoto({ image, open, refresh }) {
         alt="手记附图"
         loading="lazy"
         decoding="async"
-        onError={() => { invalidateSignedMedia(image.thumbUrl || image.url); setFailed(true) }}
+        onError={onError}
       />
     </button>
   )
 }
-function NoteViewer({ images, initial, close }) {
+function NoteViewer({ images, initial, close, refresh }) {
   const ref = useRef(null)
-  const [index, setIndex] = useState(initial)
+  const [position, setIndex] = useState(initial)
+  const index = Math.min(position, images.length - 1)
+  const image = images[index]
+  const { src, usingPreview, onError, retry } = useJournalPhoto(notePhotoUrl(image), notePhotoUrl(image, true))
   useEffect(() => {
     const dialog = ref.current,
       focus = document.activeElement
@@ -83,7 +105,10 @@ function NoteViewer({ images, initial, close }) {
           关闭 ×
         </button>
       </header>
-      <img src={notePhotoUrl(images[index])} alt="手记图片完整预览" />
+      {src && <img src={src} alt="手记图片完整预览" onError={onError} />}
+      {(!src || usingPreview) && <button onClick={() => { retry(); refresh() }}>
+        {src ? '已显示预览图，重试原图' : '照片未加载，点击重试'}
+      </button>}
       <footer>
         <button disabled={index === 0} onClick={() => setIndex((i) => i - 1)}>
           上一张
@@ -109,10 +134,10 @@ export default function JournalNotes({
   onRefresh,
   disabled,
   photoStatus,
+  mediaLoading,
 }) {
   const [removed, setRemoved] = useState([])
   const [viewer, setViewer] = useState(null)
-  const text = journalText(notes)
   const images = notes.flatMap((note) => note.images)
   function removeImage(index) {
     const image = images[index]
@@ -135,10 +160,6 @@ export default function JournalNotes({
     <div
       className={`journal-single-editor journal-scrapbook ${images.length ? 'has-images' : ''}`}
     >
-      {text && <details className="journal-old-notes">
-        <summary>查看旧手记</summary>
-        <p>{text}</p>
-      </details>}
       <div className="journal-single-media">
         <div className="journal-media-heading">
           <div className="journal-media-title">
@@ -173,7 +194,8 @@ export default function JournalNotes({
                 <NotePhoto
                   image={image}
                   refresh={onRefresh}
-                  open={() => setViewer({ images, index })}
+                  loading={mediaLoading}
+                  open={() => setViewer(index)}
                 />
                 <figcaption>
                   <span className="journal-photo-number" aria-hidden="true">
@@ -202,10 +224,11 @@ export default function JournalNotes({
           </button>
         )}
       </div>
-      {viewer && (
+      {viewer !== null && images.length > 0 && (
         <NoteViewer
-          images={viewer.images}
-          initial={viewer.index}
+          images={images}
+          initial={viewer}
+          refresh={onRefresh}
           close={() => setViewer(null)}
         />
       )}

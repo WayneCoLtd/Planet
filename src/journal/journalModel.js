@@ -1,6 +1,8 @@
 export const JOURNAL_FIRST_DATE = '2026-10-14'
 export const OWNERS = ['orange', 'pomelo']
 export const OWNER_NAMES = { orange: '小琛', pomelo: '小琳' }
+// Allow every previously valid page (100 notes of 10,000 + the existing feeling) to round-trip.
+export const MAX_FEELING_LENGTH = 100 * 10000 + 100 * 2 + 500
 export const DEFAULT_GOAL = { nights: 5, before: '00:00' }
 
 export function todayInShanghai(now = new Date()) {
@@ -54,7 +56,8 @@ export function emptyEntry(owner, date) {
   }
 }
 // Compare authored content, not versions or expiring image URLs.
-export function entryFingerprint(entry) {
+export function entryFingerprint(value) {
+  const entry = mergeJournalFeeling(value)
   return JSON.stringify({
     sleepTime: entry.sleepTime || '',
     studyMinutes: entry.studyMinutes ?? null,
@@ -69,8 +72,12 @@ export function entryFingerprint(entry) {
 }
 export function redundantDraft(draft, remote) {
   const value = entryFingerprint(draft.entry)
+  let base = draft.base
+  if (base && base !== value) {
+    try { base = entryFingerprint(JSON.parse(base)) } catch { /* Older opaque fingerprints remain comparable as-is. */ }
+  }
   return value === entryFingerprint(remote)
-    || (draft.base != null && value === draft.base)
+    || (base != null && value === base)
     || (draft.entry.version === 0 && value === entryFingerprint(emptyEntry(draft.entry.owner, draft.entry.date)))
 }
 export function mergeRemoteEntries(previous, incoming) {
@@ -104,6 +111,20 @@ export function journalText(notes) {
     .filter((text) => text.length > 0)
     .join('\n\n')
 }
+// Notes supersede activities in records written by the multi-note editor.
+export function mergeJournalFeeling(entry) {
+  const notes = entryNotes(entry)
+  const oldText = journalText(notes.filter(note => note.text.trim()))
+  if (!oldText) return entry
+  const feeling = entry.growthNote || ''
+  const growthNote = feeling && feeling !== oldText ? oldText + '\n\n' + feeling : oldText
+  return {
+    ...entry,
+    activities: '',
+    growthNote,
+    notes: notes.map(note => ({ ...note, text: '' })),
+  }
+}
 export function singleJournalNote(
   notes,
   text,
@@ -133,14 +154,14 @@ export function mergeEntryMedia(local, remote) {
       !local.pendingImage &&
       local.screenshotPath &&
       local.screenshotPath === remote.screenshotPath
-        ? remote.screenshotUrl
+        ? remote.screenshotUrl || local.screenshotUrl
         : local.screenshotUrl,
     notes: entryNotes(local).map((note) => ({
       ...note,
       images: note.images.map((image) => {
         const fresh = images.get(image.path)
         return !image.pendingImage && fresh
-          ? { ...image, url: fresh.url, thumbUrl: fresh.thumbUrl }
+          ? { ...image, url: fresh.url || image.url, thumbUrl: fresh.thumbUrl || image.thumbUrl }
           : image
       }),
     })),
@@ -194,9 +215,9 @@ export function normalizeEntry(value) {
     throw new Error('入睡时间格式不正确')
   if (
     value.growthNote != null &&
-    (typeof value.growthNote !== 'string' || value.growthNote.length > 500)
+    (typeof value.growthNote !== 'string' || value.growthNote.length > MAX_FEELING_LENGTH)
   )
-    throw new Error('感受记录格式不正确，最多 500 字')
+    throw new Error('感受记录格式不正确或内容过长')
   const minutes =
     value.studyMinutes === '' || value.studyMinutes == null
       ? null

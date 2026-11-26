@@ -72,18 +72,17 @@ const source = readFileSync(
 function harness(level = 1, today = '2026-10-17') {
   const records = [],
     tables = [],
-    uploads = []
+    uploads = [],
+    signBatches = []
   const db = {
     storage: {
       from() {
         return {
           upload: async (path, bytes) => { uploads.push({ path, bytes }); return {} },
-          createSignedUrls: async (paths) => ({
-            data: paths.map((path) => ({
-              path,
-              signedUrl: `https://test.invalid/${path}`,
-            })),
-          }),
+          createSignedUrls: async (paths) => {
+            signBatches.push(paths)
+            return { data: paths.map((path) => ({ path, signedUrl: 'https://test.invalid/' + path })) }
+          },
         }
       },
     },
@@ -182,6 +181,7 @@ function harness(level = 1, today = '2026-10-17') {
     records,
     tables,
     uploads,
+    signBatches,
     async run(body, method = 'POST', date = '2026-10-14', headers = {}) {
       const response = {
         setHeader() {},
@@ -429,7 +429,7 @@ test('growth note is optional, preserves line breaks, and is bounded', () => {
     '把问题写清楚了。\n少着急了一点。',
   )
   assert.throws(() =>
-    model.normalizeEntry({ ...old, growthNote: '字'.repeat(501) }),
+    model.normalizeEntry({ ...old, growthNote: '字'.repeat(model.MAX_FEELING_LENGTH + 1) }),
   )
 })
 
@@ -735,4 +735,44 @@ test('partner messages append separately from unpublished feelings and retries k
   assert.deepEqual(Array.from(replies.data.comments, row => row.text), [first.text, second.text])
   assert.equal((await h.run(null, 'GET', page.date + '&comments=pomelo')).data.comments.length, 0)
   assert.equal((await h.run(null, 'GET', '2026-10-15&comments=orange')).data.comments.length, 0)
+})
+
+test('weekly metadata can open without storage; date-only media signs both pages in one batch', async () => {
+  const h = harness()
+  const date = '2026-10-15'
+  for (const owner of model.OWNERS) {
+    const page = model.emptyEntry(owner, date)
+    h.records.push({ _table: 'wwcxrl_journal_entries', owner, date, version: 7, content: {
+      ...page, screenshotPath: owner + '/' + date + '/sleep.jpg',
+      notes: [{ id: 'n', text: '旧手记', images: [{ id: 'p', path: owner + '/full', thumbPath: owner + '/thumb' }] }],
+    } })
+  }
+  const summary = await h.run(null, 'GET', date + '&summary=1')
+  assert.equal(summary.code, 200)
+  assert.equal(summary.data.entries[0].notes[0].images[0].url, undefined)
+  assert.equal(h.signBatches.length, 0)
+  const media = await h.run(null, 'GET', date + '&media=1')
+  assert.equal(media.code, 200)
+  assert.deepEqual(h.signBatches.map(paths => paths.length), [6])
+  for (const entry of media.data.entries) {
+    assert.ok(entry.screenshotUrl)
+    assert.ok(entry.notes[0].images[0].thumbUrl)
+  }
+})
+test('legacy journal text moves once, with old feelings, draft baselines and image identities intact', () => {
+  const photo = { id: 'pic', pendingImage: { data: 'local-bytes' } }
+  const old = { ...model.emptyEntry('orange', '2026-10-25'), activities: '被取代的旧版缓存',
+    notes: [{id:'a', text:'一'.repeat(850), images:[photo]}, {id:'b', text:'第二段\n换行', images:[]}], growthNote:'原有感受' }
+  const migrated = model.mergeJournalFeeling(old)
+  assert.equal(migrated.growthNote, old.notes[0].text + '\n\n第二段\n换行\n\n原有感受')
+  assert.equal(migrated.notes[0].images[0], photo)
+  assert.equal(model.normalizeEntry(migrated).growthNote, migrated.growthNote)
+  assert.equal(model.mergeJournalFeeling(migrated), migrated)
+  assert.equal(model.mergeJournalFeeling({...migrated, growthNote:''}).growthNote, '')
+  assert.equal(model.mergeJournalFeeling({...old, notes:undefined, activities:'最早的记录'}).growthNote, '最早的记录\n\n原有感受')
+  const legacyBase = JSON.stringify({ sleepTime:'', studyMinutes:null, growthNote:old.growthNote,
+    screenshotPath:'', pendingImage:null, notes:old.notes })
+  assert.equal(model.redundantDraft({entry:old, base:legacyBase}, {...migrated, growthNote:'新的云端内容'}), true)
+  assert.equal(model.entryFingerprint(old),model.entryFingerprint(migrated))
+  assert.ok(old.notes[0].text.length)
 })

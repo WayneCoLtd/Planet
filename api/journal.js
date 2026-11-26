@@ -37,38 +37,35 @@ export default async function handler(req, res) {
       .status(503)
       .json({ error: '暂时无法连接记录服务，草稿会留在本机' })
   const db = getAdminClient()
-  async function withImage(entry) {
-    const notes = entryNotes(entry)
-    const paths = [
-      ...new Set(
-        [
-          entry.screenshotPath,
-          ...notes.flatMap((note) =>
-            note.images.flatMap((image) => [image.path, image.thumbPath]),
-          ),
-        ].filter(Boolean),
-      ),
-    ]
-    if (!paths.length) return entry
-    const { data, error } = await db.storage
-      .from(BUCKET)
-      .createSignedUrls(paths, 3600)
-    const urls = new Map(
-      (error ? [] : data || []).map((item) => [item.path, item.signedUrl]),
-    )
-    return {
+  async function signEntryImages(entries, requireLinks = false) {
+    const paths = new Set()
+    for (const entry of entries) {
+      if (entry.screenshotPath) paths.add(entry.screenshotPath)
+      for (const note of entryNotes(entry)) {
+        for (const image of note.images) {
+          if (image.path) paths.add(image.path)
+          if (image.thumbPath) paths.add(image.thumbPath)
+        }
+      }
+    }
+    if (!paths.size) return entries
+    const { data, error } = await db.storage.from(BUCKET).createSignedUrls([...paths], 3600)
+    if (error && requireLinks) throw error
+    const urls = new Map((data || []).filter(item => item?.signedUrl).map(item => [item.path, item.signedUrl]))
+    return entries.map(entry => ({
       ...entry,
       screenshotUrl: urls.get(entry.screenshotPath) || '',
-      notes: notes.map((note) => ({
+      notes: entryNotes(entry).map(note => ({
         ...note,
-        images: note.images.map((image) => ({
+        images: note.images.map(image => ({
           ...image,
           url: urls.get(image.path) || '',
           thumbUrl: urls.get(image.thumbPath) || '',
         })),
       })),
-    }
+    }))
   }
+  const withImage = async entry => (await signEntryImages([entry]))[0]
   try {
     if (req.method === 'GET') {
       const params = new URL(req.url, 'https://local.invalid').searchParams
@@ -89,6 +86,11 @@ export default async function handler(req, res) {
           after = data.length === 200 ? data.at(-1).id : ''
         } while (after)
         return res.status(200).json({ comments })
+      }
+      if (params.get('media') === '1') {
+        const { data, error } = await db.from(ENTRIES).select('*').eq('date', date)
+        if (error) throw error
+        return res.status(200).json({ entries: await signEntryImages(data.map(shape), true) })
       }
       const start = sleepWeekStart(date)
       const [records, ...goalResults] = await Promise.all([
@@ -114,7 +116,7 @@ export default async function handler(req, res) {
       )?.error
       if (error) throw error
       return res.status(200).json({
-        entries: await Promise.all(
+        entries: params.get('summary') === '1' ? records.data.map(shape) : await Promise.all(
           records.data.map((row) => row.date === date ? withImage(shape(row)) : shape(row)),
         ),
         goals: goalResults.flatMap((result) => result.data),
