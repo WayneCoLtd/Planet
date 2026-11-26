@@ -14226,7 +14226,7 @@ async function musicRequest(path, options = {}) {
     })
     const data = await response.json().catch(() => ({}))
     if (!response.ok) return { ok: false, error: (data && data.error) || `请求失败（${response.status}）` }
-    return reuseSignedMedia(data)
+    return data.url && data.expiresIn ? data : reuseSignedMedia(data)
   } catch {
     return { ok: false, error: controller?.signal.aborted ? '读取超时，请刷新重试' : '连不上服务器，检查一下网络' }
   } finally {
@@ -14252,9 +14252,15 @@ const musicState = {
   duration: 0,
   mode: 'list',
   error: '',
-  loaded: false
+  loaded: false,
+  libraryError: ''
 }
 
+const playbackLinks = new Map()
+const pendingLinks = new Map()
+let pendingTrackList = null
+let playRequest = 0
+let audioTrackId = null
 let musicAudio = null
 let musicSnapshot = { ...musicState }
 const musicListeners = new Set()
@@ -14287,6 +14293,7 @@ function musicAudioEl() {
   const audio = new Audio()
   audio.preload = 'metadata'
   audio.addEventListener('timeupdate', () => {
+    if (!audioTrackId || audioTrackId !== musicState.currentId) return
     musicState.progress = audio.currentTime || 0
     const second = Math.floor(musicState.progress)
     // 每秒只通知一次，避免进度条把整棵面板刷太多次。
@@ -14296,28 +14303,41 @@ function musicAudioEl() {
     }
   })
   audio.addEventListener('loadedmetadata', () => {
+    if (!audioTrackId || audioTrackId !== musicState.currentId) return
     musicState.duration = Number.isFinite(audio.duration) ? audio.duration : 0
     musicNotify()
   })
-  audio.addEventListener('play', () => {
+  audio.addEventListener('playing', () => {
+    if (audio.paused || audioTrackId !== musicState.currentId) return
+    musicState.loadingId = null
     musicState.playing = true
     // 播起来了就把上一次的报错收掉，不然那句提示会一直挂着。
     musicState.error = ''
     musicNotify()
   })
-  audio.addEventListener('pause', () => { musicState.playing = false; musicNotify() })
+  audio.addEventListener('waiting', () => {
+    if (audio.paused || !audioTrackId || audioTrackId !== musicState.currentId) return
+    musicState.loadingId = audioTrackId
+    musicNotify()
+  })
+  audio.addEventListener('pause', () => { if (audio.paused) { musicState.playing = false; musicNotify() } })
   audio.addEventListener('ended', () => {
+    if (!audio.ended || !audioTrackId || audioTrackId !== musicState.currentId) return
     musicState.playing = false
     musicNotify()
     musicPlayStep(1)
   })
   audio.addEventListener('error', () => {
-    if (!audio.src) return
+    if (!audio.error || !audioTrackId || audioTrackId !== musicState.currentId) return
+    playbackLinks.delete(audioTrackId)
+    audioTrackId = null
     invalidateSignedMedia(toCanonicalCloudUrl(audio.src))
+    audio.pause()
     audio.removeAttribute('src')
+    audio.load()
     musicState.playing = false
     musicState.loadingId = null
-    musicState.error = '这首暂时放不出来，换一首试试'
+    musicState.error = '这首暂时没放出来，点歌曲可以重试。'
     musicNotify()
   })
   musicAudio = audio
@@ -14329,77 +14349,92 @@ function musicPlayableUrl(url) {
   return resolveCloudAssetUrl(url) || url
 }
 
-async function musicLoadTracks() {
+function musicLoadTracks() {
+  if (!pendingTrackList) pendingTrackList = refreshTrackList().finally(() => { pendingTrackList = null })
+  return pendingTrackList
+}
+
+async function refreshTrackList() {
   const data = await musicRequest(MUSIC_API)
   musicState.loaded = true
-  if (!data.ok) {
-    musicState.error = data.error || '曲库暂时拿不到'
-    musicNotify()
-    return
-  }
-  musicState.tracks = Array.isArray(data.tracks) ? data.tracks : []
-  if (musicState.currentId && !musicState.tracks.some(track => track.id === musicState.currentId)) {
-    musicState.currentId = null
+  musicState.libraryError = data.ok ? '' : data.error || '曲库暂时未读到'
+  if (data.ok) {
+    musicState.tracks = Array.isArray(data.tracks) ? data.tracks : []
+    playbackLinks.clear()
+    const until = Date.now() + (Number(data.playExpiresIn) || 0) * 1000
+    for (const track of musicState.tracks) {
+      if (track.playUrl) playbackLinks.set(track.id, { url: track.playUrl, until })
+    }
+    if (musicState.currentId && !musicCurrentTrack()) {
+      playRequest++
+      musicAudio?.pause()
+      audioTrackId = null
+      musicState.currentId = musicState.loadingId = null
+      musicState.playing = false
+    }
   }
   musicNotify()
 }
 
-async function musicPlay(id) {
+function requestPlayLink(id) {
+  if (!pendingLinks.has(id)) {
+    const request = musicRequest(MUSIC_API + '?sign=' + encodeURIComponent(id)).then(data => {
+      if (!data.ok || !data.url) throw new Error(data.error || '播放地址暂未取到')
+      playbackLinks.set(id, { url: data.url, until: Date.now() + (data.expiresIn || 0) * 1000 })
+      return data.url
+    }).finally(() => pendingLinks.delete(id))
+    pendingLinks.set(id, request)
+  }
+  return pendingLinks.get(id)
+}
+
+async function musicPlay(id, restart = false) {
   const track = musicState.tracks.find(item => item.id === id)
   if (!track) return
   const audio = musicAudioEl()
-  // 同一首歌再点一次 = 播放/暂停切换
-  if (musicState.currentId === id && audio.src) {
-    if (audio.paused) {
-      try {
-        await audio.play()
-      } catch {
-        musicState.error = '浏览器拦住了播放，再点一下播放键试试'
-        musicNotify()
-      }
-    } else {
-      audio.pause()
-    }
-    return
-  }
-  musicState.currentId = id
-  musicState.loadingId = id
-  musicState.error = ''
-  musicState.progress = 0
-  musicState.duration = Number(track.duration) || 0
-  musicNotify()
-
-  const data = await musicRequest(`${MUSIC_API}?sign=${encodeURIComponent(id)}`)
-  if (!data.ok || !data.url) {
+  const request = ++playRequest
+  const same = musicState.currentId === id
+  if (same && !restart && (musicState.loadingId || (audioTrackId === id && !audio.paused))) {
+    audio.pause()
     musicState.loadingId = null
-    musicState.error = data.error || '拿不到播放地址'
+    musicState.playing = false
     musicNotify()
     return
   }
-  audio.src = musicPlayableUrl(data.url)
-  audio.loop = musicState.mode === 'single'
-  try {
-    await audio.play()
-  } catch {
-    musicState.error = '浏览器拦住了播放，再点一下播放键试试'
+  const resume = !restart && same && audioTrackId === id && Boolean(audio.src)
+  if (!resume) {
+    audio.pause()
+    audioTrackId = null
+    musicLastSecond = -1
+    musicState.progress = 0
+    musicState.duration = Number(track.duration) || 0
   }
-  musicState.loadingId = null
+  musicState.currentId = musicState.loadingId = id
+  musicState.playing = false
+  musicState.error = ''
   musicNotify()
+  try {
+    if (!resume) {
+      const cached = playbackLinks.get(id)
+      const url = cached && cached.until > Date.now() + 60000 ? cached.url : await requestPlayLink(id)
+      if (request !== playRequest) return
+      audioTrackId = id
+      audio.src = musicPlayableUrl(url)
+    }
+    audio.loop = musicState.mode === 'single'
+    await audio.play()
+  } catch (error) {
+    if (request !== playRequest) return
+    musicState.loadingId = null
+    musicState.playing = false
+    musicState.error = error.name === 'NotAllowedError' ? '请再点一下播放键' : '播放暂未开始，点歌曲重试。'
+    musicNotify()
+  }
 }
 
 function musicTogglePlay() {
-  const audio = musicAudioEl()
-  if (musicState.currentId && audio.src) {
-    if (audio.paused) {
-      audio.play().catch(() => {
-        musicState.error = '浏览器拦住了播放，再点一下播放键试试'
-        musicNotify()
-      })
-    }
-    else audio.pause()
-    return
-  }
-  if (musicState.tracks.length) musicPlay(musicState.tracks[0].id)
+  const id = musicState.currentId || musicState.tracks[0]?.id
+  if (id) void musicPlay(id)
 }
 
 function musicNextId(step) {
@@ -14417,12 +14452,12 @@ function musicNextId(step) {
 
 function musicPlayStep(step) {
   const nextId = musicNextId(step)
-  if (nextId) musicPlay(nextId)
+  if (nextId) musicPlay(nextId, true)
 }
 
 function musicSeek(seconds) {
   const audio = musicAudioEl()
-  if (!audio.src) return
+  if (!audio.src || audioTrackId !== musicState.currentId) return
   try {
     audio.currentTime = Math.max(0, Math.min(Number(seconds) || 0, audio.duration || 0))
     musicNotify()
@@ -14550,7 +14585,7 @@ function MusicTransport({ music }) {
           <MusicIcon name={mode.icon} size={17} />
         </button>
         <button type="button" className="music-step-button" onClick={() => musicPlayStep(-1)} disabled={!music.tracks.length} aria-label="上一首"><MusicIcon name="prev" /></button>
-        <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing ? '暂停' : '播放'}>
+        <button type="button" className="music-play-button" onClick={musicTogglePlay} disabled={!music.tracks.length} aria-label={music.playing || music.loadingId ? '暂停' : '播放'}>
           {music.loadingId ? <span className="music-spinner" aria-hidden="true" /> : <MusicIcon name={music.playing ? 'pause' : 'play'} size={22} />}
         </button>
         <button type="button" className="music-step-button" onClick={() => musicPlayStep(1)} disabled={!music.tracks.length} aria-label="下一首"><MusicIcon name="next" /></button>
@@ -14609,7 +14644,8 @@ function MusicDock() {
             <button type="button" className="music-panel-close" onClick={() => setOpen(false)} aria-label="收起播放器"><MusicIcon name="close" size={14} /></button>
           </div>
 
-          {music.error && <p className="music-panel-error">{music.error}</p>}
+          {music.error && <p className="music-panel-error" role="status">{music.error}</p>}
+          {music.libraryError && <p className="music-panel-error">{music.libraryError} <button onClick={musicLoadTracks}>重试</button></p>}
 
           <MusicTransport music={music} />
 
@@ -14627,8 +14663,8 @@ function MusicDock() {
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="music-panel-empty">{music.loaded ? '曲库还是空的，先去管理页放一首吧。' : '正在加载曲库…'}</p>
+          ) : !music.libraryError && (
+            <p className="music-panel-empty">{music.loaded ? '歌单里还没有歌曲。' : '正在加载曲库…'}</p>
           )}
           </div>
         </div>
@@ -14728,7 +14764,8 @@ function MusicRoom() {
             </div>
           </div>
 
-          {music.error && <p className="music-room-error">{music.error}</p>}
+          {music.error && <p className="music-room-error" role="status">{music.error}</p>}
+          {music.libraryError && <p className="music-room-error" role="status">{music.libraryError} <button onClick={musicLoadTracks}>重新读取歌单</button></p>}
 
           {/* 音乐室自己带一套完整播放器，不用再去顶栏点开 */}
           <MusicTransport music={music} />
@@ -14737,13 +14774,13 @@ function MusicRoom() {
             <ul className="music-track-list">
               {music.tracks.map((track, index) => (
                 <li key={track.id} className={track.id === music.currentId ? 'is-current' : ''}>
-                  <button type="button" onClick={() => musicPlay(track.id)} aria-label={`播放 ${track.title}`}>
+                  <button type="button" onClick={() => musicPlay(track.id)} aria-label={(music.currentId === track.id && (music.playing || music.loadingId) ? '暂停 ' : '播放 ') + track.title}>
                     <span className="music-track-cover" aria-hidden="true">
                       {track.coverUrl ? <img src={musicPlayableUrl(track.coverUrl)} alt="" loading="lazy" /> : <i>🎵</i>}
                     </span>
                     <span className="music-track-text">
                       <strong>{track.title}</strong>
-                      <small>{[track.artist, track.mood].filter(Boolean).join(' · ') || '未标注'}</small>
+                      <small>{music.loadingId === track.id ? '准备播放…' : music.currentId === track.id && music.error ? '点此重试' : [track.artist, track.mood].filter(Boolean).join(' · ')}</small>
                     </span>
                     <span className="music-track-side">
                       {track.id === music.currentId && music.playing ? <em>♪</em> : <em>{index + 1}</em>}
@@ -14753,9 +14790,9 @@ function MusicRoom() {
                 </li>
               ))}
             </ul>
-          ) : (
+          ) : !music.libraryError && (
             <p className="music-room-empty">
-              {music.loaded ? '曲库还是空的。到管理页（?admin=1）的「🎵 音乐管理」上传第一首歌吧。' : '正在加载曲库…'}
+              {music.loaded ? '歌单里还没有歌曲。' : '正在加载曲库…'}
             </p>
           )}
         </div>

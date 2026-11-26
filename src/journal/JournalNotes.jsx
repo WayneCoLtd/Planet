@@ -5,8 +5,6 @@ import { invalidateSignedMedia } from '../media/signedUrlCache'
 import {
   OWNER_NAMES,
   journalText,
-  singleJournalNote,
-  bulletAtLine,
 } from './journalModel'
 
 export const notePhotoUrl = (image, thumb = false) =>
@@ -110,116 +108,42 @@ export default function JournalNotes({
   onImages,
   onRefresh,
   disabled,
-  active,
   photoStatus,
 }) {
   const [removed, setRemoved] = useState([])
   const [viewer, setViewer] = useState(null)
-  const input = useRef(null)
-  const composing = useRef(false)
   const text = journalText(notes)
   const images = notes.flatMap((note) => note.images)
-  function fit() {
-    if (!input.current) return
-    input.current.style.height = 'auto'
-    input.current.style.height = `${Math.max(132, input.current.scrollHeight + 1)}px`
-  }
-  React.useLayoutEffect(fit, [text, active])
-  useEffect(() => {
-    window.addEventListener('resize', fit)
-    return () => window.removeEventListener('resize', fit)
-  }, [])
-  function changeText(value) {
-    onChange(singleJournalNote(notes, value))
-  }
-  function putText(value, caret) {
-    if (value.length > 10000) return
-    changeText(value)
-    requestAnimationFrame(() => {
-      input.current?.focus()
-      input.current?.setSelectionRange(caret, caret)
-    })
-  }
-  function addBullet() {
-    const result = bulletAtLine(text, input.current?.selectionStart || 0)
-    putText(result.text, result.caret)
-  }
-  function keyDown(event) {
-    if (
-      event.key !== 'Enter' ||
-      event.shiftKey ||
-      composing.current ||
-      event.nativeEvent.isComposing ||
-      event.nativeEvent.keyCode === 229
-    )
-      return
-    const start = event.currentTarget.selectionStart,
-      end = event.currentTarget.selectionEnd
-    const lineStart = start === 0 ? 0 : text.lastIndexOf('\n', start - 1) + 1
-    const line = text.slice(lineStart, start)
-    if (!line.startsWith('· ')) return
-    event.preventDefault()
-    if (!line.slice(2).trim())
-      putText(text.slice(0, lineStart) + text.slice(end), lineStart)
-    else putText(text.slice(0, start) + '\n· ' + text.slice(end), start + 3)
-  }
   function removeImage(index) {
-    setRemoved((stack) => [...stack, { image: images[index], index }])
-    onPhotoChange(
-      singleJournalNote(
-        notes,
-        text,
-        images.filter((_, i) => i !== index),
-      ),
-    )
+    const image = images[index]
+    const parent = notes.find(note => note.images.includes(image))
+    setRemoved(stack => [...stack, { parentId: parent.id, index: parent.images.indexOf(image), image }])
+    onPhotoChange(notes.map(note => note === parent
+      ? { ...note, images: note.images.filter(item => item !== image) } : note))
   }
   function undoImage() {
-    const action = removed.at(-1),
-      next = [...images]
-    if (!next.some((image) => image.id === action.image.id))
-      next.splice(Math.min(action.index, next.length), 0, action.image)
-    onPhotoChange(singleJournalNote(notes, text, next))
-    setRemoved((stack) => stack.slice(0, -1))
+    const action = removed.at(-1)
+    onPhotoChange(notes.map(note => {
+      if (note.id !== action.parentId || note.images.some(item => item.id === action.image.id)) return note
+      const restored = [...note.images]
+      restored.splice(action.index, 0, action.image)
+      return { ...note, images: restored }
+    }))
+    setRemoved(stack => stack.slice(0, -1))
   }
   return (
     <div
       className={`journal-single-editor journal-scrapbook ${images.length ? 'has-images' : ''}`}
     >
-      <div className="journal-single-text">
-        <div className="journal-editor-hint">
-          <button
-            type="button"
-            disabled={disabled}
-            onClick={addBullet}
-            title="当前行加分点符号"
-            aria-label={`${OWNER_NAMES[owner]}手记分点`}
-          >
-            · 分点
-          </button>
-        </div>
-        <textarea
-          ref={input}
-          rows={3}
-          maxLength={10000}
-          aria-label={`${OWNER_NAMES[owner]}今日手记`}
-          value={text}
-          disabled={disabled}
-          placeholder="今天做了什么？"
-          onChange={(event) => changeText(event.target.value)}
-          onKeyDown={keyDown}
-          onCompositionStart={() => {
-            composing.current = true
-          }}
-          onCompositionEnd={() => {
-            composing.current = false
-          }}
-        />
-      </div>
+      {text && <details className="journal-old-notes">
+        <summary>查看旧手记</summary>
+        <p>{text}</p>
+      </details>}
       <div className="journal-single-media">
         <div className="journal-media-heading">
           <div className="journal-media-title">
             <span aria-hidden="true">✷</span>
-            <strong>手记照片</strong>
+            <strong>今日照片</strong>
             {!!images.length && <small>{images.length} 张</small>}
           </div>
           <label className="journal-upload">
@@ -234,9 +158,9 @@ export default function JournalNotes({
                 const files = Array.from(event.target.files || [])
                 event.target.value = ''
                 if (!files.length) return
-                const unified = singleJournalNote(notes, text)
-                onChange(unified)
-                void onImages(unified[0].id, files)
+                const note = notes.at(-1) || { id: 'journal-body', text: '', images: [] }
+                if (!notes.length) onChange([note])
+                void onImages(note.id, files)
               }}
             />
           </label>
@@ -253,7 +177,7 @@ export default function JournalNotes({
                 />
                 <figcaption>
                   <span className="journal-photo-number" aria-hidden="true">
-                    {String(index + 1).padStart(2, '0')} <span> / 手记照片</span>
+                    {String(index + 1).padStart(2, '0')} <span> / 今日照片</span>
                   </span>
                   <button
                     className="journal-photo-remove"

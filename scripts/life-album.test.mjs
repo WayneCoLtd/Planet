@@ -16,32 +16,33 @@ function harness({ level = 1, existing = null, upload = async () => ({}) } = {})
   const db = {
     from(table) {
       calls.push(['table', table])
+      let patch
+      const conditions = []
+      const one = async () => {
+        if (!existing || !conditions.every(([key, value]) => (existing[key] ?? null) === value)) return { data: null }
+        if (patch) existing = { ...existing, ...patch }
+        return { data: existing }
+      }
       const q = {
         select() {
           return q
         },
-        eq() {
-          return q
-        },
-        is(column, value) { calls.push(['is', column, value]); return q },
+        eq(column, value) { conditions.push([column, value]); return q },
+        is(column, value) { conditions.push([column, value]); calls.push(['is', column, value]); return q },
         not(column, op, value) { calls.push(['not', column, op, value]); return q },
         order() { return q },
         limit() { return q },
         then(resolve) { return Promise.resolve({data: []}).then(resolve) },
-        maybeSingle: async () => ({ data: existing }),
+        maybeSingle: one,
+        single: one,
         insert(row) {
           calls.push(['insert', row])
           return { select: () => ({ single: async () => ({ data: row }) }) }
         },
         update(row) {
           calls.push(['update', row])
-          return {
-            eq: () => ({
-              select: () => ({
-                single: async () => ({ data: { ...existing, ...row } }),
-              }),
-            }),
-          }
+          patch = row
+          return q
         },
       }
       return q
@@ -52,6 +53,7 @@ function harness({ level = 1, existing = null, upload = async () => ({}) } = {})
           getPublicUrl: (path) => ({
             data: { publicUrl: `https://test.invalid/${path}` },
           }),
+          remove: async paths => { calls.push(['remove', ...paths]); return {} },
           upload: (path, bytes) => {
             calls.push(['upload', path])
             return upload(path, bytes)
@@ -61,6 +63,7 @@ function harness({ level = 1, existing = null, upload = async () => ({}) } = {})
     },
   }
   const context = vm.createContext({
+    randomUUID: () => '00000000-0000-4000-8000-000000000001',
     LEVEL_SITE: 1,
     readLevel: () => level,
     checkServiceConfig: () => ({ ok: true }),
@@ -207,4 +210,27 @@ test('pagination deduplicates records; hiding and restoring does not lose other 
   assert.ok(hidden.calls.some(c => c[0] === 'not' && c[1] === 'deleted_at'))
   const locked = harness({level:0})
   assert.equal((await locked.run('GET', null, '/api/life-album?hidden=1')).code, 401)
+})
+
+test('published photo edits are versioned, retryable, and leave the previous pair visible if replacement fails', async () => {
+  const existing = { ...body, image_path: 'old.jpg', thumb_path: 'old-thumb.jpg' }
+  const edit = { ...body, action: 'edit', editId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', base: null, caption: '新配文' }
+  const h = harness({ existing })
+  const packed = Buffer.from(await (await encodePhotoUpload(edit)).arrayBuffer())
+  const send = (client) => client.run('PATCH', packed, '/api/life-album', { 'content-type': PHOTO_UPLOAD_TYPE })
+  const saved = await send(h)
+  assert.equal(saved.code, 200)
+  assert.notEqual(saved.data.photo.thumb_path, existing.thumb_path)
+  assert.equal(saved.data.photo.edit_id, edit.editId)
+  assert.equal((await send(h)).code, 200)
+  assert.equal(h.calls.filter(([name]) => name === 'upload').length, 2)
+  const stale = await h.run('PATCH', { ...edit, editId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' })
+  assert.equal(stale.code, 409)
+  assert.equal(stale.data.current.caption, edit.caption)
+  const failing = harness({ existing, upload: async path => path.endsWith('-thumb.jpg') ? { error: new Error('upload') } : {} })
+  assert.equal((await send(failing)).code, 500)
+  assert.equal(failing.calls.some(([name]) => name === 'update'), false)
+  const cleanup = failing.calls.find(([name]) => name === 'remove')
+  assert.equal(cleanup.length, 3)
+  assert(!cleanup.includes('old.jpg'))
 })

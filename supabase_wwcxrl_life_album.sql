@@ -12,6 +12,7 @@ create table if not exists public.wwcxrl_life_photos (
   created_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+alter table public.wwcxrl_life_photos add column if not exists edit_id uuid;
 create index if not exists wwcxrl_life_photos_order on public.wwcxrl_life_photos (taken_on desc, id desc) where deleted_at is null;
 alter table public.wwcxrl_life_photos enable row level security;
 -- No anonymous policies: access through the existing password-protected server API.

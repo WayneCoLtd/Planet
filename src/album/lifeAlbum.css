@@ -281,3 +281,32 @@
   .life-album .life-composer summary { padding: 0 12px; font-size: 13px; }
   .life-album .life-play { font-size: 13px; }
 }
+
+.life-album .life-photo-meta { flex-wrap: wrap; align-items: center; }
+.life-album .life-photo-meta .life-edit-link {
+  min-height: 44px; padding: 3px 8px; color: var(--ui-ink, #825541); background: transparent; border: 0; box-shadow: none;
+}
+.life-edit-dialog {
+  width: min(420px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 20px;
+  border: 1px solid #dcc4ae; border-radius: 18px; background: #fffbf6; color: #574436;
+}
+.life-edit-dialog::backdrop { background: rgb(39 30 27 / .5); }
+.life-edit-dialog h2 { margin: 0 0 12px; font-size: 1.25rem; }
+.life-edit-dialog .life-fields { display: grid; gap: 12px; min-width: 0; padding: 0; border: 0; }
+.life-edit-dialog img { width: 100%; max-height: 18dvh; object-fit: contain; border-radius: 8px; }
+.life-edit-dialog :is(input,select,textarea) { box-sizing: border-box; width: 100%; min-width: 0; font: inherit; font-size: 16px; }
+.life-edit-dialog footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; }
+.life-edit-dialog button { min-height: 44px; padding: 0 16px; border-radius: 12px; color: #654535; background: #fff7ef; border: 1px solid #ddc8b6; }
+.life-edit-dialog button[type=submit] { background: #f8d5bb; border-color: #dcac89; }
+.life-edit-dialog [role=alert] { color: #913d39; }
+
+.life-edit-conflict { padding: 12px; background: #fff0df; border-radius: 10px; }
+.life-edit-conflict img { display: block; width: auto; max-width: 100%; max-height: 76px; margin-top: 6px; }
+.life-edit-conflict p { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.life-edit-dialog .life-replace-file { position: relative; align-items: center; cursor: pointer; }
+.life-replace-file span { display: grid; place-items: center; min-height: 44px; padding: 0 16px; border: 1px dashed #c89d82; border-radius: 12px; }
+.life-edit-dialog .life-replace-file input { position: absolute; inset: 0; height: 100%; opacity: 0; cursor: pointer; }
+.life-replace-file:focus-within span { outline: 2px solid #94593e; outline-offset: 2px; }
+.life-replace-file small { max-width: 100%; overflow-wrap: anywhere; }
+.life-edit-dialog button { box-shadow: none; }

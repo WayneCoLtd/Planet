@@ -12,9 +12,9 @@ export function rememberDraft(key, entry, base) {
 
 function openStore() {
   return new Promise((resolve, reject) => {
-    const request = indexedDB.open('wwcxrl-journal-v1', 2)
+    const request = indexedDB.open('wwcxrl-journal-v1', 3)
     request.onupgradeneeded = () => {
-      for (const name of ['drafts', 'entries', 'goals', 'recovery'])
+      for (const name of ['drafts', 'entries', 'goals', 'recovery', 'comments'])
         if (!request.result.objectStoreNames.contains(name))
           request.result.createObjectStore(name, { keyPath: 'key' })
     }
@@ -118,13 +118,13 @@ async function saveLocalVersion(store, key, value) {
     }
   })
 }
-export async function journalRequest(body, date) {
+export async function journalRequest(body, date, commentOwner) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), 30000)
   try {
     const binary = body?.action === 'image'
     const response = await fetch(
-      date ? `/api/journal?date=${date}` : '/api/journal',
+      date ? '/api/journal?' + new URLSearchParams(commentOwner ? { date, comments: commentOwner } : { date }) : '/api/journal',
       {
         method: date ? 'GET' : 'POST',
         headers: { 'Content-Type': binary ? PHOTO_UPLOAD_TYPE : 'application/json' },
@@ -141,6 +141,24 @@ export async function journalRequest(body, date) {
     return reuseSignedMedia(data)
   } finally {
     clearTimeout(timer)
+  }
+}
+export async function readComments(owner, date) {
+  if (cloudEnabled) return (await journalRequest(null, date, owner)).comments
+  const prefix = entryKey(owner, date) + ':'
+  return journalStore('comments', 'getAll', IDBKeyRange.bound(prefix, prefix + '\uffff'))
+}
+export async function postComment(owner, date, id, text) {
+  if (cloudEnabled) return (await journalRequest({ action: 'comment', owner, date, id, text })).comment
+  const key = entryKey(owner, date) + ':' + id
+  const comment = { key, owner, date, id, text, created_at: new Date().toISOString() }
+  try {
+    await journalStore('comments', 'add', comment)
+    return comment
+  } catch (error) {
+    const existing = await journalStore('comments', 'get', key)
+    if (existing?.text === text) return existing
+    throw error
   }
 }
 export async function loadWeek(date) {

@@ -15,6 +15,7 @@ import {
 } from '../src/journal/journalModel.js'
 
 const ENTRIES = 'wwcxrl_journal_entries'
+const COMMENTS = 'wwcxrl_journal_comments'
 const GOALS = 'wwcxrl_journal_goals'
 const BUCKET = 'wwcxrl-journal'
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -70,11 +71,25 @@ export default async function handler(req, res) {
   }
   try {
     if (req.method === 'GET') {
-      const date = new URL(req.url, 'https://local.invalid').searchParams.get(
-        'date',
-      )
-      if (!validDate(date))
-        return res.status(400).json({ error: '请选择有效日期' })
+      const params = new URL(req.url, 'https://local.invalid').searchParams
+      const date = params.get('date')
+      if (!validDate(date)) return res.status(400).json({ error: '请选择有效日期' })
+      if (params.has('comments')) {
+        const owner = params.get('comments')
+        if (!OWNERS.includes(owner)) return res.status(400).json({ error: '书页署名不正确' })
+        const comments = []
+        let after = ''
+        do {
+          let query = db.from(COMMENTS).select('id,owner,date,text,created_at')
+            .eq('owner', owner).eq('date', date).order('id').limit(200)
+          if (after) query = query.gt('id', after)
+          const { data, error } = await query
+          if (error) throw error
+          comments.push(...data)
+          after = data.length === 200 ? data.at(-1).id : ''
+        } while (after)
+        return res.status(200).json({ comments })
+      }
       const start = sleepWeekStart(date)
       const [records, ...goalResults] = await Promise.all([
         db
@@ -158,6 +173,20 @@ export default async function handler(req, res) {
       body.date > todayInShanghai()
     )
       return res.status(400).json({ error: '只能记录已到来的日期' })
+    if (body.action === 'comment') {
+      const text = typeof body.text === 'string' ? body.text.trim() : ''
+      if (!uuid.test(body.id) || !text || text.length > 10000)
+        return res.status(400).json({ error: '请填写一万字以内的留言' })
+      const row = { id: body.id, owner: body.owner, date: body.date, text }
+      const inserted = await db.from(COMMENTS).insert(row).select('*').single()
+      if (!inserted.error) return res.status(200).json({ comment: inserted.data })
+      if (inserted.error.code !== '23505') throw inserted.error
+      const existing = await db.from(COMMENTS).select('*').eq('id', row.id).single()
+      if (existing.error) throw existing.error
+      if (existing.data.owner !== row.owner || existing.data.date !== row.date || existing.data.text !== text)
+        return res.status(409).json({ error: '这条留言已提交，请重新打开后再写一条' })
+      return res.status(200).json({ comment: existing.data })
+    }
     if (body.action === 'image') {
       if (!uuid.test(body.id))
         return res.status(400).json({ error: '截图格式不正确' })

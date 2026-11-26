@@ -75,13 +75,13 @@ function shapeTrack(row, coverUrl) {
   }
 }
 
-// 一次性给整页封面签名，避免每首歌各发一次请求。
-async function signCovers(admin, rows) {
-  const paths = Array.from(new Set(rows.map(row => row.cover_path).filter(Boolean)))
+// 批量签发限时地址，歌曲只在点击播放后才传输。
+async function signPaths(admin, values, ttl) {
+  const paths = Array.from(new Set(values.filter(Boolean)))
   if (!paths.length) return {}
-  const { data, error } = await admin.storage.from(MUSIC_BUCKET).createSignedUrls(paths, COVER_TTL_SECONDS)
+  const { data, error } = await admin.storage.from(MUSIC_BUCKET).createSignedUrls(paths, ttl)
   if (error) {
-    console.warn('[wwcxrl music] cover sign failed', error.message)
+    console.warn('[wwcxrl music] batch sign failed', error.message)
     return {}
   }
   const map = {}
@@ -101,17 +101,18 @@ async function listTracks(admin, includeDrafts) {
   const { data, error } = await query
   if (error) throw new Error(error.message)
   const rows = data || []
-  const covers = await signCovers(admin, rows)
-  return rows.map(row => shapeTrack(row, covers[row.cover_path]))
+  const [covers, audio] = await Promise.all([
+    signPaths(admin, rows.map(row => row.cover_path), COVER_TTL_SECONDS),
+    signPaths(admin, rows.filter(row => row.status === 'published').map(row => row.audio_path), PLAY_TTL_SECONDS)
+  ])
+  return rows.map(row => ({ ...shapeTrack(row, covers[row.cover_path]), playUrl: audio[row.audio_path] || '' }))
 }
 
-async function handleSignPlay(response, admin, id) {
+async function handleSignPlay(response, admin, id, level) {
   if (!isSafeId(id)) return response.status(400).json({ ok: false, error: '曲目 ID 不合法' })
-  const { data: row, error } = await admin
-    .from('wwcxrl_music_tracks')
-    .select('id,audio_path')
-    .eq('id', id)
-    .maybeSingle()
+  let query = admin.from('wwcxrl_music_tracks').select('id,audio_path').eq('id', id)
+  if (level < LEVEL_ADMIN) query = query.eq('status', 'published')
+  const { data: row, error } = await query.maybeSingle()
   if (error) return response.status(500).json({ ok: false, error: error.message })
   if (!row || !row.audio_path) return response.status(404).json({ ok: false, error: '这首还没有音频文件' })
   const { data: signed, error: signError } = await admin.storage
@@ -235,10 +236,10 @@ export default async function handler(request, response) {
     if (request.method === 'GET') {
       const url = new URL(request.url || '/api/music', 'https://placeholder.local')
       const signId = url.searchParams.get('sign')
-      if (signId) return await handleSignPlay(response, admin, signId)
+      if (signId) return await handleSignPlay(response, admin, signId, level)
       const includeDrafts = url.searchParams.get('all') === '1' && level >= LEVEL_ADMIN
       const tracks = await listTracks(admin, includeDrafts)
-      return response.status(200).json({ ok: true, tracks, canManage: level >= LEVEL_ADMIN })
+      return response.status(200).json({ ok: true, tracks, playExpiresIn: PLAY_TTL_SECONDS, canManage: level >= LEVEL_ADMIN })
     }
 
     if (request.method === 'POST') {

@@ -32,6 +32,32 @@ export async function albumStore(store, action, value) {
     }
   })
 }
+export async function editLocalPhoto(body) {
+  const db = await database()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', 'readwrite')
+    const store = tx.objectStore('photos')
+    let saved, conflict
+    const read = store.get(body.id)
+    read.onsuccess = () => {
+      const row = read.result
+      if (row?.edit_id === body.editId) { saved = row; return }
+      if (!row || (row.edit_id ?? null) !== body.base) {
+        conflict = Object.assign(new Error('另一台设备修改了这张照片，你填写的内容还在。'), { current: row })
+        tx.abort()
+        return
+      }
+      saved = { ...row, owner: body.owner, taken_on: body.taken_on, caption: body.caption, edit_id: body.editId }
+      if (body.image) Object.assign(saved, {
+        image: body.image, thumbnail: body.thumbnail, src: body.image, thumb: body.thumbnail,
+        width: body.width, height: body.height,
+      })
+      store.put(saved)
+    }
+    tx.oncomplete = () => { db.close(); resolve(saved) }
+    tx.onabort = tx.onerror = () => { db.close(); reject(conflict || tx.error) }
+  })
+}
 export function mergeLifePhotos(previous, next) {
   return [
     ...new Map(

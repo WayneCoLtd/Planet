@@ -1835,3 +1835,36 @@
     margin-top: 4px;
   }
 }
+
+.journal-cream .journal-page .journal-full-text {
+  display: block; width: 100%; min-width: 0; max-height: none;
+  box-sizing: border-box; resize: none; overflow: hidden; overflow-wrap: anywhere;
+  border: 1px solid #ddc8b1; border-radius: 10px; padding: 9px 12px;
+  background: #fffdf8; color: #574436; font: inherit; font-size: 16px; line-height: 1.7;
+}
+.journal-old-notes { margin-block: 8px; font-size: 14px; }
+.journal-old-notes summary { cursor: pointer; }
+.journal-comment p, .journal-old-notes p { white-space: pre-wrap; overflow-wrap: anywhere; margin: 6px 0 0; line-height: 1.75; }
+.journal-cream .journal-page .journal-comments {
+  min-width: 0; margin: 12px 0; padding: 14px; border: 1px solid #eadbc6; border-radius: 14px; background: #fff7e9;
+}
+.journal-cream .is-pomelo .journal-comments { background: #fff3ef; }
+.journal-comments header, .journal-comment > div { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 10px; }
+.journal-comments h4 { margin: 0; }
+.journal-comment { border-top: 1px dashed #dfcbb5; padding-top: 10px; margin-top: 10px; color: #574436; }
+.journal-comment time, .journal-comments small { font-size: 12px; color: #70594d; }
+.journal-comments form { display: grid; gap: 7px; margin-top: 8px; }
+.journal-comments form button { justify-self: end; }
+.journal-cream .journal-comments button { min-height: 40px; padding-inline: 12px; }
+@media (max-width: 640px) { .journal-cream .journal-comments button { min-height: 44px; } }
+
+.warm-ui .journal-shell.journal-cream .journal-comments button {
+  border: 1px solid #d8baa8 !important; background: #fffcf7 !important;
+  color: #704433 !important; box-shadow: none !important;
+}
+.warm-ui .journal-shell.journal-cream .journal-comments form button {
+  background: #93543f !important; border-color: #93543f !important; color: #fffaf5 !important;
+}
+.warm-ui .journal-shell.journal-cream .journal-full-text {
+  background: #fffdf8 !important; color: #574436 !important;
+}

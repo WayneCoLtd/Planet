@@ -37,6 +37,7 @@ import {
   saveGoal,
 } from './journalStore'
 import './growthJournal.css'
+import JournalComments, { GrowingTextarea } from './JournalComments'
 import JournalNotes, { notePhotoUrl } from './JournalNotes'
 
 function ScreenshotViewer({ entry, close }) {
@@ -80,6 +81,7 @@ function JournalPage({
   goals,
   onSaved,
   onGoalSaved,
+  refreshKey,
   connected,
   active,
   onRefresh,
@@ -106,7 +108,6 @@ function JournalPage({
   const [recovery, setRecovery] = useState([])
   const [viewImage, setViewImage] = useState(false)
   const [sleepEditing, setSleepEditing] = useState(false)
-  const growthInput = useRef(null)
   const [imageFailed, setImageFailed] = useState(false)
   const [draftFailure, setDraftFailure] = useState(false)
   const draftWrites = useRef(Promise.resolve())
@@ -153,18 +154,6 @@ function JournalPage({
       document.removeEventListener('pointerdown', dismiss)
       document.removeEventListener('keydown', dismiss)
     }
-  }, [])
-
-  function fitGrowthInput() {
-    const input = growthInput.current
-    if (!input) return
-    input.style.height = 'auto'
-    input.style.height = `${Math.min(56, Math.max(28, input.scrollHeight + 1))}px`
-  }
-  React.useLayoutEffect(fitGrowthInput, [entry.growthNote, active])
-  useEffect(() => {
-    window.addEventListener('resize', fitGrowthInput)
-    return () => window.removeEventListener('resize', fitGrowthInput)
   }, [])
 
   useEffect(() => {
@@ -610,7 +599,7 @@ function JournalPage({
       <section className="journal-study">
         <div className="journal-study-heading">
           <div className="journal-study-title">
-            <h4>今日手记</h4>
+            <h4 id={"growth-heading-" + owner}>今日感受</h4>
           </div>
           <label>
             自习{' '}
@@ -642,6 +631,13 @@ function JournalPage({
             </span>
           </label>
         </div>
+        <GrowingTextarea
+          aria-labelledby={'growth-heading-' + owner}
+          placeholder="今天有什么想记下的感受？"
+          value={entry.growthNote || ''}
+          rows={3} maxLength={500} disabled={disabled} active={active}
+          onChange={(event) => change({ growthNote: event.target.value })}
+        />
         <JournalNotes
           owner={owner}
           notes={entryNotes(entry)}
@@ -650,22 +646,7 @@ function JournalPage({
           onPhotoChange={(notes) => change({ notes }, 'photos')}
           onImages={chooseNoteImages}
           onRefresh={onRefresh}
-          active={active}
           photoStatus={statusArea === 'photos' ? status : photosPending ? '照片待同步' : ''}
-        />
-      </section>
-      <section className="journal-growth">
-        <label htmlFor={`growth-${owner}`}>今日感受</label>
-        <textarea
-          ref={growthInput}
-          id={`growth-${owner}`}
-          aria-label={`${OWNER_NAMES[owner]}今日感受`}
-          rows={1}
-          maxLength={500}
-          value={entry.growthNote || ''}
-          disabled={disabled}
-          placeholder="选填"
-          onChange={(event) => change({ growthNote: event.target.value })}
         />
       </section>
       {conflict && (
@@ -685,7 +666,7 @@ function JournalPage({
               )
               .join('\n') || '未填写手记'}
           </p>
-          {conflict.growthNote && <p>进步记录：{conflict.growthNote}</p>}
+          {conflict.growthNote && <p>今日感受：{conflict.growthNote}</p>}
           <p>本机草稿仍在上方。对照后选择：</p>
           <button
             disabled={busy}
@@ -763,6 +744,7 @@ function JournalPage({
           </button>
         </div>
       </footer>
+      <JournalComments owner={owner} date={date} active={active} refreshKey={refreshKey} />
       <span className="journal-folio" aria-hidden="true">
         {date.replaceAll('-', '.')}
       </span>
@@ -956,6 +938,7 @@ export default function GrowthJournal() {
               goals={goals}
               onSaved={mergeEntry}
               onGoalSaved={mergeGoal}
+              refreshKey={retry}
               connected={connected}
               active={owner === id}
               onRefresh={() => setRetry((value) => value + 1)}

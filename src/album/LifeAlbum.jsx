@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
+import EditPhotoDialog from './EditPhotoDialog'
 import AlbumTheater from './AlbumTheater'
 import LiteraryQuote from '../LiteraryQuote'
 import { literaryQuotes } from '../data/literaryQuotes'
-import { albumStore, mergeLifePhotos, prepareLifePhoto } from './lifeAlbumStore'
+import { albumStore, editLocalPhoto, mergeLifePhotos, prepareLifePhoto } from './lifeAlbumStore'
 import './lifeAlbum.css'
 import { todayInShanghai } from '../journal/journalModel'
 import { encodePhotoUpload, PHOTO_UPLOAD_TYPE } from '../media/photoUpload'
@@ -15,14 +16,15 @@ async function api(method = 'GET', body, query = '') {
   const controller = new AbortController(),
     timer = setTimeout(() => controller.abort(), 45000)
   try {
+    const binary = Boolean(body?.image)
     const response = await fetch(`/api/life-album${query}`, {
       method,
-      headers: body ? { 'Content-Type': PHOTO_UPLOAD_TYPE } : undefined,
-      body: body ? await encodePhotoUpload(body) : undefined,
+      headers: body ? { 'Content-Type': binary ? PHOTO_UPLOAD_TYPE : 'application/json' } : undefined,
+      body: !body ? undefined : binary ? await encodePhotoUpload(body) : JSON.stringify(body),
       signal: controller.signal,
     })
     const result = await response.json()
-    if (!response.ok) throw new Error(result.error || '相册暂未同步')
+    if (!response.ok) throw Object.assign(new Error(result.error || '相册暂未同步'), { current: result.current })
     return result
   } finally {
     clearTimeout(timer)
@@ -85,6 +87,7 @@ function Caption({ text }) {
   </div>
 }
 export default function LifeAlbum() {
+  const [editing, setEditing] = useState(null)
   const [photos, setPhotos] = useState(() => visiblePhotoCache),
     [drafts, setDrafts] = useState([]),
     [more, setMore] = useState(false),
@@ -241,6 +244,19 @@ export default function LifeAlbum() {
       setBusy(false)
     }
   }
+  async function savePhoto(body) {
+    if (lock.current || loadingRef.current) throw new Error('相册正在更新，请稍后再试。')
+    lock.current = true
+    setBusy(true)
+    try {
+      const photo = cloudEnabled ? (await api('PATCH', body)).photo : await editLocalPhoto(body)
+      setPhotos(rows => mergeLifePhotos(rows, [photo]))
+      setStatus('照片已更新')
+    } finally {
+      lock.current = false
+      setBusy(false)
+    }
+  }
   const memories = photos.map((photo) => ({
     key: photo.id,
     day: {
@@ -366,6 +382,7 @@ export default function LifeAlbum() {
               <div className="life-photo-meta">
                 <time dateTime={photo.taken_on}>{photo.taken_on.replaceAll('-', '.')}</time>
                 <span>{names[photo.owner]}</span>
+                <button className="life-edit-link" aria-label="编辑照片" disabled={busy || loading} onClick={() => setEditing(photo)}>✎ 编辑</button>
               </div>
             </figcaption>
           </figure>
@@ -380,6 +397,7 @@ export default function LifeAlbum() {
           {loading ? '读取中…' : '再翻一些'}
         </button>
       )}
+      {editing && <EditPhotoDialog photo={editing} onSave={savePhoto} onClose={() => setEditing(null)} />}
       {theater && (
         <AlbumTheater
           items={memories}

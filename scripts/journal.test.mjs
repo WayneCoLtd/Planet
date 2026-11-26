@@ -109,9 +109,8 @@ function harness(level = 1, today = '2026-10-17') {
             records.some(
               (row) =>
                 row._table === table &&
-                row.owner === payload.owner &&
-                (row.date || row.week_start) ===
-                  (payload.date || payload.week_start),
+                (payload.id ? row.id === payload.id : row.owner === payload.owner &&
+                  (row.date || row.week_start) === (payload.date || payload.week_start)),
             )
           )
             return { error: { code: '23505' } }
@@ -717,4 +716,23 @@ test('journal accepts binary and cached JSON JPEG uploads with the same private 
   assert.deepEqual(h.uploads[0].bytes, h.uploads[1].bytes)
   assert.equal((await h.run(bytes.subarray(0, -1), 'POST', body.date, headers)).code, 400)
   assert.equal(h.uploads.length, 2)
+})
+
+test('partner messages append separately from unpublished feelings and retries keep one copy', async () => {
+  const h = harness()
+  const page = model.emptyEntry('orange', '2026-10-14')
+  const first = { action: 'comment', owner: page.owner, date: page.date,
+    id: 'aaaa1111-1111-4111-8111-111111111111', text: '下午好\n\n晚点见' }
+  const second = { ...first, id: 'bbbb2222-2222-4222-8222-222222222222', text: '到家了' }
+  assert.equal((await h.run(first)).code, 200)
+  assert.equal((await h.run(second)).code, 200)
+  assert.equal((await h.run(first)).code, 200)
+  assert.equal((await h.run({ ...first, text: '替换原文' })).code, 409)
+  assert.equal((await h.run({ ...first, text: '   ' })).code, 400)
+  assert.equal((await h.run({ ...first, text: '长'.repeat(10001) })).code, 400)
+  assert.equal((await h.run({ ...page, action: 'save', growthNote: '刚保存的感受' })).code, 200)
+  const replies = await h.run(null, 'GET', page.date + '&comments=orange')
+  assert.deepEqual(Array.from(replies.data.comments, row => row.text), [first.text, second.text])
+  assert.equal((await h.run(null, 'GET', page.date + '&comments=pomelo')).data.comments.length, 0)
+  assert.equal((await h.run(null, 'GET', '2026-10-15&comments=orange')).data.comments.length, 0)
 })
