@@ -1,6 +1,8 @@
 import React, { useRef, useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import { resolveCloudAssetUrl, toCanonicalCloudUrl } from '../cloud'
+import ProgressivePhoto from '../media/ProgressivePhoto'
+import PhotoThumbnail from '../media/PhotoThumbnail'
 import { invalidateSignedMedia } from '../media/signedUrlCache'
 import {
   OWNER_NAMES,
@@ -25,7 +27,6 @@ export function useJournalPhoto(primary, preview = '') {
   const src = [...preferred, ...photoRoutes(preview)].find(url => !failed.includes(url))
   return {
     src,
-    usingPreview: Boolean(src && !preferred.includes(src)),
     onError() {
       invalidateSignedMedia(toCanonicalCloudUrl(src))
       setFailed(urls => urls.includes(src) ? urls : [...urls, src])
@@ -50,25 +51,26 @@ function NotePhoto({ image, open, refresh, loading }) {
   ) : (
     <button
       className="journal-note-image"
-      onClick={open}
+      onClick={() => open(src)}
       aria-label="放大手记图片"
     >
-      <img
+      <PhotoThumbnail
         src={src}
         alt="手记附图"
-        loading="lazy"
-        decoding="async"
         onError={onError}
       />
     </button>
   )
 }
-function NoteViewer({ images, initial, close, refresh }) {
+function NoteViewer({ images, initial, initialPreview, close, refresh }) {
   const ref = useRef(null)
   const [position, setIndex] = useState(initial)
   const index = Math.min(position, images.length - 1)
   const image = images[index]
-  const { src, usingPreview, onError, retry } = useJournalPhoto(notePhotoUrl(image), notePhotoUrl(image, true))
+  const full = notePhotoUrl(image)
+  const thumb = notePhotoUrl(image, true)
+  const reuseInitial = index === initial && [...photoRoutes(thumb), ...photoRoutes(full)].includes(initialPreview)
+  const preview = reuseInitial ? initialPreview : thumb
   useEffect(() => {
     const dialog = ref.current,
       focus = document.activeElement
@@ -105,10 +107,8 @@ function NoteViewer({ images, initial, close, refresh }) {
           关闭 ×
         </button>
       </header>
-      {src && <img src={src} alt="手记图片完整预览" onError={onError} />}
-      {(!src || usingPreview) && <button onClick={() => { retry(); refresh() }}>
-        {src ? '已显示预览图，重试原图' : '照片未加载，点击重试'}
-      </button>}
+      <ProgressivePhoto src={full} alternate={photoRoutes(full)[1]} preview={preview} alt="手记图片完整预览"
+        onRetry={() => { invalidateSignedMedia(image.url); refresh() }} />
       <footer>
         <button disabled={index === 0} onClick={() => setIndex((i) => i - 1)}>
           上一张
@@ -195,7 +195,7 @@ export default function JournalNotes({
                   image={image}
                   refresh={onRefresh}
                   loading={mediaLoading}
-                  open={() => setViewer(index)}
+                  open={preview => setViewer({ index, preview, id: image.id })}
                 />
                 <figcaption>
                   <span className="journal-photo-number" aria-hidden="true">
@@ -227,7 +227,8 @@ export default function JournalNotes({
       {viewer !== null && images.length > 0 && (
         <NoteViewer
           images={images}
-          initial={viewer}
+          initial={viewer.index}
+          initialPreview={images[viewer.index]?.id === viewer.id ? viewer.preview : ''}
           refresh={onRefresh}
           close={() => setViewer(null)}
         />

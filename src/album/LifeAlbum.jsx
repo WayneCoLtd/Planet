@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
+import PhotoThumbnail from '../media/PhotoThumbnail'
 import EditPhotoDialog from './EditPhotoDialog'
 import AlbumTheater from './AlbumTheater'
 import LiteraryQuote from '../LiteraryQuote'
@@ -52,13 +53,11 @@ function Photo({ photo, onOpen }) {
       onClick={onOpen}
       aria-label={`查看 ${names[photo.owner]} ${photo.taken_on} 的照片`}
     >
-      <img
+      <PhotoThumbnail
         key={retry}
         src={resolveCloudAssetUrl(original ? photo.src : photo.thumb)}
         width={photo.width}
         height={photo.height}
-        loading="lazy"
-        decoding="async"
         alt={photo.caption || `${names[photo.owner]}的生活照片`}
         onError={() => original ? setFailed(true) : setOriginal(true)}
       />
@@ -102,6 +101,7 @@ export default function LifeAlbum() {
     [loadError, setLoadError] = useState(''),
     [theater, setTheater] = useState(false),
     [position, setPosition] = useState(null)
+  const [openedPhoto, setOpenedPhoto] = useState(null)
   useEffect(() => { visiblePhotoCache = photos }, [photos])
   const lock = useRef(false),
     alive = useRef(true),
@@ -321,6 +321,7 @@ export default function LifeAlbum() {
       </details>
       {!!photos.length && <button className="life-play" onClick={() => {
         setPosition(null)
+        setOpenedPhoto(null)
         setTheater(true)
       }}>打开画廊 ↗</button>}
       </div>
@@ -374,6 +375,7 @@ export default function LifeAlbum() {
               photo={photo}
               onOpen={() => {
                 setPosition({ key: photo.id, delta: 0 })
+                setOpenedPhoto(photo.id)
                 setTheater(true)
               }}
             />
@@ -402,6 +404,7 @@ export default function LifeAlbum() {
         <AlbumTheater
           items={memories}
           lifeMode
+          initialPhoto={openedPhoto}
           remembered={position}
           onRemember={setPosition}
           onClose={() => setTheater(false)}

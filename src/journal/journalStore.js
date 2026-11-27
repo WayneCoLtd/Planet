@@ -1,5 +1,5 @@
 import { cloudEnabled, resolveCloudAssetUrl } from '../cloud'
-import { reuseSignedMedia } from '../media/signedUrlCache'
+import { hasSignedMedia, reuseSignedMedia } from '../media/signedUrlCache'
 import { encodePhotoUpload, PHOTO_UPLOAD_TYPE } from '../media/photoUpload'
 import { entryNotes, entryFingerprint, shiftDate, sleepWeekStart } from './journalModel'
 
@@ -161,8 +161,18 @@ export async function postComment(owner, date, id, text) {
     throw error
   }
 }
-export async function loadPageMedia(date) {
-  return (await journalRequest(null, date, { media: '1' })).entries
+export function hasPageMedia(rows) {
+  return rows.every(row => (!row.screenshotPath || hasSignedMedia(row.screenshotUrl))
+    && entryNotes(row).every(note => note.images.every(image =>
+      (!image.path || hasSignedMedia(image.url)) && (!image.thumbPath || hasSignedMedia(image.thumbUrl)))))
+}
+const pendingMedia = new Map()
+export function loadPageMedia(date) {
+  if (!pendingMedia.has(date)) {
+    pendingMedia.set(date, journalRequest(null, date, { media: '1' })
+      .then(result => result.entries).finally(() => pendingMedia.delete(date)))
+  }
+  return pendingMedia.get(date)
 }
 export async function loadWeek(date) {
   const start = sleepWeekStart(date),

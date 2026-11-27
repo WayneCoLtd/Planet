@@ -4,6 +4,8 @@ import LiteraryQuote from '../LiteraryQuote'
 import { literaryQuotes } from '../data/literaryQuotes'
 import { cloudEnabled } from '../cloud'
 import { safeGetItem, safeSetItem } from '../safeStorage'
+import PhotoThumbnail from '../media/PhotoThumbnail'
+import ProgressivePhoto from '../media/ProgressivePhoto'
 import { prepareLifePhoto } from '../album/lifeAlbumStore'
 import {
   DEFAULT_GOAL,
@@ -35,6 +37,7 @@ import {
   clearMatchingDraft,
   loadWeek,
   loadPageMedia,
+  hasPageMedia,
   saveEntry,
   saveGoal,
 } from './journalStore'
@@ -70,9 +73,8 @@ function ScreenshotViewer({ entry, photo, refresh, close }) {
           关闭 ×
         </button>
       </header>
-      {photo.src ? <img src={photo.src} onError={photo.onError} alt="睡眠截图完整预览" /> : (
-        <button onClick={() => { photo.retry(); refresh() }}>截图未加载，点击重试</button>
-      )}
+      <ProgressivePhoto src={photo.src} preview={photo.src} alt="睡眠截图完整预览"
+        onRetry={() => { photo.retry(); refresh() }} />
     </dialog>,
     document.body,
   )
@@ -531,11 +533,9 @@ function JournalPage({
                 onClick={() => setViewImage(true)}
                 aria-label={`查看${OWNER_NAMES[owner]}睡眠截图`}
               >
-                <img
+                <PhotoThumbnail
                   src={photo.src}
                   alt="睡眠截图缩略图"
-                  loading="lazy"
-                  decoding="async"
                   onError={photo.onError}
                 />
               </button>
@@ -764,21 +764,26 @@ export default function GrowthJournal() {
   const commitTimer = useRef(null)
   const [turnDate, setTurnDate] = useState(date)
   const book = useRef(null)
-  const [mediaRetry, setMediaRetry] = useState(0)
+  const entriesRef = useRef(entries)
+  entriesRef.current = entries
+  const refreshMedia = useRef(null)
   const [finishedMedia, setFinishedMedia] = useState('')
-  const mediaKey = [date, retry, mediaRetry].join(':')
-  useEffect(() => {
-    if (!cloudEnabled) return
-    let alive = true
-    setFinishedMedia('')
-    loadPageMedia(date).then(rows => {
-      if (alive) setEntries(previous => mergeRemoteEntries(previous, rows))
-    }).catch(() => { /* Missing links keep their individual retry controls. */ })
-      .finally(() => { if (alive) setFinishedMedia(mediaKey) })
-    return () => { alive = false }
-  }, [mediaKey, date])
+  const mediaKey = date + ':' + retry
   useEffect(() => {
     let alive = true
+    const known = entriesRef.current.filter(row => row.date === date)
+    const readMedia = () => {
+      if (!cloudEnabled) return
+      setFinishedMedia('')
+      return loadPageMedia(date).then(rows => {
+        if (alive) setEntries(previous => mergeRemoteEntries(previous, rows))
+        return rows
+      }).catch(() => { /* Individual photos offer a retry. */ })
+        .finally(() => { if (alive) setFinishedMedia(mediaKey) })
+    }
+    refreshMedia.current = readMedia
+    const initialRead = cloudEnabled && (!known.length || !hasPageMedia(known)) ? readMedia() : null
+    if (!initialRead) setFinishedMedia(mediaKey)
     setLoading(true)
     setError('')
     setConnected(false)
@@ -788,6 +793,18 @@ export default function GrowthJournal() {
           setEntries(previous => mergeRemoteEntries(previous, result.entries))
           setGoals(result.goals)
           setConnected(true)
+          if (cloudEnabled) {
+            const current = result.entries.filter(row => row.date === date)
+            if (!initialRead) {
+              if (!hasPageMedia(mergeRemoteEntries(known, current))) readMedia()
+            } else {
+              // A photo can be replaced between the two parallel reads.
+              initialRead.then(signed => {
+                if (alive && signed && current.some(row => !hasPageMedia([row])
+                  && row.version > (signed.find(item => item.owner === row.owner)?.version ?? 0))) readMedia()
+              })
+            }
+          }
         }
       })
       .catch((reason) => {
@@ -798,6 +815,7 @@ export default function GrowthJournal() {
       })
     return () => {
       alive = false
+      refreshMedia.current = null
     }
   }, [date, retry])
   useEffect(() => {
@@ -948,7 +966,7 @@ export default function GrowthJournal() {
               onGoalSaved={mergeGoal}
               refreshKey={retry}
               mediaLoading={cloudEnabled && finishedMedia !== mediaKey}
-              refreshMedia={() => cloudEnabled ? setMediaRetry(n => n + 1) : setRetry(n => n + 1)}
+              refreshMedia={() => cloudEnabled ? refreshMedia.current?.() : setRetry(n => n + 1)}
               connected={connected}
               active={owner === id}
               onNavigate={navigate}

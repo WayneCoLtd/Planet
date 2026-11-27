@@ -649,6 +649,33 @@ const storeSource = readFileSync(new URL('../src/journal/journalStore.js', impor
   .replace(/^import[\s\S]*?from ['"][^'"]+['"]\r?$/gm, '')
   .replace(/^export /gm, '')
 
+test('media reads share pending work and a changed photo still needs its own links', async () => {
+  const valid = new Set(['signed-full', 'signed-thumb'])
+  let calls = 0, finish
+  const context = vm.createContext({
+    entryNotes: model.entryNotes,
+    hasSignedMedia: url => valid.has(url),
+    request: () => { calls++; return new Promise(resolve => { finish = resolve }) },
+  })
+  vm.runInContext(storeSource + '\njournalRequest = request; globalThis.load = loadPageMedia; globalThis.ready = hasPageMedia;', context)
+  const date = '2026-11-25'
+  const first = context.load(date), second = context.load(date)
+  assert.equal(first, second)
+  assert.equal(calls, 1)
+  const image = { path: 'full.jpg', url: 'signed-full', thumbPath: 'thumb.jpg', thumbUrl: 'signed-thumb' }
+  const row = { notes: [{ images: [image] }] }
+  finish({ entries: [row] })
+  await first
+  assert.equal(context.ready([row]), true)
+  assert.equal(context.ready([{ notes: [{ images: [{ ...image, path: 'replacement.jpg', url: '' }] }] }]), false)
+  valid.delete(image.thumbUrl)
+  assert.equal(context.ready([row]), false)
+  const next = context.load(date)
+  assert.equal(calls, 2)
+  finish({ entries: [] })
+  await next
+})
+
 test('local Monday loading uses the same previous-night range as the API', async () => {
   const fixtures = {
     entries: ['2026-10-12', '2026-10-13', '2026-10-18', '2026-10-19', '2026-10-20', '2026-10-26'].map(date => model.emptyEntry('pomelo', date)),

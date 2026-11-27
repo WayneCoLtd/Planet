@@ -26,6 +26,10 @@ export function createSignedUrlCache({ now = () => Date.now(), storage = null, l
     try { storage?.setItem(STORAGE_KEY, JSON.stringify([...entries.values()].map(item => item.value))) } catch {}
   }
   return {
+    has(value) {
+      const meta = info(value)
+      return Boolean(meta && entries.get(meta.key)?.value === value)
+    },
     reuse(value) {
       const meta = info(value)
       if (!meta) return value
@@ -57,4 +61,5 @@ export function reuseSignedMedia(data) {
     ['url', 'thumbUrl', 'screenshotUrl', 'coverUrl'].includes(key) && typeof value === 'string'
       ? getCache().reuse(value) : value && typeof value === 'object' ? reuseSignedMedia(value) : value]))
 }
+export const hasSignedMedia = value => getCache().has(value)
 export const invalidateSignedMedia = value => getCache().invalidate(value)

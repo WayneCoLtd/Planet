@@ -3,6 +3,8 @@ import { createPortal } from 'react-dom'
 import { displayPhotoSource, layoutMemories, monthLabel, needsImagesAhead, orderedMemories, rowWindow } from './galleryLayout'
 import { mediaPreviewUrl } from '../media/previewUrl'
 import { createImageQueue, getKnownDimensions } from './imageQueue'
+import ProgressivePhoto from '../media/ProgressivePhoto'
+import { toCanonicalCloudUrl } from '../cloud'
 import LiteraryQuote from '../LiteraryQuote'
 import { literaryQuotes } from '../data/literaryQuotes'
 import './albumTheater.css'
@@ -31,7 +33,7 @@ function MemoryImage({ src, fullSrc, alt, queue, onResult }) {
 
 function signedBy(item) { return item.owner.id === 'orange' ? '小琛' : item.owner.id === 'pomelo' ? '小琳' : item.owner.label }
 
-export default function AlbumTheater({ items, onClose, remembered, onRemember, loading = false, lifeMode = false }) {
+export default function AlbumTheater({ items, onClose, remembered, onRemember, initialPhoto = null, loading = false, lifeMode = false }) {
   const memories = useMemo(() => orderedMemories(items).map(item => ({ ...item,
     photo: { ...item.photo, previewSrc: item.photo.previewSrc || mediaPreviewUrl(item.photo.src) },
   })), [items])
@@ -56,7 +58,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
       return new Map(previous).set(src, result)
     })
   }, [])
-  const [selected, setSelected] = useState(null)
+  const [selected, setSelected] = useState(initialPhoto)
   const [unfolded, setUnfolded] = useState(false)
   const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches)
   const queue = useMemo(() => createImageQueue(3), [])
@@ -184,6 +186,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
     recordViewport()
   }
   function closeDetail() {
+    if (initialPhoto) { onClose(); return }
     setSelected(null)
     requestAnimationFrame(() => (lastFocusedPhoto.current?.isConnected ? lastFocusedPhoto.current : closeRef.current)?.focus({ preventScroll: true }))
   }
@@ -225,7 +228,7 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
           {mountedRows.map(row => <div key={row.key} className="mt-row is-pair" style={{ top: row.offset, height: row.height }}>
             {row.items.map((item, slotIndex) => <figure className="mt-memory" key={`${item.key}:${item.photo.src}`} style={{ '--mt-media-height': `${row.mediaHeights[slotIndex]}px`, '--mt-card-width': `${row.mediaWidths[slotIndex]}px`, gridColumn: row.mobile ? 1 : item.owner.id === 'pomelo' ? 2 : 1 }}>
               <div className="mt-photo-surface">
-                <span className="mt-image-slot"><MemoryImage src={displayPhotoSource(item)} fullSrc={item.photo.previewFallbackSrc || item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} onResult={onImageResult} /></span>
+                <span className="mt-image-slot">{!detail && <MemoryImage src={displayPhotoSource(item)} fullSrc={item.photo.previewFallbackSrc || item.photo.src} alt={`${signedBy(item)} · ${item.day.date}`} queue={queue} onResult={onImageResult} />}</span>
                 <button type="button" className="mt-photo-open" aria-label={`放大查看 ${signedBy(item)} ${lifeMode ? item.day.date : `Day ${item.day.day}`} 的照片`}
                   onClick={event => { lastFocusedPhoto.current = event.currentTarget; setSelected(item.key) }}>
                   <span className="mt-enlarge" aria-hidden="true">↗</span>
@@ -257,8 +260,9 @@ export default function AlbumTheater({ items, onClose, remembered, onRemember, l
     </div>
     <div className="mt-curtain mt-curtain-left" aria-hidden="true" /><div className="mt-curtain mt-curtain-right" aria-hidden="true" />
     {detail && <section className="mt-detail" role="dialog" aria-modal="true" aria-label={`${signedBy(detail)} ${detail.day.date} 照片预览`}>
-      <header><span>{detail.day.date} <small>· {signedBy(detail)}</small></span><button type="button" ref={detailCloseRef} onClick={closeDetail}>返回画廊 ×</button></header>
-      <div className={`mt-detail-scroll ${unfolded ? 'is-unfolded' : ''}`}><img src={detail.photo.src} alt={`${signedBy(detail)} · ${detail.day.date}`} decoding="async" /></div>
+      <header><span>{detail.day.date} <small>· {signedBy(detail)}</small></span><button type="button" ref={detailCloseRef} onClick={closeDetail}>{initialPhoto ? '返回相册' : '返回画廊'} ×</button></header>
+      <div className={`mt-detail-scroll ${unfolded ? 'is-unfolded' : ''}`}><ProgressivePhoto src={detail.photo.src} preview={detail.photo.previewSrc}
+        alternate={toCanonicalCloudUrl(detail.photo.src)} alt={`${signedBy(detail)} · ${detail.day.date}`} /></div>
       <footer><button type="button" disabled={selectedIndex <= 0} onClick={() => setSelected(memories[selectedIndex - 1].key)}>← 上一张</button><button type="button" aria-pressed={unfolded} onClick={() => setUnfolded(value => !value)}>{unfolded ? '适合屏幕' : '展开原图'}</button><button type="button" disabled={selectedIndex >= memories.length - 1} onClick={() => setSelected(memories[selectedIndex + 1].key)}>下一张 →</button></footer>
       {detail.photo.caption && <p className="mt-detail-caption">{detail.photo.caption}</p>}
     </section>}
